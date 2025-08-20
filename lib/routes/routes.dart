@@ -1,0 +1,38 @@
+// lib/routes/routes.dart
+import 'package:flutter/material.dart';
+import '../screens/auth/login_page.dart';
+import '../screens/credits/add_credit_page.dart';
+import '../screens/history/history_page.dart';
+import '../screens/home/inspection_page.dart';
+import '../screens/users/add_user_page.dart';
+import '../screens/profile/profile.dart';
+import '../screens/main_screen.dart';
+
+class Routes {
+  static const String login = '/login';
+  static const String register = '/register';
+  static const String home = '/home';
+  static const String addUser = '/add-user';
+  static const String addCredits = '/add-credits';
+  static const String profile = '/profile';
+  static const String inspection = '/inspection';
+  static const String history = '/history';
+}
+
+class AppRoutes {
+  static Map<String, WidgetBuilder> getRoutes() {
+    return {
+      Routes.login: (context) => LoginPage(),
+      Routes.home: (context) => const MainScreen(),
+      Routes.addUser: (context) => const AddUserPage(),
+      Routes.addCredits: (context) => const AddCreditsPage(),
+      Routes.profile: (context) => const ProfilePage(),
+      Routes.history: (context) => HistoryPage(),
+      Routes.inspection: (context) {
+        final args = ModalRoute.of(context)!.settings.arguments
+            as Map<String, dynamic>?;
+        return InspectionScreen(isNewInspection: args?['isNew'] ?? false);
+      },
+    };
+  }
+}

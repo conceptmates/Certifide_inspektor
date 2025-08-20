@@ -1,0 +1,884 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:open_file/open_file.dart';
+import '../models/drop_down.dart';
+
+class CustomInspectionItem<T> extends StatefulWidget {
+  final String title;
+  final T currentValue;
+  final List<DropdownOption<T>>? dropdownOptions;
+  final Function(T) onValueChanged;
+  final bool allowImage;
+  final String? imagePath;
+  final Function(String?)? onImageChanged;
+  final bool allowRemarks;
+  final TextEditingController remarksController;
+  final bool useTextField;
+  final TextEditingController? textFieldController;
+  final Function()? onDataChanged;
+  final VoidCallback? onDispose;
+  final bool allowFileAttachment;
+  final bool allowMultiImage;
+  final List<String>? multiImagePaths;
+  final Function(List<String>?)? onMultiImageChanged;
+
+  const CustomInspectionItem({
+    super.key,
+    required this.title,
+    required this.currentValue,
+    this.dropdownOptions,
+    required this.onValueChanged,
+    this.allowImage = true,
+    this.imagePath,
+    this.onImageChanged,
+    this.allowRemarks = false,
+    required this.remarksController,
+    this.useTextField = false,
+    this.textFieldController,
+    this.onDataChanged,
+    this.onDispose,
+    this.allowFileAttachment = false,
+    this.allowMultiImage = false,
+    this.multiImagePaths,
+    this.onMultiImageChanged,
+  });
+
+  @override
+  State<CustomInspectionItem<T>> createState() =>
+      _CustomInspectionItemState<T>();
+}
+
+class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
+  bool _showRemarks = false;
+  late TextEditingController _textFieldController;
+  VoidCallback? _remarksListener;
+  bool _isImagePickerActive = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _textFieldController =
+        widget.textFieldController ?? TextEditingController();
+
+    if (widget.useTextField) {
+      if (widget.currentValue is String) {
+        _textFieldController.text = widget.currentValue as String;
+      }
+      _textFieldController.addListener(_onTextFieldChanged);
+    }
+
+    _remarksListener = () {
+      widget.onDataChanged?.call();
+    };
+    widget.remarksController.addListener(_remarksListener!);
+  }
+
+  void _onTextFieldChanged() {
+    if (widget.useTextField && mounted) {
+      widget.onValueChanged(_textFieldController.text as T);
+      widget.onDataChanged?.call();
+    }
+  }
+
+  @override
+  void didUpdateWidget(CustomInspectionItem<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.useTextField && widget.currentValue is String) {
+      if (_textFieldController.text != widget.currentValue) {
+        _textFieldController.text = widget.currentValue as String;
+      }
+    }
+
+    if (oldWidget.remarksController != widget.remarksController) {
+      oldWidget.remarksController.removeListener(_remarksListener!);
+      widget.remarksController.addListener(_remarksListener!);
+    }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    // Prevent multiple simultaneous image picker calls
+    if (_isImagePickerActive) return;
+
+    if (!widget.allowImage || widget.onImageChanged == null) return;
+
+    try {
+      // Set flag to prevent multiple calls
+      _isImagePickerActive = true;
+
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        imageQuality: 85,
+      );
+
+      if (image != null && mounted) {
+        widget.onImageChanged!(image.path);
+        widget.onDataChanged?.call();
+      }
+    } on PlatformException catch (e) {
+      // Handle platform-specific exceptions
+      print('Platform Exception in image picker: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to pick image: ${e.message}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (e) {
+      // Handle any other unexpected errors
+      print('Unexpected error in image picker: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('An unexpected error occurred: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      // Reset the flag
+      _isImagePickerActive = false;
+    }
+  }
+
+  Future<void> _pickFile() async {
+    if (!widget.allowFileAttachment || widget.onImageChanged == null) return;
+
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: [
+          'pdf',
+          'doc',
+          'docx',
+          'xls',
+          'xlsx',
+          'jpg',
+          'jpeg',
+          'png',
+          'csv',
+        ],
+      );
+
+      if (result != null && mounted) {
+        final file = result.files.single;
+        if (file.path != null) {
+          final fileInfo = {
+            'filePath': file.path!,
+            'fileName': file.name,
+            'fileType': file.extension?.toLowerCase() ?? '',
+          };
+
+          final fileInfoJson = json.encode(fileInfo);
+
+          widget.onImageChanged!(fileInfoJson);
+          widget.onDataChanged?.call();
+        }
+      }
+    } catch (e) {
+      print('Error picking file: $e');
+    }
+  }
+
+  void _showImagePickerOptions(BuildContext context) {
+    if (_isImagePickerActive) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Colors.blue),
+                title: const Text('Take Photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Colors.blue),
+                title: const Text('Choose from Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showFilePickerOptions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.upload_file, color: Colors.blue),
+                title: const Text('Upload Document'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickFile();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFilePreview() {
+    try {
+      final fileInfo = json.decode(widget.imagePath!);
+      final fileName = fileInfo['fileName'] ?? 'Unknown file';
+
+      return SizedBox(
+        height: 48,
+        width: 48,
+        child: Stack(
+          children: [
+            Positioned(
+              bottom: 0,
+              right: 0,
+              child: GestureDetector(
+                onTap: () => _showFilePreview(context, fileInfo),
+                child: Container(
+                  height: 40,
+                  width: 40,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.insert_drive_file, size: 20),
+                      Text(
+                        fileName.split('.').last.toUpperCase(),
+                        style: const TextStyle(fontSize: 8),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: 0,
+              right: 0,
+              child: GestureDetector(
+                onTap: () {
+                  if (mounted) {
+                    widget.onImageChanged!(null);
+                    widget.onDataChanged?.call();
+                  }
+                },
+                child: Container(
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.cancel,
+                    size: 18,
+                    color: Colors.red,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      print('Error building file preview: $e');
+      return const SizedBox();
+    }
+  }
+
+  Future<void> _openFile(String filePath) async {
+    try {
+      final result = await OpenFile.open(filePath);
+      if (result.type != ResultType.done) {
+        print('Error opening file: ${result.message}');
+      }
+    } catch (e) {
+      print('Error opening file: $e');
+    }
+  }
+
+  void _showFilePreview(BuildContext context, Map<String, dynamic> fileInfo) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        fileInfo['fileName'] ?? 'Document',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.open_in_new),
+                  label: const Text('Open File'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _openFile(fileInfo['filePath']);
+                  },
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  icon: const Icon(Icons.edit),
+                  label: const Text('Change File'),
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    _showFilePickerOptions(context);
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showImagePreview(BuildContext context, String imagePath) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+              maxWidth: MediaQuery.of(context).size.width * 0.9,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppBar(
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  leading: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.edit),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        _showImagePickerOptions(context);
+                      },
+                    ),
+                  ],
+                ),
+                Flexible(
+                  child: InteractiveViewer(
+                    panEnabled: true,
+                    boundaryMargin: const EdgeInsets.all(20),
+                    minScale: 0.5,
+                    maxScale: 4,
+                    child: Image.file(
+                      File(imagePath),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickMultiImages() async {
+    // Prevent multiple simultaneous image picker calls
+    if (_isImagePickerActive) return;
+
+    if (!widget.allowMultiImage || widget.onMultiImageChanged == null) return;
+
+    // Check if already at max images
+    if (widget.multiImagePaths != null &&
+        widget.multiImagePaths!.length >= 11) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Maximum of 11 images already added'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Set flag to prevent multiple calls
+      _isImagePickerActive = true;
+
+      final ImagePicker picker = ImagePicker();
+      final List<XFile> images = await picker.pickMultiImage(
+        maxWidth: 1024,
+        imageQuality: 85,
+      );
+
+      if (images.isNotEmpty && mounted) {
+        // Calculate remaining slots
+        final currentImageCount = widget.multiImagePaths?.length ?? 0;
+        final remainingSlots = 11 - currentImageCount;
+
+        // Limit images to remaining slots or 11 total
+        final imagesToAdd = images.take(remainingSlots);
+
+        if (imagesToAdd.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Maximum of 11 images already added'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+          return;
+        }
+
+        // Convert to paths
+        final List<String> imagePaths =
+            imagesToAdd.map((image) => image.path).toList();
+
+        // Combine existing images with new images
+        final updatedImagePaths = [
+          if (widget.multiImagePaths != null) ...widget.multiImagePaths!,
+          ...imagePaths
+        ];
+
+        // Ensure we don't exceed 11 images
+        final finalImagePaths = updatedImagePaths.take(11).toList();
+
+        // Show warning if more images were selected than allowed
+        if (images.length > imagesToAdd.length) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Only ${imagesToAdd.length} images added. Maximum is 11.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+
+        widget.onMultiImageChanged!(finalImagePaths);
+        widget.onDataChanged?.call();
+      }
+    } on PlatformException catch (e) {
+      // Handle platform-specific exceptions
+      print('Platform Exception in image picker: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to pick images: ${e.message}'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } catch (e) {
+      // Handle any other unexpected errors
+      print('Unexpected error in image picker: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('An unexpected error occurred: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      // Reset the flag
+      _isImagePickerActive = false;
+    }
+  }
+
+  Widget _buildMultiImagePreview() {
+    if (widget.multiImagePaths == null || widget.multiImagePaths!.isEmpty) {
+      return IconButton(
+        padding: const EdgeInsets.all(8),
+        constraints: const BoxConstraints(),
+        icon: const Icon(
+          Icons.add_photo_alternate,
+          color: Colors.blue,
+          size: 22,
+        ),
+        onPressed: _pickMultiImages,
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 350.0;
+
+        return Container(
+          margin: const EdgeInsets.only(top: 8),
+          height: 150,
+          width: width,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              direction: Axis.vertical,
+              children: [
+                ...widget.multiImagePaths!.map((imagePath) {
+                  return Stack(
+                    children: [
+                      GestureDetector(
+                        onTap: () => _showImagePreview(context, imagePath),
+                        child: Container(
+                          width: 70,
+                          height: 70,
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                            image: DecorationImage(
+                              image: FileImage(File(imagePath)),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: GestureDetector(
+                          onTap: () {
+                            final updatedPaths =
+                                List<String>.from(widget.multiImagePaths!)
+                                  ..remove(imagePath);
+                            widget.onMultiImageChanged!(
+                                updatedPaths.isEmpty ? null : updatedPaths);
+                            widget.onDataChanged?.call();
+                          },
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.cancel,
+                              size: 18,
+                              color: Colors.red,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+                // Only show add button if less than 11 images
+                if (widget.multiImagePaths!.length < 11)
+                  GestureDetector(
+                    onTap: _pickMultiImages,
+                    child: Container(
+                      width: 60,
+                      height: 60,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.add_photo_alternate,
+                          color: Colors.blue,
+                          size: 36,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                if (widget.useTextField)
+                  Expanded(
+                    child: Container(
+                      constraints:
+                          const BoxConstraints(minWidth: 156, maxWidth: 195),
+                      child: TextField(
+                        controller: _textFieldController,
+                        maxLines: null,
+                        decoration: InputDecoration(
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 8),
+                        ),
+                        keyboardType: TextInputType.multiline,
+                      ),
+                    ),
+                  )
+                else if (widget.dropdownOptions != null)
+                  Expanded(
+                    child: Container(
+                      constraints:
+                          const BoxConstraints(minWidth: 120, maxWidth: 150),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButton<T>(
+                        isExpanded: true,
+                        value: widget.dropdownOptions?.any(
+                                  (option) =>
+                                      option.value == widget.currentValue,
+                                ) ==
+                                true
+                            ? widget.currentValue
+                            : null,
+                        underline: Container(),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        items: widget.dropdownOptions
+                                ?.map((option) => DropdownMenuItem<T>(
+                                      value: option.value,
+                                      child: Text(
+                                        option.label,
+                                        style: TextStyle(color: option.color),
+                                      ),
+                                    ))
+                                .toList() ??
+                            [],
+                        onChanged: (T? newValue) {
+                          if (newValue != null && mounted) {
+                            widget.onValueChanged(newValue);
+                            widget.onDataChanged?.call();
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (widget.allowRemarks) ...[
+                  IconButton(
+                    padding: const EdgeInsets.all(8),
+                    constraints: const BoxConstraints(),
+                    icon: Icon(
+                      _showRemarks
+                          ? Icons.comment
+                          : widget.remarksController.text.isNotEmpty
+                              ? Icons.comment
+                              : Icons.add_comment,
+                      color: widget.remarksController.text.isNotEmpty
+                          ? Colors.green
+                          : Colors.blue,
+                      size: 22,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _showRemarks = !_showRemarks;
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                if (widget.allowMultiImage) _buildMultiImagePreview(),
+                if (widget.allowFileAttachment)
+                  if (widget.imagePath == null)
+                    IconButton(
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(
+                        Icons.attach_file,
+                        color: Colors.blue,
+                        size: 22,
+                      ),
+                      onPressed: () => _showFilePickerOptions(context),
+                    )
+                  else
+                    _buildFilePreview()
+                else if (widget.allowImage)
+                  if (widget.imagePath == null)
+                    IconButton(
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(),
+                      icon: const Icon(
+                        Icons.add_a_photo,
+                        color: Colors.blue,
+                        size: 22,
+                      ),
+                      onPressed: () => _showImagePickerOptions(context),
+                    )
+                  else
+                    SizedBox(
+                      height: 48,
+                      width: 48,
+                      child: Stack(
+                        children: [
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: GestureDetector(
+                              onTap: () =>
+                                  _showImagePreview(context, widget.imagePath!),
+                              child: Container(
+                                height: 40,
+                                width: 40,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(4),
+                                  border:
+                                      Border.all(color: Colors.grey.shade300),
+                                ),
+                                child: Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: Image.file(
+                                        File(widget.imagePath!),
+                                        height: 40,
+                                        width: 40,
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
+                                    Positioned.fill(
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: const Icon(
+                                          Icons.zoom_in,
+                                          color: Colors.white,
+                                          size: 20,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 0,
+                            right: 0,
+                            child: GestureDetector(
+                              onTap: () {
+                                if (mounted) {
+                                  widget.onImageChanged!(null);
+                                  widget.onDataChanged?.call();
+                                }
+                              },
+                              child: Container(
+                                decoration: const BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.cancel,
+                                  size: 18,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+              ],
+            ),
+            if (widget.allowRemarks && _showRemarks) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: widget.remarksController,
+                decoration: InputDecoration(
+                  hintText: 'Add remarks',
+                  border: const OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(8)),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+                maxLines: 2,
+                onChanged: (value) {
+                  if (mounted) {
+                    widget.onDataChanged?.call();
+                  }
+                },
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    if (widget.useTextField) {
+      _textFieldController.removeListener(_onTextFieldChanged);
+    }
+    if (_remarksListener != null) {
+      widget.remarksController.removeListener(_remarksListener!);
+    }
+
+    if (widget.textFieldController == null) {
+      _textFieldController.dispose();
+    }
+
+    widget.onDispose?.call();
+
+    super.dispose();
+  }
+}
