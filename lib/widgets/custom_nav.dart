@@ -17,46 +17,10 @@ class CustomBottomNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
-        final isAdmin = userProvider.isAdmin();
-        final navItems = isAdmin ? _getAdminNavItems() : _getUserNavItems();
+        final navItems = _getUserNavItems();
         return _buildNavBar(context, navItems);
       },
     );
-  }
-
-  List<_NavItem> _getAdminNavItems() {
-    return [
-      _NavItem(
-        index: 0,
-        icon: Icons.home_outlined,
-        selectedIcon: Icons.home,
-        label: 'Home',
-      ),
-      _NavItem(
-        index: 1,
-        icon: Icons.history_outlined,
-        selectedIcon: Icons.history,
-        label: 'History',
-      ),
-      // _NavItem(
-      //   index: 2,
-      //   icon: Icons.attach_money_sharp,
-      //   selectedIcon: Icons.attach_money_sharp,
-      //   label: 'Credits',
-      // ),
-      // _NavItem(
-      //   index: 3,
-      //   icon: Icons.approval_outlined,
-      //   selectedIcon: Icons.approval,
-      //   label: 'Approvals',
-      // ),
-      _NavItem(
-        index: 2,
-        icon: Icons.person_outline,
-        selectedIcon: Icons.person,
-        label: 'Profile',
-      ),
-    ];
   }
 
   List<_NavItem> _getUserNavItems() {
@@ -69,12 +33,6 @@ class CustomBottomNavBar extends StatelessWidget {
       ),
       _NavItem(
         index: 1,
-        icon: Icons.history_outlined,
-        selectedIcon: Icons.history,
-        label: 'History',
-      ),
-      _NavItem(
-        index: 2,
         icon: Icons.person_outline,
         selectedIcon: Icons.person,
         label: 'Profile',

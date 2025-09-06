@@ -239,15 +239,29 @@ class _MainContentState extends State<MainContent>
   }
 
   void _navigateToInspection(bool isNew) {
-    Navigator.pushNamed(
-      context,
-      Routes.inspection,
-      arguments: {'isNew': isNew},
-    ).then((_) {
-      if (mounted) {
-        setState(() {});
-      }
-    });
+    if (isNew) {
+      // For new inspections, go to vehicle details form first
+      Navigator.pushNamed(
+        context,
+        Routes.vehicleDetails,
+        arguments: {'isNew': isNew},
+      ).then((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    } else {
+      // For continuing inspections, go directly to inspection screen
+      Navigator.pushNamed(
+        context,
+        Routes.inspection,
+        arguments: {'isNew': isNew},
+      ).then((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    }
   }
 
   Future<void> _launchBookingWebsite() async {
@@ -264,62 +278,6 @@ class _MainContentState extends State<MainContent>
       }
     }
   }
-
-  // Widget _buildBar(double maxHeight) {
-  //   return Container(
-  //     width: maxHeight * 0.02,
-  //     height: maxHeight * 0.1 * (0.3 + Random().nextDouble() * 0.7),
-  //     decoration: BoxDecoration(
-  //       color: Random().nextBool() ? Colors.orange : Colors.purple,
-  //       borderRadius: BorderRadius.circular(maxHeight * 0.01),
-  //     ),
-  //   );
-  // }
-
-  // Widget _buildWeeklyProgress(
-  //     BuildContext context, double screenHeight, double screenWidth) {
-  //   return Container(
-  //     margin: EdgeInsets.symmetric(
-  //       horizontal: screenWidth * 0.05,
-  //       vertical: screenHeight * 0.01,
-  //     ),
-  //     padding: EdgeInsets.all(screenHeight * 0.02),
-  //     height: screenHeight * 0.15,
-  //     decoration: BoxDecoration(
-  //       color: Colors.white,
-  //       borderRadius: BorderRadius.circular(screenHeight * 0.02),
-  //       border: Border.all(color: Colors.purple.withOpacity(0.3)),
-  //     ),
-  //     child: Column(
-  //       crossAxisAlignment: CrossAxisAlignment.start,
-  //       children: [
-  //         const Row(
-  //           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  //           children: [
-  //             Text(
-  //               'Weekly Progress',
-  //               style: TextStyle(
-  //                 fontSize: 14,
-  //                 fontWeight: FontWeight.bold,
-  //                 color: Colors.black,
-  //               ),
-  //             ),
-  //           ],
-  //         ),
-  //         // Expanded(
-  //         //   child: Row(
-  //         //     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-  //         //     crossAxisAlignment: CrossAxisAlignment.end,
-  //         //     children: List.generate(
-  //         //       7,
-  //         //       (index) => _buildBar(screenHeight),
-  //         //     ),
-  //         //   ),
-  //         // ),
-  //       ],
-  //     ),
-  //   );
-  // }
 
   Widget _buildQuickActionCard({
     required IconData icon,
@@ -385,69 +343,11 @@ class _MainContentState extends State<MainContent>
     );
   }
 
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    required IconData icon,
-    required Color color,
-  }) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 6),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[600],
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Consumer2<UserProvider, InspectionProvider>(
         builder: (context, userProvider, inspectionProvider, child) {
-          final isAdmin = userProvider.isAdmin();
           final pendingCount = inspectionProvider.inspections.length;
 
           return SingleChildScrollView(
@@ -472,7 +372,7 @@ class _MainContentState extends State<MainContent>
                       ],
                     ),
                     child: Row(
-                      children: [
+                        children: [
                         NeumorphicAnimatedIcon(
                           onTap: widget.onMenuTap,
                           isDrawerOpen: widget.isDrawerOpen,
@@ -480,38 +380,47 @@ class _MainContentState extends State<MainContent>
                         const SizedBox(width: 20),
                         Expanded(
                           child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _getGreeting(),
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                  color: Colors.grey[600],
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _userName,
-                                style: const TextStyle(
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ],
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                            _getGreeting(),
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[600],
+                            ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                            _userName,
+                            style: const TextStyle(
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                            ),
+                          ],
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.blue.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
+                        Badge(
+                          backgroundColor: Colors.red,
+                          label: Text('3'),
+                          child: IconButton(
+                          onPressed: () {
+                            // Handle notification tap
+                          },
+                          icon: Icon(
                             Icons.notifications_outlined,
                             color: Colors.blue[600],
                             size: 24,
+                          ),
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.blue.withValues(alpha: 0.1),
+                            padding: const EdgeInsets.all(12),
+                            shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
                           ),
                         ),
                       ],
@@ -520,35 +429,6 @@ class _MainContentState extends State<MainContent>
                 ),
 
                 const SizedBox(height: 24),
-
-                // Quick stats
-                FadeAnimation(
-                  1.2,
-                  Row(
-                    children: [
-                      _buildStatCard(
-                        title: 'Pending',
-                        value: pendingCount.toString(),
-                        icon: Icons.pending_actions,
-                        color: Colors.orange,
-                      ),
-                      _buildStatCard(
-                        title: 'Today',
-                        value: '0', // You can implement this
-                        icon: Icons.today,
-                        color: Colors.blue,
-                      ),
-                      _buildStatCard(
-                        title: 'Total',
-                        value: '0', // You can implement this
-                        icon: Icons.assessment,
-                        color: Colors.green,
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 32),
 
                 // Main action - Start Inspection
                 FadeAnimation(
@@ -684,26 +564,15 @@ class _MainContentState extends State<MainContent>
                             await inspectionProvider.loadInspections();
                           },
                         ),
-                      if (isAdmin) ...[
-                        _buildQuickActionCard(
-                          icon: Icons.people_rounded,
-                          title: 'Manage Users',
-                          subtitle: 'User management & settings',
-                          color: Color(0xFF8B5CF6),
-                          onTap: () {
-                            // Navigate to user management
-                          },
-                        ),
-                        _buildQuickActionCard(
-                          icon: Icons.analytics_rounded,
-                          title: 'Analytics',
-                          subtitle: 'View inspection reports',
-                          color: Color(0xFF10B981),
-                          onTap: () {
-                            // Navigate to analytics
-                          },
-                        ),
-                      ],
+                      _buildQuickActionCard(
+                        icon: Icons.replay,
+                        title: 'Recent Inspections',
+                        subtitle: 'View your recent inspection history',
+                        color: Color(0xFF6366F1),
+                        onTap: () {
+                          // Navigate to history
+                        },
+                      ),
                     ],
                   ),
                 ),

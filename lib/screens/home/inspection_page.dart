@@ -19,13 +19,15 @@ import '../main_screen.dart';
 
 class InspectionScreen extends StatefulWidget {
   final bool isNewInspection;
+  final Map<String, dynamic>? vehicleDetails;
   const InspectionScreen({
     super.key,
     this.isNewInspection = false,
+    this.vehicleDetails,
   });
 
   @override
-  _InspectionScreenState createState() => _InspectionScreenState();
+  State<InspectionScreen> createState() => _InspectionScreenState();
 }
 
 class _InspectionScreenState extends State<InspectionScreen> {
@@ -41,6 +43,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   Map<String, TextEditingController> remarksControllers = {};
   Map<String, TextEditingController> numberRemarkControllers = {};
   Map<String, TextEditingController> textFieldControllers = {};
+  Map<String, dynamic>? vehicleDetails;
   bool _showButton = true;
   bool _isScrollable = false;
   bool _isSubmitting = false;
@@ -132,6 +135,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initHive();
+
+      // Set vehicle details from widget
+      vehicleDetails = widget.vehicleDetails;
 
       if (widget.isNewInspection) {
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
@@ -1054,6 +1060,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
       ),
     );
   }
+
 
   Widget _buildDrawer() {
     return Drawer(

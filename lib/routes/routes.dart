@@ -4,6 +4,7 @@ import '../screens/auth/login_page.dart';
 import '../screens/credits/add_credit_page.dart';
 import '../screens/history/history_page.dart';
 import '../screens/home/inspection_page.dart';
+import '../screens/home/vehicle_details_form.dart';
 import '../screens/users/add_user_page.dart';
 import '../screens/profile/profile.dart';
 import '../screens/main_screen.dart';
@@ -16,6 +17,7 @@ class Routes {
   static const String addCredits = '/add-credits';
   static const String profile = '/profile';
   static const String inspection = '/inspection';
+  static const String vehicleDetails = '/vehicle-details';
   static const String history = '/history';
 }
 
@@ -31,7 +33,15 @@ class AppRoutes {
       Routes.inspection: (context) {
         final args = ModalRoute.of(context)!.settings.arguments
             as Map<String, dynamic>?;
-        return InspectionScreen(isNewInspection: args?['isNew'] ?? false);
+        return InspectionScreen(
+          isNewInspection: args?['isNew'] ?? false,
+          vehicleDetails: args?['vehicleDetails'],
+        );
+      },
+      Routes.vehicleDetails: (context) {
+        final args = ModalRoute.of(context)!.settings.arguments
+            as Map<String, dynamic>?;
+        return VehicleDetailsForm(isNewInspection: args?['isNew'] ?? true);
       },
     };
   }

@@ -62,7 +62,6 @@ class MyApp extends StatelessWidget {
       title: 'Certifide Open App',
       debugShowCheckedModeBanner: false,
       theme: AppThemes.darkTheme(),
-      darkTheme: AppThemes.darkTheme(),
       themeMode: ThemeMode.dark,
       home: const AuthWrapper(),
       routes: AppRoutes.getRoutes(),

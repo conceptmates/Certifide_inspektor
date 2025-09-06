@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/user_provider.dart';
-import '../screens/history/history_page.dart';
+
 import '../screens/profile/profile.dart';
 import '../screens/home/home.dart';
 import '../widgets/custom_nav.dart';
@@ -43,33 +43,15 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  final List<Widget> _adminScreens = [
-    const Home(key: ValueKey('home')),
-    // const AddUserPage(key: ValueKey('add_user')),
-    // const AddCreditsPage(key: ValueKey('add_credits')),
-    // const ApprovalPage(key: ValueKey('approval')),
-    const HistoryPage(key: ValueKey('history')),
-    // const LocalInspectionsScreen(key: ValueKey('local_inspections')),
-    const ProfilePage(key: ValueKey('profile')),
-  ];
-
   final List<Widget> _userScreens = [
     const Home(key: ValueKey('home')),
-    const HistoryPage(key: ValueKey('history')),
-    // const LocalInspectionsScreen(key: ValueKey('local_inspections')),
     const ProfilePage(key: ValueKey('profile')),
   ];
 
   @override
   void didUpdateWidget(covariant MainScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    if (userProvider.isAdmin() && _selectedIndex >= _adminScreens.length) {
-      setState(() {
-        _selectedIndex = 0;
-      });
-    } else if (!userProvider.isAdmin() &&
-        _selectedIndex >= _userScreens.length) {
+    if (_selectedIndex >= _userScreens.length) {
       setState(() {
         _selectedIndex = 0;
       });
@@ -150,8 +132,7 @@ class _MainScreenState extends State<MainScreen> {
             );
           }
 
-          final isAdmin = userProvider.isAdmin();
-          final screens = isAdmin ? _adminScreens : _userScreens;
+          final screens = _userScreens;
 
           if (_selectedIndex >= screens.length) {
             _selectedIndex = 0;
