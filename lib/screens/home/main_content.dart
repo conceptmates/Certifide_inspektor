@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:convert';
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
@@ -42,7 +43,8 @@ class _MainContentState extends State<MainContent>
     _loadUserName();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        Provider.of<InspectionProvider>(context, listen: false).loadInspections();
+        Provider.of<InspectionProvider>(context, listen: false)
+            .loadInspections();
       }
     });
   }
@@ -248,6 +250,21 @@ class _MainContentState extends State<MainContent>
     });
   }
 
+  Future<void> _launchBookingWebsite() async {
+    final Uri url = Uri.parse('https://bookings.certifide.in/');
+    try {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Error opening booking website'),
+          ),
+        );
+      }
+    }
+  }
+
   // Widget _buildBar(double maxHeight) {
   //   return Container(
   //     width: maxHeight * 0.02,
@@ -304,7 +321,6 @@ class _MainContentState extends State<MainContent>
   //   );
   // }
 
-
   Widget _buildQuickActionCard({
     required IconData icon,
     required String title,
@@ -359,7 +375,8 @@ class _MainContentState extends State<MainContent>
                     ],
                   ),
                 ),
-                Icon(Icons.arrow_forward_ios, size: 18, color: Colors.grey[400]),
+                Icon(Icons.arrow_forward_ios,
+                    size: 18, color: Colors.grey[400]),
               ],
             ),
           ),
@@ -432,7 +449,7 @@ class _MainContentState extends State<MainContent>
         builder: (context, userProvider, inspectionProvider, child) {
           final isAdmin = userProvider.isAdmin();
           final pendingCount = inspectionProvider.inspections.length;
-          
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -501,9 +518,9 @@ class _MainContentState extends State<MainContent>
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 // Quick stats
                 FadeAnimation(
                   1.2,
@@ -530,9 +547,9 @@ class _MainContentState extends State<MainContent>
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Main action - Start Inspection
                 FadeAnimation(
                   1.4,
@@ -581,7 +598,8 @@ class _MainContentState extends State<MainContent>
                                       'Begin your quality control process',
                                       style: TextStyle(
                                         fontSize: 16,
-                                        color: Colors.white.withValues(alpha: 0.85),
+                                        color: Colors.white
+                                            .withValues(alpha: 0.85),
                                       ),
                                     ),
                                   ],
@@ -601,7 +619,8 @@ class _MainContentState extends State<MainContent>
                                     child: Container(
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
-                                        color: Colors.white.withValues(alpha: 0.25),
+                                        color: Colors.white
+                                            .withValues(alpha: 0.25),
                                       ),
                                       child: const Icon(
                                         Icons.play_arrow_rounded,
@@ -619,9 +638,9 @@ class _MainContentState extends State<MainContent>
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 24),
-                
+
                 // Quick Actions Section
                 FadeAnimation(
                   1.6,
@@ -639,15 +658,21 @@ class _MainContentState extends State<MainContent>
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
                       _buildQuickActionCard(
-                        icon: Icons.history_rounded,
-                        title: 'View History',
-                        subtitle: 'Check previous inspections',
+                        icon: Icons.handshake_outlined,
+                        title: 'Expert Opinion',
+                        subtitle: 'Get expert reviews on inspections',
                         color: Color(0xFF6366F1),
                         onTap: () {
                           // Navigate to history
                         },
+                      ),
+                      _buildQuickActionCard(
+                        icon: Icons.bookmark_added_outlined,
+                        title: 'Inspection Booking',
+                        subtitle: 'Get your car inspected by Professionals',
+                        color: Color(0xFF6366F1),
+                        onTap: _launchBookingWebsite,
                       ),
                       if (pendingCount > 0)
                         _buildQuickActionCard(
@@ -682,7 +707,7 @@ class _MainContentState extends State<MainContent>
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 20),
               ],
             ),
