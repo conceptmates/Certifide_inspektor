@@ -54,53 +54,53 @@ class _InspectionScreenState extends State<InspectionScreen> {
       'items': documents as List<InspectionItem>,
     },
     {
-      'title': 'Paint Coat Meter',
-      'items': paintCoatMeter as List<InspectionItem>,
+      'title': 'Body Panel',
+      'items': bodyPanel as List<InspectionItem>,
     },
     {
       'title': 'Flood Affected Signs',
       'items': floodAffectedSigns as List<InspectionItem>,
     },
     {
-      'title': 'Endoscope - I',
-      'items': endoscope1 as List<InspectionItem>,
+      'title': 'Data Set - I',
+      'items': dataSet1 as List<InspectionItem>,
     },
     {
-      'title': 'Endoscope - II',
-      'items': endoscope2 as List<InspectionItem>,
+      'title': 'Data Set - II',
+      'items': dataSet2 as List<InspectionItem>,
     },
     {
-      'title': 'Battery Tester',
-      'items': batteryTester as List<InspectionItem>,
+      'title': 'Battery',
+      'items': battery as List<InspectionItem>,
     },
     {
-      'title': 'Refractometer',
-      'items': refractometer as List<InspectionItem>,
+      'title': 'Coolant',
+      'items': coolant as List<InspectionItem>,
     },
     {
       'title': 'Under Hood',
       'items': underHood as List<InspectionItem>,
     },
     {
-      'title': 'Brake Fluid Tester',
-      'items': brakeFluidTester as List<InspectionItem>,
+      'title': 'Brake Fluid',
+      'items': brakeFluid as List<InspectionItem>,
     },
     {
-      'title': 'Tire Depth Guage',
-      'items': tireDepthGuage as List<InspectionItem>,
+      'title': 'Tire',
+      'items': tire as List<InspectionItem>,
     },
     {
       'title': 'Exterior',
       'items': exterior as List<InspectionItem>,
     },
     {
-      'title': 'Anemometer',
-      'items': anemoMeter as List<InspectionItem>,
+      'title': 'A/C',
+      'items': ac as List<InspectionItem>,
     },
-    {
-      'title': 'ECU Scan',
-      'items': ecuScan as List<InspectionItem>,
-    },
+    // {
+    //   'title': 'ECU Scan',
+    //   'items': ecuScan as List<InspectionItem>,
+    // },
     {
       'title': 'Interior',
       'items': interior as List<InspectionItem>,

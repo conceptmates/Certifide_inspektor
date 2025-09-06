@@ -380,7 +380,7 @@ final List<InspectionItem<String>> testDrive = [
   ),
 ];
 
-final List<InspectionItem<String>> refractometer = [
+final List<InspectionItem<String>> coolant = [
   InspectionItem<String>(
     id: 'coolant',
     title: 'COOLANT',
@@ -388,7 +388,7 @@ final List<InspectionItem<String>> refractometer = [
     allowRemarks: true,
   ),
 ];
-final List<InspectionItem<String>> brakeFluidTester = [
+final List<InspectionItem<String>> brakeFluid = [
   InspectionItem(
     id: 'brakefluidcondition',
     title: 'BRAKE FLUID CONDITION',
@@ -417,7 +417,7 @@ final List<InspectionItem<String>> dicky = [
   ),
 ];
 
-final List<InspectionItem<String>> anemoMeter = [
+final List<InspectionItem<String>> ac = [
   InspectionItem(
     id: 'airconditioningflow',
     title: 'AIR CONDITIONING FLOW',
@@ -432,34 +432,34 @@ final List<InspectionItem<String>> anemoMeter = [
   ),
 ];
 
-final List<InspectionItem<String>> ecuScan = [
-  InspectionItem(
-    id: 'antilockbrakingsystem',
-    title: 'ANTI LOCK BRAKING SYSTEM',
-    options: CommonDropdownOptions.availability,
-    allowRemarks: true,
-  ),
-  InspectionItem(
-    id: 'fuelpump',
-    title: 'FUEL PUMP',
-    options: CommonDropdownOptions.conditions,
-    allowRemarks: true,
-  ),
-  InspectionItem(
-    id: 'ecuscan',
-    title: 'ECU SCAN',
-    options: CommonDropdownOptions.conditions,
-    allowRemarks: true,
-    allowFileAttachment: true,
-    allowImage: false,
-  ),
-  InspectionItem(
-    id: 'warninglamps',
-    title: 'WARNING LAMPS',
-    options: CommonDropdownOptions.conditions,
-    allowRemarks: true,
-  ),
-];
+// final List<InspectionItem<String>> ecuScan = [
+//   InspectionItem(
+//     id: 'antilockbrakingsystem',
+//     title: 'ANTI LOCK BRAKING SYSTEM',
+//     options: CommonDropdownOptions.availability,
+//     allowRemarks: true,
+//   ),
+//   InspectionItem(
+//     id: 'fuelpump',
+//     title: 'FUEL PUMP',
+//     options: CommonDropdownOptions.conditions,
+//     allowRemarks: true,
+//   ),
+//   InspectionItem(
+//     id: 'ecuscan',
+//     title: 'ECU SCAN',
+//     options: CommonDropdownOptions.conditions,
+//     allowRemarks: true,
+//     allowFileAttachment: true,
+//     allowImage: false,
+//   ),
+//   InspectionItem(
+//     id: 'warninglamps',
+//     title: 'WARNING LAMPS',
+//     options: CommonDropdownOptions.conditions,
+//     allowRemarks: true,
+//   ),
+// ];
 
 final List<InspectionItem<String>> interior = [
   InspectionItem(
@@ -707,7 +707,7 @@ final List<InspectionItem<String>> exterior = [
   ),
 ];
 
-final List<InspectionItem<String>> tireDepthGuage = [
+final List<InspectionItem<String>> tire = [
   InspectionItem(
     id: 'frontrh',
     title: 'FRONT RH',
@@ -791,7 +791,7 @@ final List<InspectionItem<String>> underHood = [
   ),
 ];
 
-final List<InspectionItem<String>> batteryTester = [
+final List<InspectionItem<String>> battery = [
   InspectionItem(
     id: 'batteryslnumber',
     title: 'BATTERY SL NUMBER',
@@ -818,7 +818,7 @@ final List<InspectionItem<String>> batteryTester = [
   ),
 ];
 
-final List<InspectionItem<String>> endoscope1 = [
+final List<InspectionItem<String>> dataSet1 = [
   InspectionItem(
     id: 'chassisno',
     title: 'CHASSIS NO',
@@ -900,7 +900,7 @@ final List<InspectionItem<String>> endoscope1 = [
   ),
 ];
 
-final List<InspectionItem<String>> endoscope2 = [
+final List<InspectionItem<String>> dataSet2 = [
   InspectionItem(
     id: 'rearlhbrake',
     title: 'REAR LH BRAKE',
@@ -939,7 +939,7 @@ final List<InspectionItem<String>> endoscope2 = [
   ),
 ];
 
-final List<InspectionItem<String>> paintCoatMeter = [
+final List<InspectionItem<String>> bodyPanel = [
   InspectionItem(
     id: 'hood/bonnet',
     title: 'HOOD/BONNET',
