@@ -1,9 +1,11 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
+
 import '../constants/hive_constants.dart';
 import '../data/inspection_storage_model.dart';
-import 'dart:convert';
 import '../services/api_services.dart';
 
 class UserProvider extends ChangeNotifier {
@@ -125,22 +127,18 @@ class UserProvider extends ChangeNotifier {
   }
 
   Future<void> setUserData(Map<String, dynamic> data, String token) async {
-    if (data != null && token != null) {
-      _userData = data;
-      _token = token;
-      await _storage.write(
-        key: USER_DATA_KEY,
-        value: json.encode(_userData),
-      );
-      await _storage.write(
-        key: TOKEN_KEY,
-        value: token,
-      );
-      notifyListeners();
-    } else {
-      print('Error: Invalid user data or token');
+    _userData = data;
+    _token = token;
+    await _storage.write(
+      key: USER_DATA_KEY,
+      value: json.encode(_userData),
+    );
+    await _storage.write(
+      key: TOKEN_KEY,
+      value: token,
+    );
+    notifyListeners();
     }
-  }
 
   bool isAdmin() {
     final roles = _userData?['roles'] as List?;

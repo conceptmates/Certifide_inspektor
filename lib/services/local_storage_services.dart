@@ -1,10 +1,12 @@
 // lib/services/local_storage_service.dart
 import 'dart:convert';
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
+
 import 'package:hive_flutter/hive_flutter.dart';
-import '../models/local_inspection.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
+
+import '../models/local_inspection.dart';
 
 class LocalStorageService {
   static const String INSPECTIONS_BOX = 'inspections';
@@ -119,8 +121,10 @@ class LocalStorageService {
   static Future<List<LocalInspection>> getPendingInspections() async {
     final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
     return box.values
-        .where((inspection) =>
-            !inspection.isSubmitted && inspection.status != 'completed')
+        .where(
+          (inspection) =>
+              !inspection.isSubmitted && inspection.status != 'completed',
+        )
         .toList();
   }
 
@@ -148,7 +152,8 @@ class LocalStorageService {
 
   // Helper method to delete inspection images
   static Future<void> _deleteInspectionImages(
-      LocalInspection inspection) async {
+    LocalInspection inspection,
+  ) async {
     for (String imagePath in inspection.images.values) {
       try {
         final file = File(imagePath);
@@ -162,15 +167,19 @@ class LocalStorageService {
   }
 
   static bool _isSameInspection(
-      Map<String, dynamic> data1, Map<String, dynamic> data2) {
+    Map<String, dynamic> data1,
+    Map<String, dynamic> data2,
+  ) {
     try {
       // Basic validation
-      if (data1 == null || data2 == null) return false;
       if (data1.isEmpty || data2.isEmpty) return false;
 
       // Helper function to safely compare nested maps
-      bool compareNestedMap(Map<String, dynamic>? map1,
-          Map<String, dynamic>? map2, List<String> keys) {
+      bool compareNestedMap(
+        Map<String, dynamic>? map1,
+        Map<String, dynamic>? map2,
+        List<String> keys,
+      ) {
         if (map1 == null || map2 == null) return false;
         return keys.every((key) => map1[key] == map2[key]);
       }
@@ -188,25 +197,29 @@ class LocalStorageService {
       }
 
       // 1. Check Vehicle Information
-      final vehicleInfo1 =
-          getNestedValue<Map<String, dynamic>>(data1, ['vehicleInfo']);
-      final vehicleInfo2 =
-          getNestedValue<Map<String, dynamic>>(data2, ['vehicleInfo']);
+      final vehicleInfo1 = getNestedValue<Map<String, dynamic>>(data1, [
+        'vehicleInfo',
+      ]);
+      final vehicleInfo2 = getNestedValue<Map<String, dynamic>>(data2, [
+        'vehicleInfo',
+      ]);
 
       if (vehicleInfo1 != null && vehicleInfo2 != null) {
-        final vehicleMatches = compareNestedMap(
-          vehicleInfo1,
-          vehicleInfo2,
-          ['registrationNumber', 'chassisNumber', 'engineNumber'],
-        );
+        final vehicleMatches = compareNestedMap(vehicleInfo1, vehicleInfo2, [
+          'registrationNumber',
+          'chassisNumber',
+          'engineNumber',
+        ]);
         if (!vehicleMatches) return false;
       }
 
       // 2. Check Inspection Metadata
-      final inspectionMetadata1 =
-          getNestedValue<Map<String, dynamic>>(data1, ['metadata']);
-      final inspectionMetadata2 =
-          getNestedValue<Map<String, dynamic>>(data2, ['metadata']);
+      final inspectionMetadata1 = getNestedValue<Map<String, dynamic>>(data1, [
+        'metadata',
+      ]);
+      final inspectionMetadata2 = getNestedValue<Map<String, dynamic>>(data2, [
+        'metadata',
+      ]);
 
       if (inspectionMetadata1 != null && inspectionMetadata2 != null) {
         final metadataMatches = compareNestedMap(
@@ -231,32 +244,36 @@ class LocalStorageService {
       }
 
       // 4. Check Location Data (if available)
-      final location1 =
-          getNestedValue<Map<String, dynamic>>(data1, ['location']);
-      final location2 =
-          getNestedValue<Map<String, dynamic>>(data2, ['location']);
+      final location1 = getNestedValue<Map<String, dynamic>>(data1, [
+        'location',
+      ]);
+      final location2 = getNestedValue<Map<String, dynamic>>(data2, [
+        'location',
+      ]);
 
       if (location1 != null && location2 != null) {
-        final locationMatches = compareNestedMap(
-          location1,
-          location2,
-          ['latitude', 'longitude', 'address'],
-        );
+        final locationMatches = compareNestedMap(location1, location2, [
+          'latitude',
+          'longitude',
+          'address',
+        ]);
         if (!locationMatches) return false;
       }
 
       // 5. Check Customer Information (if available)
-      final customer1 =
-          getNestedValue<Map<String, dynamic>>(data1, ['customer']);
-      final customer2 =
-          getNestedValue<Map<String, dynamic>>(data2, ['customer']);
+      final customer1 = getNestedValue<Map<String, dynamic>>(data1, [
+        'customer',
+      ]);
+      final customer2 = getNestedValue<Map<String, dynamic>>(data2, [
+        'customer',
+      ]);
 
       if (customer1 != null && customer2 != null) {
-        final customerMatches = compareNestedMap(
-          customer1,
-          customer2,
-          ['id', 'name', 'contact'],
-        );
+        final customerMatches = compareNestedMap(customer1, customer2, [
+          'id',
+          'name',
+          'contact',
+        ]);
         if (!customerMatches) return false;
       }
 

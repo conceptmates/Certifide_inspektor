@@ -152,7 +152,7 @@ class _LoginPageState extends State<LoginPage> {
 
         if (!mounted) return;
 
-        if (response != null && response['success'] == true) {
+        if (response['success'] == true) {
           final userProvider =
               Provider.of<UserProvider>(context, listen: false);
           if (response['data'] != null &&
@@ -171,7 +171,7 @@ class _LoginPageState extends State<LoginPage> {
           }
         } else {
           _showErrorDialog(
-              response?['message'] ?? 'Unable to sign in. Please try again.');
+              response['message'] ?? 'Unable to sign in. Please try again.');
         }
       } catch (e) {
         if (!mounted) return;

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_item.dart';
 import '../../data/inspection_storage_model.dart';
@@ -283,6 +284,46 @@ class _InspectionScreenState extends State<InspectionScreen> {
     });
   }
 
+  IconData _getSectionIcon(String sectionTitle) {
+    switch (sectionTitle.toLowerCase()) {
+      case 'documents':
+        return Icons.description;
+      case 'body panel':
+        return Icons.directions_car;
+      case 'flood affected signs':
+        return Icons.water_damage;
+      case 'data set - i':
+      case 'data set - ii':
+        return Icons.analytics;
+      case 'battery':
+        return Icons.battery_full;
+      case 'coolant':
+        return Icons.opacity;
+      case 'under hood':
+        return Icons.car_repair;
+      case 'brake fluid':
+        return Icons.speed;
+      case 'tire':
+        return Icons.tire_repair;
+      case 'exterior':
+        return Icons.directions_car_filled;
+      case 'a/c':
+        return Icons.ac_unit;
+      case 'interior':
+        return Icons.airline_seat_recline_normal;
+      case 'dicky':
+        return Icons.luggage;
+      case 'test drive':
+        return Icons.drive_eta;
+      case 'after warmup':
+        return Icons.local_fire_department;
+      case 'summary / remarks':
+        return Icons.summarize;
+      default:
+        return Icons.checklist;
+    }
+  }
+
   Future<void> _loadDataFromStorage() async {
     try {
       final storedData =
@@ -482,14 +523,64 @@ class _InspectionScreenState extends State<InspectionScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF667eea), Color(0xFF764ba2)],
             ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF667eea).withAlpha(76),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withAlpha(51),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  _getSectionIcon(title),
+                  color: Colors.white,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    Text(
+                      '${items.length} items to inspect',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withAlpha(204),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
         ListView.builder(
@@ -1001,10 +1092,59 @@ class _InspectionScreenState extends State<InspectionScreen> {
         endDrawer: _buildDrawer(), // Add this line
         body: Column(
           children: [
-            LinearProgressIndicator(
-              value: (_currentSection + 1) / _sections.length,
-              backgroundColor: Colors.grey[200],
-              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+            Container(
+              height: 8,
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Stack(
+                children: [
+                  Container(
+                    width: double.infinity,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      color: Theme.of(context).brightness == Brightness.dark
+                          ? Colors.grey[800]
+                          : Colors.grey[200],
+                    ),
+                  ),
+                  Container(
+                    width: MediaQuery.of(context).size.width *
+                        ((_currentSection + 1) / _sections.length) *
+                        0.87,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Section ${_currentSection + 1} of ${_sections.length}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    '${((_currentSection + 1) / _sections.length * 100).round()}% Complete',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
             ),
             Expanded(
               child: ListView(
@@ -1020,35 +1160,78 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     padding: const EdgeInsets.all(16.0),
                     child: SizedBox(
                       width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          elevation: 5,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                      height: 56,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: _currentSection == _sections.length - 1
+                              ? const LinearGradient(
+                                  colors: [
+                                    Color(0xFF11998e),
+                                    Color(0xFF38ef7d)
+                                  ],
+                                )
+                              : const LinearGradient(
+                                  colors: [
+                                    Color(0xFF667eea),
+                                    Color(0xFF764ba2)
+                                  ],
+                                ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_currentSection == _sections.length - 1
+                                      ? const Color(0xFF11998e)
+                                      : const Color(0xFF667eea))
+                                  .withAlpha(102),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
                         ),
-                        onPressed: _isSubmitting ? null : _nextSection,
-                        child: _isSubmitting &&
-                                _currentSection == _sections.length - 1
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white),
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                          onPressed: _isSubmitting ? null : _nextSection,
+                          child: _isSubmitting &&
+                                  _currentSection == _sections.length - 1
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white),
+                                  ),
+                                )
+                              : Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      _currentSection == _sections.length - 1
+                                          ? 'FINISH INSPECTION'
+                                          : 'NEXT SECTION',
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Icon(
+                                      _currentSection == _sections.length - 1
+                                          ? Icons.check_circle_outline
+                                          : Icons.arrow_forward,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ],
                                 ),
-                              )
-                            : Text(
-                                _currentSection == _sections.length - 1
-                                    ? 'FINISH'
-                                    : 'NEXT',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
+                        ),
                       ),
                     ),
                   ),
@@ -1060,7 +1243,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
       ),
     );
   }
-
 
   Widget _buildDrawer() {
     return Drawer(
