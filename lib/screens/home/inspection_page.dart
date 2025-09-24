@@ -1365,59 +1365,233 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   Widget _buildDrawer() {
     return Drawer(
+      elevation: 0,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(
-        // Add SafeArea
         child: Column(
           children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-              ),
-              child: const Center(
-                child: Text(
-                  'Sections',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
+            // Premium Header with gradient
+            SizedBox(
+              height: 140,
+              width: double.infinity,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withAlpha(51),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Icon(
+                      Icons.checklist_rtl,
+                      color: Colors.white,
+                      size: 32,
+                    ),
                   ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Inspection Sections',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '${_sections.length} sections available',
+                    style: TextStyle(
+                      color: Colors.white.withAlpha(204),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 16),
+
+            // Sections list
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: _sections.length,
+                  itemBuilder: (context, index) {
+                    final section = _sections[index];
+                    final isSelected = _currentSection == index;
+                    final isCompleted = index < _currentSection;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        gradient: isSelected
+                            ? const LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [
+                                  Color(0xFF667eea),
+                                  Color(0xFF764ba2),
+                                ],
+                              )
+                            : null,
+                        color: isSelected ? null : Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                              ? Colors.transparent
+                              : Theme.of(context).dividerColor.withAlpha(51),
+                          width: 1,
+                        ),
+                        boxShadow: isSelected
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFF667eea).withAlpha(76),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                                BoxShadow(
+                                  color: const Color(0xFF764ba2).withAlpha(51),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 4),
+                        leading: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: isCompleted
+                                ? Colors.green.withAlpha(25)
+                                : isSelected
+                                    ? Colors.white.withAlpha(51)
+                                    : Theme.of(context)
+                                        .dividerColor
+                                        .withAlpha(25),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            isCompleted
+                                ? Icons.check_circle
+                                : _getSectionIcon(section['title']),
+                            size: 20,
+                            color: isCompleted
+                                ? Colors.green
+                                : isSelected
+                                    ? Colors.white
+                                    : Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withAlpha(153),
+                          ),
+                        ),
+                        title: Text(
+                          section['title'],
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight:
+                                isSelected ? FontWeight.w600 : FontWeight.w500,
+                            color: isSelected
+                                ? Colors.white
+                                : Theme.of(context).textTheme.bodyLarge?.color,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${(section['items'] as List).length} items',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isSelected
+                                ? Colors.white.withAlpha(204)
+                                : Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.color
+                                    ?.withAlpha(153),
+                          ),
+                        ),
+                        trailing: isSelected
+                            ? Icon(
+                                Icons.arrow_forward_ios,
+                                size: 14,
+                                color: Colors.white,
+                              )
+                            : null,
+                        onTap: () {
+                          setState(() {
+                            _currentSection = index;
+                            _isScrollable = false;
+                            _showButton = true;
+                          });
+
+                          Future.delayed(const Duration(milliseconds: 100), () {
+                            setState(() {
+                              _isScrollable =
+                                  _scrollController.position.maxScrollExtent >
+                                      0;
+                              _showButton = !_isScrollable;
+                            });
+
+                            if (_scrollController.hasClients) {
+                              _scrollController.animateTo(
+                                0,
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeOut,
+                              );
+                            }
+                          });
+
+                          Navigator.pop(context);
+                        },
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _sections.length,
-                itemBuilder: (context, index) {
-                  final section = _sections[index];
-                  return ListTile(
-                    title: Text(section['title']),
-                    selected: _currentSection == index,
-                    onTap: () {
-                      setState(() {
-                        _currentSection = index;
-                        _isScrollable = false;
-                        _showButton = true;
-                      });
 
-                      Future.delayed(const Duration(milliseconds: 100), () {
-                        setState(() {
-                          _isScrollable =
-                              _scrollController.position.maxScrollExtent > 0;
-                          _showButton = !_isScrollable;
-                        });
-
-                        if (_scrollController.hasClients) {
-                          _scrollController.animateTo(
-                            0,
-                            duration: const Duration(milliseconds: 300),
-                            curve: Curves.easeOut,
-                          );
-                        }
-                      });
-
-                      Navigator.pop(context); // Close the drawer
-                    },
-                  );
-                },
+            // Bottom section
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Theme.of(context).dividerColor.withAlpha(51),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.color
+                        ?.withAlpha(153),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Tap section to navigate',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.color
+                          ?.withAlpha(153),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
