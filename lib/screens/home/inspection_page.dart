@@ -48,6 +48,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   bool _showButton = true;
   bool _isScrollable = false;
   bool _isSubmitting = false;
+  bool _showSectionTitle = false;
 
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
@@ -324,6 +325,79 @@ class _InspectionScreenState extends State<InspectionScreen> {
     }
   }
 
+  String _getPlaceholderText(String itemTitle, String sectionTitle) {
+    final title = itemTitle.toLowerCase();
+    final section = sectionTitle.toLowerCase();
+
+    // Numeric placeholders
+    if (title.contains('battery voltage') || title.contains('voltage')) {
+      return 'e.g. 12.4V';
+    }
+    if (title.contains('specific gravity') || title.contains('sg')) {
+      return 'e.g. 1.265';
+    }
+    if (title.contains('tyre pressure') || title.contains('pressure')) {
+      return 'e.g. 32 PSI';
+    }
+    if (title.contains('tread depth') || title.contains('depth')) {
+      return 'e.g. 4.5mm';
+    }
+    if (title.contains('odometer') || title.contains('mileage')) {
+      return 'e.g. 45,678 km';
+    }
+    if (title.contains('engine rpm') || title.contains('rpm')) {
+      return 'e.g. 850 RPM';
+    }
+    if (title.contains('temperature') || title.contains('temp')) {
+      return 'e.g. 85°C';
+    }
+
+    // Text/description placeholders
+    if (title.contains('registration') ||
+        title.contains('number') ||
+        title.contains('plate')) {
+      return 'e.g. MH12AB1234';
+    }
+    if (title.contains('chassis') || title.contains('vin')) {
+      return 'e.g. MA1234567890123456';
+    }
+    if (title.contains('engine number') || title.contains('engine no')) {
+      return 'e.g. G4FC123456';
+    }
+    if (title.contains('model') || title.contains('variant')) {
+      return 'e.g. Verna SX 1.6L';
+    }
+    if (title.contains('year') || title.contains('manufacture')) {
+      return 'e.g. 2019';
+    }
+    if (title.contains('color') || title.contains('colour')) {
+      return 'e.g. Pearl White';
+    }
+
+    // Condition-based placeholders
+    if (title.contains('scratch') || title.contains('dent')) {
+      return 'e.g. Minor scratch on door';
+    }
+    if (title.contains('noise') || title.contains('sound')) {
+      return 'e.g. Slight grinding noise';
+    }
+    if (title.contains('leak') || title.contains('fluid')) {
+      return 'e.g. No leakage observed';
+    }
+
+    // Section-specific placeholders
+    switch (section) {
+      case 'documents':
+        return 'Enter document details...';
+      case 'test drive':
+        return 'Describe driving performance...';
+      case 'summary / remarks':
+        return 'Overall condition summary...';
+      default:
+        return 'Enter inspection details...';
+    }
+  }
+
   Future<void> _loadDataFromStorage() async {
     try {
       final storedData =
@@ -391,6 +465,16 @@ class _InspectionScreenState extends State<InspectionScreen> {
   void _onScroll() {
     if (!_isScrollable) return;
 
+    // Check if we should show section title in app bar (when scrolled past header)
+    bool shouldShowSectionTitle = _scrollController.position.pixels > 100;
+
+    if (shouldShowSectionTitle != _showSectionTitle) {
+      setState(() {
+        _showSectionTitle = shouldShowSectionTitle;
+      });
+    }
+
+    // Check if we should show bottom button
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 50) {
       if (!_showButton) {
@@ -596,6 +680,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
               currentValue: itemValues[item.uniqueId] ??
                   (item.useTextField ? '' : item.options?.first.value ?? ''),
               dropdownOptions: item.options,
+              placeholderText: _getPlaceholderText(item.title, title),
               onValueChanged: (newValue) {
                 Future.microtask(() {
                   if (mounted) {
@@ -1042,12 +1127,46 @@ class _InspectionScreenState extends State<InspectionScreen> {
         key: _scaffoldKey,
         appBar: AppBar(
           toolbarHeight: 70,
-          title: const Text(
-            'Certifide',
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 24,
-            ),
+          title: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: _showSectionTitle
+                ? Row(
+                    key: const ValueKey('sectionTitle'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor.withAlpha(51),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          _getSectionIcon(_sections[_currentSection]['title']),
+                          size: 20,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          _sections[_currentSection]['title'],
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 20,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  )
+                : const Text(
+                    'Certifide',
+                    key: ValueKey('appTitle'),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 24,
+                    ),
+                  ),
           ),
           actions: [
             IconButton(

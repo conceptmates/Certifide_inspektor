@@ -25,6 +25,7 @@ class CustomInspectionItem<T> extends StatefulWidget {
   final bool allowMultiImage;
   final List<String>? multiImagePaths;
   final Function(List<String>?)? onMultiImageChanged;
+  final String? placeholderText;
 
   const CustomInspectionItem({
     super.key,
@@ -45,6 +46,7 @@ class CustomInspectionItem<T> extends StatefulWidget {
     this.allowMultiImage = false,
     this.multiImagePaths,
     this.onMultiImageChanged,
+    this.placeholderText,
   });
 
   @override
@@ -673,6 +675,11 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                           fillColor: Theme.of(context).brightness == Brightness.dark
                               ? Colors.grey[850]
                               : Colors.grey[50],
+                          hintText: widget.placeholderText,
+                          hintStyle: TextStyle(
+                            color: Theme.of(context).hintColor.withAlpha(153),
+                            fontSize: 14,
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide(
