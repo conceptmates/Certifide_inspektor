@@ -5,10 +5,12 @@ class DropdownOption<T> {
   final T value;
   final String label;
   final Color color;
+  final IconData? icon;
 
   const DropdownOption({
     required this.value,
     required this.label,
     required this.color,
+    this.icon,
   });
 }

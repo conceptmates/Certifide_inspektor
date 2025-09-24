@@ -734,9 +734,29 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                         items: widget.dropdownOptions
                                 ?.map((option) => DropdownMenuItem<T>(
                                       value: option.value,
-                                      child: Text(
-                                        option.label,
-                                        style: TextStyle(color: option.color),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (option.icon != null) ...[
+                                            Icon(
+                                              option.icon,
+                                              size: 18,
+                                              color: option.color,
+                                            ),
+                                            const SizedBox(width: 8),
+                                          ],
+                                          Flexible(
+                                            child: Text(
+                                              option.label,
+                                              style: TextStyle(
+                                                color: option.color,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ))
                                 .toList() ??
