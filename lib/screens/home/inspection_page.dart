@@ -677,6 +677,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
             return CustomInspectionItem<String>(
               key: ValueKey('${item.uniqueId}_$index'),
               title: item.title,
+              fieldId: item.uniqueId,
+              showInfoButton: true,
               currentValue: itemValues[item.uniqueId] ??
                   (item.useTextField ? '' : item.options?.first.value ?? ''),
               dropdownOptions: item.options,

@@ -1,11 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:open_file/open_file.dart';
+
 import '../models/drop_down.dart';
+import 'inspection_field_info_sheet.dart';
 
 class CustomInspectionItem<T> extends StatefulWidget {
   final String title;
@@ -26,6 +29,8 @@ class CustomInspectionItem<T> extends StatefulWidget {
   final List<String>? multiImagePaths;
   final Function(List<String>?)? onMultiImageChanged;
   final String? placeholderText;
+  final String? fieldId;
+  final bool showInfoButton;
 
   const CustomInspectionItem({
     super.key,
@@ -47,6 +52,8 @@ class CustomInspectionItem<T> extends StatefulWidget {
     this.multiImagePaths,
     this.onMultiImageChanged,
     this.placeholderText,
+    this.fieldId,
+    this.showInfoButton = false,
   });
 
   @override
@@ -653,13 +660,20 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    widget.title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).textTheme.titleMedium?.color,
-                    ),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          widget.title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color:
+                                Theme.of(context).textTheme.titleMedium?.color,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 if (widget.useTextField)
@@ -672,9 +686,10 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                         maxLines: null,
                         decoration: InputDecoration(
                           filled: true,
-                          fillColor: Theme.of(context).brightness == Brightness.dark
-                              ? Colors.grey[850]
-                              : Colors.grey[50],
+                          fillColor:
+                              Theme.of(context).brightness == Brightness.dark
+                                  ? Colors.grey[850]
+                                  : Colors.grey[50],
                           hintText: widget.placeholderText,
                           hintStyle: TextStyle(
                             color: Theme.of(context).hintColor.withAlpha(153),
@@ -689,7 +704,8 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide(
-                              color: Theme.of(context).dividerColor.withAlpha(128),
+                              color:
+                                  Theme.of(context).dividerColor.withAlpha(128),
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
@@ -938,14 +954,22 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                     ),
                   ),
                   maxLines: 3,
-                onChanged: (value) {
-                  if (mounted) {
-                    widget.onDataChanged?.call();
+                  onChanged: (value) {
+                    if (mounted) {
+                      widget.onDataChanged?.call();
                     }
                   },
                 ),
               ),
             ],
+            // Info button at bottom left corner
+            if (widget.showInfoButton && widget.fieldId != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: InspectionInfoButton(
+                  fieldId: widget.fieldId!,
+                ),
+              ),
           ],
         ),
       ),
