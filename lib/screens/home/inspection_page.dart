@@ -17,6 +17,7 @@ import '../../utils/connectivity_checker.dart';
 import '../../utils/data_formatter.dart';
 import '../../widgets/custom_inspection_item.dart';
 import '../main_screen.dart';
+import '../../utils/ads manager/rewarded_interstitial_ad.dart';
 
 class InspectionScreen extends StatefulWidget {
   final bool isNewInspection;
@@ -52,6 +53,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
+
+  final RewardedInterstitialAdManager _rewardedAdManager =
+      RewardedInterstitialAdManager();
 
   final List<Map<String, dynamic>> _sections = [
     {
@@ -148,6 +152,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
       } else {
         await _loadDataFromStorage();
       }
+
+      // Load rewarded interstitial ad
+      _rewardedAdManager.loadRewardedInterstitialAd();
 
       if (mounted) {
         setState(() {});
@@ -780,7 +787,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     ? null
                     : () {
                         Navigator.of(context).pop();
-                        _handleSubmission();
+                        _showRewardedAdAndSubmit();
                       },
                 child: _isSubmitting
                     ? const SizedBox(
@@ -798,6 +805,32 @@ class _InspectionScreenState extends State<InspectionScreen> {
           );
         },
       );
+    }
+  }
+
+  Future<void> _showRewardedAdAndSubmit() async {
+    try {
+      await _rewardedAdManager.showRewardedInterstitialAd(
+        onUserEarnedReward: (ad, rewardItem) {
+          print('User earned reward: ${rewardItem.amount} ${rewardItem.type}');
+          // Proceed with submission after earning reward
+          _handleSubmission();
+        },
+        onAdClosed: () {
+          print('Rewarded ad closed');
+          // Still proceed with submission even if ad was closed without reward
+          _handleSubmission();
+        },
+        onAdFailedToShow: () {
+          print('Failed to show rewarded ad');
+          // Proceed with submission if ad fails to show
+          _handleSubmission();
+        },
+      );
+    } catch (e) {
+      print('Error showing rewarded ad: $e');
+      // Proceed with submission if there's an error
+      _handleSubmission();
     }
   }
 
@@ -1580,6 +1613,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     _scrollController.dispose();
     _cleanupControllers();
     _isSubmitting = false;
+    _rewardedAdManager.dispose();
 
     // Close the box if it's open
     if (_inspectionBox?.isOpen ?? false) {

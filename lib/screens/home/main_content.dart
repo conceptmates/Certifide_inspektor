@@ -11,6 +11,7 @@ import '../../widgets/fade_animation.dart';
 import '../../widgets/menu_icon.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/inspection_provider.dart';
+import '../../utils/ads manager/banner_ad_manager.dart';
 
 class MainContent extends StatefulWidget {
   final VoidCallback onMenuTap;
@@ -553,6 +554,11 @@ class _MainContentState extends State<MainContent>
                         subtitle: 'Get your car inspected by Professionals',
                         color: Color(0xFF6366F1),
                         onTap: _launchBookingWebsite,
+                      ),
+                      // Banner Ad
+                      FadeAnimation(
+                        1.7,
+                        const BannerAdWidget(),
                       ),
                       if (pendingCount > 0)
                         _buildQuickActionCard(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../routes/routes.dart';
 import '../../widgets/fade_animation.dart';
+import '../../utils/ads manager/interstitial_ad.dart';
 
 class VehicleDetailsForm extends StatefulWidget {
   final bool isNewInspection;
@@ -28,6 +29,8 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   
+  final InterstitialAdManager _interstitialAdManager = InterstitialAdManager();
+  
   final List<String> _transmissionTypes = [
     'Manual',
     'Automatic',
@@ -51,6 +54,9 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
       curve: Curves.easeInOut,
     ));
     _animationController.forward();
+    
+    // Load interstitial ad
+    _interstitialAdManager.loadAd();
   }
 
   @override
@@ -61,6 +67,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
     _yearController.dispose();
     _variantController.dispose();
     _colourController.dispose();
+    _interstitialAdManager.dispose();
     super.dispose();
   }
 
@@ -75,14 +82,22 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         'transmission': _selectedTransmission,
       };
 
-      Navigator.pushReplacementNamed(
-        context,
-        Routes.inspection,
-        arguments: {
-          'isNew': widget.isNewInspection,
-          'vehicleDetails': vehicleData,
-        },
-      );
+      // Show interstitial ad before proceeding to inspection
+      _interstitialAdManager.showAdIfReady();
+      
+      // Navigate after a short delay to allow ad to show
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          Navigator.pushReplacementNamed(
+            context,
+            Routes.inspection,
+            arguments: {
+              'isNew': widget.isNewInspection,
+              'vehicleDetails': vehicleData,
+            },
+          );
+        }
+      });
     }
   }
 

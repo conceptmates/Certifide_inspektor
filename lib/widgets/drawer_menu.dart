@@ -39,11 +39,13 @@ class _DrawerMenuState extends State<DrawerMenu> {
 
   Future<void> _checkUserRole() async {
     final roles = await UserRole.getUserRoles();
-    setState(() {
-      isInspector = roles.contains(UserRole.INSPECTOR);
-    });
-    if (isInspector) {
-      _loadTokenBalance();
+    if (mounted) {
+      setState(() {
+        isInspector = roles.contains(UserRole.INSPECTOR);
+      });
+      if (isInspector) {
+        _loadTokenBalance();
+      }
     }
   }
 

@@ -1,2 +1,0 @@
-D:/ConceptMates/apps/certifide_app/android/app/.cxx/RelWithDebInfo/3f461v3m/x86/CMakeFiles/edit_cache.dir
-D:/ConceptMates/apps/certifide_app/android/app/.cxx/RelWithDebInfo/3f461v3m/x86/CMakeFiles/rebuild_cache.dir
