@@ -139,12 +139,9 @@ class _MainScreenState extends State<MainScreen> {
           }
 
           return Scaffold(
-            body: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
-              child: screens[_selectedIndex],
-              transitionBuilder: (Widget child, Animation<double> animation) {
-                return FadeTransition(opacity: animation, child: child);
-              },
+            body: IndexedStack(
+              index: _selectedIndex,
+              children: screens,
             ),
             bottomNavigationBar: CustomBottomNavBar(
               selectedIndex: _selectedIndex,

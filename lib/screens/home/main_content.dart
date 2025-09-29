@@ -8,20 +8,13 @@ import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
 import '../../routes/routes.dart';
 import '../../widgets/fade_animation.dart';
-import '../../widgets/menu_icon.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/inspection_provider.dart';
 import '../../utils/ads manager/banner_ad_manager.dart';
 
 class MainContent extends StatefulWidget {
-  final VoidCallback onMenuTap;
-  final bool isDrawerOpen;
+  const MainContent({super.key});
 
-  const MainContent({
-    super.key,
-    required this.onMenuTap,
-    required this.isDrawerOpen,
-  });
   @override
   _MainContentState createState() => _MainContentState();
 }
@@ -73,16 +66,16 @@ class _MainContentState extends State<MainContent>
     }
   }
 
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) {
-      return 'Good Morning';
-    } else if (hour < 17) {
-      return 'Good Afternoon';
-    } else {
-      return 'Good Evening';
-    }
-  }
+  // String _getGreeting() {
+  //   final hour = DateTime.now().hour;
+  //   if (hour < 12) {
+  //     return 'Good Morning';
+  //   } else if (hour < 17) {
+  //     return 'Good Afternoon';
+  //   } else {
+  //     return 'Good Evening';
+  //   }
+  // }
 
   void _initializeAnimations() {
     rippleController = AnimationController(
@@ -373,55 +366,51 @@ class _MainContentState extends State<MainContent>
                       ],
                     ),
                     child: Row(
-                        children: [
-                        NeumorphicAnimatedIcon(
-                          onTap: widget.onMenuTap,
-                          isDrawerOpen: widget.isDrawerOpen,
-                        ),
-                        const SizedBox(width: 20),
+                      children: [
                         Expanded(
                           child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                            _getGreeting(),
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[600],
-                            ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                            _userName,
-                            style: const TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                            ),
-                          ],
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Welcome',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                _userName,
+                                style: const TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         Badge(
                           backgroundColor: Colors.red,
                           label: Text('3'),
                           child: IconButton(
-                          onPressed: () {
-                            // Handle notification tap
-                          },
-                          icon: Icon(
-                            Icons.notifications_outlined,
-                            color: Colors.blue[600],
-                            size: 24,
-                          ),
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.blue.withValues(alpha: 0.1),
-                            padding: const EdgeInsets.all(12),
-                            shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            onPressed: () {
+                              // Handle notification tap
+                            },
+                            icon: Icon(
+                              Icons.notifications_outlined,
+                              color: Colors.blue[600],
+                              size: 24,
                             ),
-                          ),
+                            style: IconButton.styleFrom(
+                              backgroundColor:
+                                  Colors.blue.withValues(alpha: 0.1),
+                              padding: const EdgeInsets.all(12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                           ),
                         ),
                       ],
