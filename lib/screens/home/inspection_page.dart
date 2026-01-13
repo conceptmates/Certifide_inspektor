@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
@@ -15,7 +17,7 @@ import '../../services/api_services.dart';
 import '../../services/local_storage_services.dart';
 import '../../utils/connectivity_checker.dart';
 import '../../utils/data_formatter.dart';
-import '../../widgets/custom_inspection_item.dart';
+import '../../widgets/inspection_field_info_sheet.dart';
 import '../main_screen.dart';
 import '../../utils/ads manager/rewarded_interstitial_ad.dart';
 
@@ -38,6 +40,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _scrollController = ScrollController();
   int _currentSection = 0;
+  int _currentItemIndex = 0;
   Map<String, String?> itemImages = {};
   Map<String, String> itemRemarks = {};
   Map<String, String> itemValues = {};
@@ -611,6 +614,16 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   _buildInspectionSection(String title, List<InspectionItem<String>> items) {
+    // Ensure current item index is within bounds
+    if (_currentItemIndex >= items.length) {
+      _currentItemIndex = 0;
+    }
+    if (_currentItemIndex < 0) {
+      _currentItemIndex = 0;
+    }
+
+    final item = items[_currentItemIndex];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -661,7 +674,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       ),
                     ),
                     Text(
-                      '${items.length} items to inspect',
+                      'Item ${_currentItemIndex + 1} of ${items.length}',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.white.withAlpha(204),
@@ -674,80 +687,608 @@ class _InspectionScreenState extends State<InspectionScreen> {
             ],
           ),
         ),
-        ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-
-            return CustomInspectionItem<String>(
-              key: ValueKey('${item.uniqueId}_$index'),
-              title: item.title,
-              fieldId: item.uniqueId,
-              showInfoButton: true,
-              currentValue: itemValues[item.uniqueId] ??
-                  (item.useTextField ? '' : item.options?.first.value ?? ''),
-              dropdownOptions: item.options,
-              placeholderText: _getPlaceholderText(item.title, title),
-              onValueChanged: (newValue) {
-                Future.microtask(() {
-                  if (mounted) {
-                    setState(() {
-                      itemValues[item.uniqueId] = newValue;
-                    });
-                    _autoSave();
-                  }
-                });
-              },
-              allowImage: item.allowImage,
-              allowMultiImage: item.allowMultiImage,
-              imagePath: itemImages[item.uniqueId],
-              multiImagePaths: itemMultiImages[item.uniqueId],
-              onImageChanged: (path) {
-                Future.microtask(() {
-                  if (mounted) {
-                    setState(() {
-                      itemImages[item.uniqueId] = path;
-                    });
-                    _autoSave();
-                  }
-                });
-              },
-              onMultiImageChanged: (paths) {
-                Future.microtask(() {
-                  if (mounted) {
-                    setState(() {
-                      itemMultiImages[item.uniqueId] = paths;
-                    });
-                    _autoSave();
-                  }
-                });
-              },
-              allowRemarks: item.allowRemarks,
-              remarksController:
-                  remarksControllers[item.uniqueId] ?? TextEditingController(),
-              useTextField: item.useTextField,
-              textFieldController: textFieldControllers[item.uniqueId],
-              onDataChanged: () {
-                Future.microtask(() {
-                  if (mounted) {
-                    _autoSave();
-                  }
-                });
-              },
-              allowFileAttachment: item.allowFileAttachment,
-            );
-          },
+        _buildSingleItemContainer(item, title),
+        // Navigation buttons
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              ElevatedButton.icon(
+                onPressed: _currentItemIndex > 0 ? _previousItem : null,
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Previous'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed:
+                    _currentItemIndex < items.length - 1 ? _nextItem : null,
+                icon: const Icon(Icons.arrow_forward),
+                label: const Text('Next'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
+  }
+
+  Widget _buildSingleItemContainer(
+      InspectionItem<String> item, String sectionTitle) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withAlpha(25),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withAlpha(51),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header: Item name + Camera button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    item.title,
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).textTheme.titleLarge?.color,
+                    ),
+                  ),
+                ),
+                if (item.allowImage || item.allowMultiImage)
+                  IconButton(
+                    icon: const Icon(Icons.camera_alt, size: 28),
+                    color: Colors.blue,
+                    onPressed: () {
+                      if (item.allowMultiImage) {
+                        _pickMultiImages(item);
+                      } else {
+                        _showImagePickerOptions(item);
+                      }
+                    },
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Captured image preview (if exists)
+            if (item.allowImage && itemImages[item.uniqueId] != null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Captured Image:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => _showImagePreview(itemImages[item.uniqueId]!),
+                    child: Container(
+                      width: double.infinity,
+                      height: 200,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: Colors.grey.shade300,
+                          width: 1,
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.file(
+                          File(itemImages[item.uniqueId]!),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            // Multi-image preview (if exists)
+            if (item.allowMultiImage &&
+                itemMultiImages[item.uniqueId] != null &&
+                itemMultiImages[item.uniqueId]!.isNotEmpty)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Captured Images:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 150,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: itemMultiImages[item.uniqueId]!.length,
+                      itemBuilder: (context, imgIndex) {
+                        final imagePath =
+                            itemMultiImages[item.uniqueId]![imgIndex];
+                        return Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          width: 150,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.grey.shade300,
+                              width: 1,
+                            ),
+                          ),
+                          child: Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  File(imagePath),
+                                  width: 150,
+                                  height: 150,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              Positioned(
+                                top: 4,
+                                right: 4,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    final updatedPaths = List<String>.from(
+                                        itemMultiImages[item.uniqueId]!)
+                                      ..removeAt(imgIndex);
+                                    setState(() {
+                                      itemMultiImages[item.uniqueId] =
+                                          updatedPaths.isEmpty
+                                              ? null
+                                              : updatedPaths;
+                                    });
+                                    _autoSave();
+                                  },
+                                  child: Container(
+                                    decoration: const BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.cancel,
+                                      size: 18,
+                                      color: Colors.red,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            // Reference placeholder image (only for items that allow images)
+            if (item.allowImage || item.allowMultiImage)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Reference Image:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.grey.shade300,
+                        width: 1,
+                      ),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.image,
+                          size: 64,
+                          color: Colors.grey.shade400,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Reference Image',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            // Item controls (dropdown/text field/remarks)
+            _buildItemControls(item, sectionTitle),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildItemControls(InspectionItem<String> item, String sectionTitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Dropdown or TextField
+        if (item.useTextField)
+          TextField(
+            controller: textFieldControllers[item.uniqueId],
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.grey[850]
+                  : Colors.grey[50],
+              hintText: _getPlaceholderText(item.title, sectionTitle),
+              hintStyle: TextStyle(
+                color: Theme.of(context).hintColor.withAlpha(153),
+                fontSize: 14,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).dividerColor,
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).dividerColor.withAlpha(128),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: Theme.of(context).primaryColor,
+                  width: 2,
+                ),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 12,
+              ),
+            ),
+            keyboardType: TextInputType.multiline,
+            onChanged: (value) {
+              setState(() {
+                itemValues[item.uniqueId] = value;
+              });
+              _autoSave();
+            },
+          )
+        else if (item.options != null)
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.grey[850]
+                  : Colors.grey[50],
+              border: Border.all(
+                color: Theme.of(context).dividerColor.withAlpha(128),
+              ),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: item.options?.any((option) =>
+                          option.value == itemValues[item.uniqueId]) ==
+                      true
+                  ? itemValues[item.uniqueId]
+                  : null,
+              underline: Container(),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              items: item.options
+                      ?.map((option) => DropdownMenuItem<String>(
+                            value: option.value,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (option.icon != null) ...[
+                                  Icon(
+                                    option.icon,
+                                    size: 18,
+                                    color: option.color,
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
+                                Flexible(
+                                  child: Text(
+                                    option.label,
+                                    style: TextStyle(
+                                      color: option.color,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ))
+                      .toList() ??
+                  [],
+              onChanged: (String? newValue) {
+                if (newValue != null && mounted) {
+                  setState(() {
+                    itemValues[item.uniqueId] = newValue;
+                  });
+                  _autoSave();
+                }
+              },
+            ),
+          ),
+        // Remarks field
+        if (item.allowRemarks) ...[
+          const SizedBox(height: 16),
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.grey[850]
+                  : Colors.grey[50],
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: Theme.of(context).dividerColor.withAlpha(128),
+              ),
+            ),
+            child: TextField(
+              controller:
+                  remarksControllers[item.uniqueId] ?? TextEditingController(),
+              decoration: InputDecoration(
+                hintText: '✍️ Add remarks...',
+                hintStyle: TextStyle(
+                  color: Theme.of(context).hintColor,
+                  fontSize: 14,
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+              maxLines: 3,
+              onChanged: (value) {
+                itemRemarks[item.uniqueId] = value;
+                _autoSave();
+              },
+            ),
+          ),
+        ],
+        // Info button
+        const SizedBox(height: 12),
+        InspectionInfoButton(fieldId: item.uniqueId),
+      ],
+    );
+  }
+
+  void _showImagePickerOptions(InspectionItem<String> item) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Colors.blue),
+                title: const Text('Take Photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.camera, item);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Colors.blue),
+                title: const Text('Choose from Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImage(ImageSource.gallery, item);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickImage(
+      ImageSource source, InspectionItem<String> item) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: source,
+        maxWidth: 1024,
+        imageQuality: 85,
+      );
+
+      if (image != null && mounted) {
+        setState(() {
+          itemImages[item.uniqueId] = image.path;
+        });
+        _autoSave();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick image: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickMultiImages(InspectionItem<String> item) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final List<XFile> images = await picker.pickMultiImage(
+        maxWidth: 1024,
+        imageQuality: 85,
+      );
+
+      if (images.isNotEmpty && mounted) {
+        final currentImages = itemMultiImages[item.uniqueId] ?? [];
+        final newImagePaths = images.map((img) => img.path).toList();
+        final updatedPaths = [...currentImages, ...newImagePaths];
+
+        // Limit to 11 images max
+        final finalPaths = updatedPaths.take(11).toList();
+
+        setState(() {
+          itemMultiImages[item.uniqueId] = finalPaths;
+        });
+        _autoSave();
+
+        if (images.length > 11 - currentImages.length) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Only ${11 - currentImages.length} images added. Maximum is 11.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to pick images: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showImagePreview(String imagePath) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+              maxWidth: MediaQuery.of(context).size.width * 0.9,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AppBar(
+                  backgroundColor: Colors.transparent,
+                  elevation: 0,
+                  leading: IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  actions: [
+                    IconButton(
+                      icon: const Icon(Icons.delete),
+                      onPressed: () {
+                        final item = _sections[_currentSection]['items']
+                            as List<InspectionItem<String>>;
+                        final currentItem = item[_currentItemIndex];
+                        setState(() {
+                          itemImages[currentItem.uniqueId] = null;
+                        });
+                        _autoSave();
+                        Navigator.of(context).pop();
+                      },
+                    ),
+                  ],
+                ),
+                Flexible(
+                  child: InteractiveViewer(
+                    panEnabled: true,
+                    boundaryMargin: const EdgeInsets.all(20),
+                    minScale: 0.5,
+                    maxScale: 4,
+                    child: Image.file(
+                      File(imagePath),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _nextItem() {
+    final currentSection = _sections[_currentSection];
+    final items = currentSection['items'] as List<InspectionItem<String>>;
+    if (_currentItemIndex < items.length - 1) {
+      setState(() {
+        _currentItemIndex++;
+      });
+      _autoSave();
+    }
+  }
+
+  void _previousItem() {
+    if (_currentItemIndex > 0) {
+      setState(() {
+        _currentItemIndex--;
+      });
+      _autoSave();
+    }
   }
 
   void _nextSection() {
     if (_currentSection < _sections.length - 1) {
       setState(() {
         _currentSection++;
+        _currentItemIndex = 0; // Reset item index when changing sections
         _showButton = false;
         _isScrollable = false;
       });
@@ -1101,6 +1642,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (_currentSection > 0) {
       setState(() {
         _currentSection--;
+        _currentItemIndex = 0; // Reset item index when changing sections
         _showButton = false; // Hide button when changing sections
       });
 
@@ -1398,6 +1940,43 @@ class _InspectionScreenState extends State<InspectionScreen> {
     );
   }
 
+  bool _isSectionComplete(int sectionIndex) {
+    if (sectionIndex >= _sections.length) return false;
+
+    final section = _sections[sectionIndex];
+    final items = section['items'] as List<InspectionItem<String>>;
+
+    for (var item in items) {
+      // Check items with allowImage - must have image captured
+      if (item.allowImage) {
+        if (itemImages[item.uniqueId] == null ||
+            itemImages[item.uniqueId]!.isEmpty) {
+          return false;
+        }
+      }
+
+      // Check items with useTextField - must have value
+      if (item.useTextField) {
+        final value = itemValues[item.uniqueId] ?? '';
+        if (value.trim().isEmpty) {
+          return false;
+        }
+      }
+
+      // Check items with options (dropdown) - must have selected value (not 'N/A')
+      if (item.options != null && item.options!.isNotEmpty) {
+        final value = itemValues[item.uniqueId] ?? 'N/A';
+        if (value == 'N/A' || value.isEmpty) {
+          return false;
+        }
+      }
+
+      // Remarks are optional, so we don't check them
+    }
+
+    return true;
+  }
+
   Widget _buildDrawer() {
     return Drawer(
       elevation: 0,
@@ -1457,7 +2036,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   itemBuilder: (context, index) {
                     final section = _sections[index];
                     final isSelected = _currentSection == index;
-                    final isCompleted = index < _currentSection;
+                    final isCompleted = _isSectionComplete(index);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
@@ -1526,6 +2105,19 @@ class _InspectionScreenState extends State<InspectionScreen> {
                                         ?.withAlpha(153),
                           ),
                         ),
+                        trailing: isCompleted
+                            ? const Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                                size: 20,
+                              )
+                            : isSelected
+                                ? Icon(
+                                    Icons.arrow_forward_ios,
+                                    size: 14,
+                                    color: Colors.white,
+                                  )
+                                : null,
                         title: Text(
                           section['title'],
                           style: TextStyle(
@@ -1550,16 +2142,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
                                     ?.withAlpha(153),
                           ),
                         ),
-                        trailing: isSelected
-                            ? Icon(
-                                Icons.arrow_forward_ios,
-                                size: 14,
-                                color: Colors.white,
-                              )
-                            : null,
                         onTap: () {
                           setState(() {
                             _currentSection = index;
+                            _currentItemIndex =
+                                0; // Reset item index when selecting section
                             _isScrollable = false;
                             _showButton = true;
                           });
