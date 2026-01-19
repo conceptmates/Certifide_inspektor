@@ -7,15 +7,20 @@ import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/local_inspection.dart';
+import '../models/pending_image.dart';
 
 class LocalStorageService {
   static const String INSPECTIONS_BOX = 'inspections';
   static const String IMAGES_DIR = 'inspection_images';
+  static const String PENDING_IMAGES_BOX = 'pending_images';
 
   static Future<void> init() async {
     await Hive.initFlutter();
     if (!Hive.isAdapterRegistered(3)) {
       Hive.registerAdapter(LocalInspectionAdapter());
+    }
+    if (!Hive.isAdapterRegistered(4)) {
+      Hive.registerAdapter(PendingImageAdapter());
     }
     await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
   }
@@ -49,15 +54,28 @@ class LocalStorageService {
     required Map<String, dynamic> data,
     required Map<String, String?> images,
     String status = 'pending',
+    Map<String, dynamic>? imageMetadata,
   }) async {
     try {
       final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
 
       // Save images to local storage
       Map<String, String> savedImages = {};
+      Map<String, PendingImage> pendingImages = {};
+
       for (var entry in images.entries) {
         if (entry.value != null) {
           String filePath;
+          String section = '';
+          String itemId = entry.key;
+
+          // Get section and itemId from metadata if available
+          if (imageMetadata != null &&
+              imageMetadata.containsKey(entry.key)) {
+            final meta = imageMetadata[entry.key];
+            section = meta['section'] ?? '';
+            itemId = meta['itemId'] ?? entry.key;
+          }
 
           try {
             // Try parsing as JSON first
@@ -77,18 +95,33 @@ class LocalStorageService {
             filePath = entry.value!;
           }
 
-          // Validate file path
-          final File imageFile = File(filePath);
-          if (!imageFile.existsSync()) {
-            print('Image file does not exist: $filePath');
-            continue; // Skip this image
-          }
+          // Check if it's a local path (needs upload) or already a URL
+          if (filePath.startsWith('/') || filePath.startsWith('var/')) {
+            // Local file path - needs to be uploaded
+            final File imageFile = File(filePath);
+            if (!imageFile.existsSync()) {
+              print('Image file does not exist: $filePath');
+              continue;
+            }
 
-          try {
-            final savedPath = await saveImage(filePath);
-            savedImages[entry.key] = savedPath;
-          } catch (e) {
-            print('Error saving image $filePath: $e');
+            try {
+              final savedPath = await saveImage(filePath);
+              savedImages[entry.key] = savedPath;
+              // Mark as pending upload with section and itemId
+              pendingImages[entry.key] = PendingImage(
+                imagePath: savedPath,
+                section: section,
+                itemId: itemId,
+              );
+            } catch (e) {
+              print('Error saving image $filePath: $e');
+            }
+          } else if (filePath.startsWith('http')) {
+            // Already uploaded - URL
+            savedImages[entry.key] = filePath;
+          } else {
+            // Other format - save as is
+            savedImages[entry.key] = filePath;
           }
         }
       }
@@ -100,6 +133,7 @@ class LocalStorageService {
         createdAt: DateTime.now(),
         data: data,
         images: savedImages,
+        pendingImages: pendingImages,
         status: status,
         isSubmitted: false,
       );
@@ -124,6 +158,18 @@ class LocalStorageService {
         .where(
           (inspection) =>
               !inspection.isSubmitted && inspection.status != 'completed',
+        )
+        .toList();
+  }
+
+  static Future<List<LocalInspection>> getInspectionsWithPendingImages() async {
+    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    return box.values
+        .where(
+          (inspection) =>
+              !inspection.isSubmitted &&
+              inspection.pendingImages.isNotEmpty &&
+              inspection.status != 'completed',
         )
         .toList();
   }
@@ -300,15 +346,28 @@ class LocalStorageService {
     required Map<String, dynamic> data,
     required Map<String, String?> images,
     String status = 'offline',
+    Map<String, dynamic>? imageMetadata,
   }) async {
     try {
       final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
 
       // Save images to local storage
       Map<String, String> savedImages = {};
+      Map<String, PendingImage> pendingImages = {};
+
       for (var entry in images.entries) {
         if (entry.value != null) {
           String filePath;
+          String section = '';
+          String itemId = entry.key;
+
+          // Get section and itemId from metadata if available
+          if (imageMetadata != null &&
+              imageMetadata.containsKey(entry.key)) {
+            final meta = imageMetadata[entry.key];
+            section = meta['section'] ?? '';
+            itemId = meta['itemId'] ?? entry.key;
+          }
 
           try {
             // Try parsing as JSON first
@@ -328,18 +387,33 @@ class LocalStorageService {
             filePath = entry.value!;
           }
 
-          // Validate file path
-          final File imageFile = File(filePath);
-          if (!imageFile.existsSync()) {
-            print('Image file does not exist: $filePath');
-            continue; // Skip this image
-          }
+          // Check if it's a local path (needs upload) or already a URL
+          if (filePath.startsWith('/') || filePath.startsWith('var/')) {
+            // Local file path - needs to be uploaded
+            final File imageFile = File(filePath);
+            if (!imageFile.existsSync()) {
+              print('Image file does not exist: $filePath');
+              continue;
+            }
 
-          try {
-            final savedPath = await saveImage(filePath);
-            savedImages[entry.key] = savedPath;
-          } catch (e) {
-            print('Error saving image $filePath: $e');
+            try {
+              final savedPath = await saveImage(filePath);
+              savedImages[entry.key] = savedPath;
+              // Mark as pending upload with section and itemId
+              pendingImages[entry.key] = PendingImage(
+                imagePath: savedPath,
+                section: section,
+                itemId: itemId,
+              );
+            } catch (e) {
+              print('Error saving image $filePath: $e');
+            }
+          } else if (filePath.startsWith('http')) {
+            // Already uploaded - URL
+            savedImages[entry.key] = filePath;
+          } else {
+            // Other format - save as is
+            savedImages[entry.key] = filePath;
           }
         }
       }
@@ -351,6 +425,7 @@ class LocalStorageService {
         createdAt: DateTime.now(),
         data: data,
         images: savedImages,
+        pendingImages: pendingImages,
         status: status,
         isSubmitted: false,
       );
@@ -366,6 +441,73 @@ class LocalStorageService {
       }
 
       rethrow;
+    }
+  }
+
+  static Future<void> updateInspectionImages({
+    required String inspectionId,
+    required Map<String, String> uploadedImages,
+  }) async {
+    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    final inspection = box.get(inspectionId);
+
+    if (inspection != null) {
+      // Update images map with uploaded URLs
+      final updatedImages = Map<String, String>.from(inspection.images);
+      final updatedPendingImages = Map<String, PendingImage>.from(inspection.pendingImages);
+
+      for (var entry in uploadedImages.entries) {
+        if (updatedPendingImages.containsKey(entry.key)) {
+          // Remove from pending and update with URL
+          updatedPendingImages.remove(entry.key);
+          updatedImages[entry.key] = entry.value;
+        }
+      }
+
+      // Save updated inspection
+      final updatedInspection = LocalInspection(
+        id: inspection.id,
+        createdAt: inspection.createdAt,
+        data: inspection.data,
+        images: updatedImages,
+        pendingImages: updatedPendingImages,
+        status: inspection.status,
+        isSubmitted: inspection.isSubmitted,
+      );
+
+      await box.put(inspectionId, updatedInspection);
+    }
+  }
+
+  static Future<void> addPendingImage({
+    required String inspectionId,
+    required String imageKey,
+    required String imagePath,
+    required String section,
+    required String itemId,
+  }) async {
+    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    final inspection = box.get(inspectionId);
+
+    if (inspection != null) {
+      final updatedPendingImages = Map<String, PendingImage>.from(inspection.pendingImages);
+      updatedPendingImages[imageKey] = PendingImage(
+        imagePath: imagePath,
+        section: section,
+        itemId: itemId,
+      );
+
+      final updatedInspection = LocalInspection(
+        id: inspection.id,
+        createdAt: inspection.createdAt,
+        data: inspection.data,
+        images: inspection.images,
+        pendingImages: updatedPendingImages,
+        status: inspection.status,
+        isSubmitted: inspection.isSubmitted,
+      );
+
+      await box.put(inspectionId, updatedInspection);
     }
   }
 }

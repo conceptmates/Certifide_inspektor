@@ -23,13 +23,20 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       images: (fields[3] as Map).cast<String, String>(),
       isSubmitted: fields[4] as bool,
       status: fields[5] as String,
+      pendingImages: (fields[6] as Map?)
+          ?.map((key, value) => MapEntry(
+                key as String,
+                value as PendingImage,
+              ))
+          .cast<String, PendingImage>() ??
+      {},
     );
   }
 
   @override
   void write(BinaryWriter writer, LocalInspection obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -41,7 +48,9 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       ..writeByte(4)
       ..write(obj.isSubmitted)
       ..writeByte(5)
-      ..write(obj.status);
+      ..write(obj.status)
+      ..writeByte(6)
+      ..write(obj.pendingImages);
   }
 
   @override

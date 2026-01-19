@@ -151,6 +151,8 @@ class _LoginPageState extends State<LoginPage> {
           _passwordController.text,
         );
 
+        print('Login response: $response');
+
         if (!mounted) return;
 
         if (response['success'] == true) {

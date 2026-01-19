@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../routes/routes.dart';
+import '../../services/api_services.dart';
 import '../../widgets/fade_animation.dart';
 import '../../utils/ads manager/interstitial_ad.dart';
 
@@ -25,12 +26,12 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
   final _variantController = TextEditingController();
   final _colourController = TextEditingController();
   String _selectedTransmission = 'Manual';
-  
+
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
-  
+
   final InterstitialAdManager _interstitialAdManager = InterstitialAdManager();
-  
+
   final List<String> _transmissionTypes = [
     'Manual',
     'Automatic',
@@ -54,7 +55,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
       curve: Curves.easeInOut,
     ));
     _animationController.forward();
-    
+
     // Load interstitial ad
     _interstitialAdManager.loadAd();
   }
@@ -71,7 +72,9 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
     super.dispose();
   }
 
-  void _proceedToInspection() {
+  bool _isLoading = false;
+
+  void _proceedToInspection() async {
     if (_formKey.currentState!.validate()) {
       final vehicleData = {
         'make': _makeController.text.trim(),
@@ -82,22 +85,67 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         'transmission': _selectedTransmission,
       };
 
-      // Show interstitial ad before proceeding to inspection
-      _interstitialAdManager.showAdIfReady();
-      
-      // Navigate after a short delay to allow ad to show
-      Future.delayed(const Duration(milliseconds: 500), () {
+      setState(() {
+        _isLoading = true;
+      });
+
+      // Call the API to create initial inspection
+      final result = await ApiService.createInitialInspection(vehicleData);
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      if (result['success']) {
+        final inspectionData = result['data'] as Map<String, dynamic>;
+
+        // Show interstitial ad before proceeding to inspection
+        _interstitialAdManager.showAdIfReady();
+
+        // Navigate after a short delay to allow ad to show
         if (mounted) {
-          Navigator.pushReplacementNamed(
-            context,
-            Routes.inspection,
-            arguments: {
-              'isNew': widget.isNewInspection,
-              'vehicleDetails': vehicleData,
-            },
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (mounted) {
+              Navigator.pushReplacementNamed(
+                context,
+                Routes.inspection,
+                arguments: {
+                  'isNew': widget.isNewInspection,
+                  'vehicleDetails': vehicleData,
+                  'inspectionId': inspectionData['inspection_id'],
+                  'inspectionUuid': inspectionData['uuid'],
+                  'referenceNumber': inspectionData['reference_number'],
+                  'viewUrl': inspectionData['view_url'],
+                },
+              );
+            }
+          });
+        }
+      } else {
+        // Show error dialog
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              title: const Text(
+                'Error',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: Text(
+                result['message'] ?? 'Failed to start inspection',
+                style: const TextStyle(color: Colors.white70),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
           );
         }
-      });
+      }
     }
   }
 
@@ -257,7 +305,8 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF1A73E8).withValues(alpha: 0.3),
+                            color:
+                                const Color(0xFF1A73E8).withValues(alpha: 0.3),
                             blurRadius: 20,
                             offset: const Offset(0, 8),
                           ),
@@ -273,12 +322,10 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                           const SizedBox(height: 16),
                           const Text(
                             'Enter Vehicle Information',
-                            
                             style: TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
-                              
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -295,7 +342,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 32),
 
                   // Form Fields
@@ -328,7 +375,6 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                               return null;
                             },
                           ),
-                          
                           _buildTextField(
                             controller: _modelController,
                             label: 'Model',
@@ -341,7 +387,6 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                               return null;
                             },
                           ),
-                          
                           _buildTextField(
                             controller: _yearController,
                             label: 'Year',
@@ -358,20 +403,20 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                               }
                               final year = int.tryParse(value);
                               final currentYear = DateTime.now().year;
-                              if (year == null || year < 1900 || year > currentYear + 1) {
+                              if (year == null ||
+                                  year < 1900 ||
+                                  year > currentYear + 1) {
                                 return 'Please enter a valid year';
                               }
                               return null;
                             },
                           ),
-                          
                           _buildTextField(
                             controller: _variantController,
                             label: 'Variant',
                             hint: 'e.g., LX, EX, SE (Optional)',
                             icon: Icons.tune,
                           ),
-                          
                           _buildTextField(
                             controller: _colourController,
                             label: 'Colour',
@@ -384,13 +429,12 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                               return null;
                             },
                           ),
-                          
                           _buildDropdownField(),
                         ],
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 32),
 
                   // Continue Button
@@ -408,7 +452,8 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
+                            color:
+                                const Color(0xFF4CAF50).withValues(alpha: 0.3),
                             blurRadius: 15,
                             offset: const Offset(0, 6),
                           ),
@@ -418,33 +463,37 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                         color: Colors.transparent,
                         child: InkWell(
                           borderRadius: BorderRadius.circular(16),
-                          onTap: _proceedToInspection,
-                          child: const Center(
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.play_arrow_rounded,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                                SizedBox(width: 8),
-                                Text(
-                                  'Start Inspection',
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                          onTap: _isLoading ? null : _proceedToInspection,
+                          child: Center(
+                            child: _isLoading
+                                ? const CircularProgressIndicator(
                                     color: Colors.white,
+                                  )
+                                : const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.play_arrow_rounded,
+                                        color: Colors.white,
+                                        size: 24,
+                                      ),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Start Inspection',
+                                        style: TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ),
-                              ],
-                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 20),
                 ],
               ),

@@ -31,16 +31,24 @@ class AppRoutes {
       Routes.profile: (context) => const ProfilePage(),
       Routes.history: (context) => HistoryPage(),
       Routes.inspection: (context) {
-        final args = ModalRoute.of(context)!.settings.arguments
-            as Map<String, dynamic>?;
+        final args =
+            ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
+        final inspectionIdValue = args?['inspectionId'];
+        final inspectionId = inspectionIdValue is int
+            ? inspectionIdValue
+            : inspectionIdValue is String
+                ? int.tryParse(inspectionIdValue)
+                : null;
+
         return InspectionScreen(
           isNewInspection: args?['isNew'] ?? false,
           vehicleDetails: args?['vehicleDetails'],
+          inspectionId: inspectionId,
         );
       },
       Routes.vehicleDetails: (context) {
-        final args = ModalRoute.of(context)!.settings.arguments
-            as Map<String, dynamic>?;
+        final args =
+            ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;
         return VehicleDetailsForm(isNewInspection: args?['isNew'] ?? true);
       },
     };

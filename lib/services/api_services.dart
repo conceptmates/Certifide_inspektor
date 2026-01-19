@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -13,7 +14,7 @@ import '../screens/auth/login_page.dart';
 
 class ApiService {
   // static const String baseUrl = 'https://reports.certifide.in/api';
-  static const String baseUrl = 'https://dev.certifide.in/api';
+  static const String baseUrl = 'https://aalekittanilla.com/api';
 
   static final _storage = FlutterSecureStorage();
 
@@ -24,8 +25,59 @@ class ApiService {
   static const String getInspectorEndPoint = '/tokens/inspectors';
   static const String allocateTokensEndPoint = '/tokens/allocate';
   static const String sendDataEndPoint = '/inspections';
+  static const String uploadImageEndPoint = '/inspection/upload-image';
   static const String getBalanceTokensEndPoint = '/tokens/balance';
   static const String getHistoryEndPoint = '/inspections';
+  static const String initialInspectionEndPoint = '/inspections/initial';
+
+  static Future<Map<String, dynamic>> createInitialInspection(
+      Map<String, dynamic> vehicleData) async {
+    try {
+      log('Creating initial inspection with data: $vehicleData');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl$initialInspectionEndPoint'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: json.encode(vehicleData),
+      );
+
+      log('Initial inspection response status: ${response.statusCode}');
+      log('Initial inspection response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body);
+
+        if (responseData['status'] == 'success' &&
+            responseData['data'] != null) {
+          log('Initial inspection created successfully. ID: ${responseData['data']['inspection_id']}');
+
+          return {
+            'success': true,
+            'data': responseData['data'],
+            'message': responseData['message'] ??
+                'Initial inspection created successfully',
+          };
+        } else {
+          return {
+            'success': false,
+            'message': responseData['message'] ??
+                'Failed to create initial inspection',
+          };
+        }
+      } else {
+        return {
+          'success': false,
+          'message': _handleError(response),
+        };
+      }
+    } catch (e) {
+      log('Error creating initial inspection: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
 
   static String _handleError(http.Response response) {
     try {
@@ -389,15 +441,29 @@ class ApiService {
   //submit inspection
 
   static Future<Map<String, dynamic>> sendInspectionData(
-      Map<String, dynamic> inspectionData) async {
+      Map<String, dynamic> inspectionData,
+      {int? inspectionId}) async {
     try {
+      final endpoint = inspectionId != null
+          ? '$sendDataEndPoint/$inspectionId'
+          : sendDataEndPoint;
+
+      log('Sending inspection data to: $baseUrl$endpoint');
+      log('Inspection data: $inspectionData');
+
       final response = await http.post(
-        Uri.parse('$baseUrl$sendDataEndPoint'),
+        Uri.parse('$baseUrl$endpoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(inspectionData),
       );
+
+      log('Inspection submission response status: ${response.statusCode}');
+      log('Inspection submission response body: ${response.body}');
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(response.body);
+        log('Inspection submitted successfully');
+
         return {
           'success': true,
           'data': responseData['data'],
@@ -405,18 +471,156 @@ class ApiService {
               responseData['message'] ?? 'Inspection data sent successfully',
         };
       } else {
-        log('Error response: ${response.body}'); // Add this for
+        log('Error response: ${response.body}');
         return {
           'success': false,
           'message': _handleError(response),
         };
       }
     } catch (e) {
-      log('Error sending inspection data: $e'); // Add this for debugging
+      log('Error sending inspection data: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',
       };
+    }
+  }
+
+  static Future<Map<String, dynamic>> uploadImage(
+    String imagePath, {
+    int? inspectionId,
+    required String section,
+    required String itemId,
+  }) async {
+    try {
+      log('Uploading image to: $baseUrl$uploadImageEndPoint');
+      log('Section: $section, ItemId: $itemId');
+
+      // Read the image file
+      final file = File(imagePath);
+      if (!await file.exists()) {
+        log('Image file does not exist: $imagePath');
+        return {
+          'success': false,
+          'message': 'Image file not found',
+        };
+      }
+
+      final bytes = await file.readAsBytes();
+      final fileName = imagePath.split('/').last;
+
+      log('Image file name: $fileName, size: ${bytes.length} bytes');
+
+      // Get auth token
+      final token = await _storage.read(key: 'jwt_token');
+      if (token == null) {
+        return {
+          'success': false,
+          'message': 'Authentication required',
+        };
+      }
+
+      // Check if token is expired and refresh if needed
+      if (await isTokenExpired(token)) {
+        final refreshResult = await refreshToken();
+        if (!refreshResult['success']) {
+          await _storage.deleteAll();
+          return {
+            'success': false,
+            'message': 'Session expired. Please login again.',
+          };
+        }
+      }
+
+      // Get fresh token after refresh
+      final newToken = await _storage.read(key: 'jwt_token');
+
+      // Create multipart request
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl$uploadImageEndPoint'),
+      );
+
+      // Add headers
+      request.headers['Authorization'] = 'Bearer $newToken';
+      request.headers['Accept'] = 'application/json';
+
+      // Add the image file
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'image',
+          bytes,
+          filename: fileName,
+        ),
+      );
+
+      // Add form fields
+      request.fields['section'] = section;
+      request.fields['itemId'] = itemId;
+      
+      // Add inspection_id if available
+      if (inspectionId != null) {
+        request.fields['inspection_id'] = inspectionId.toString();
+        log('Adding inspection_id to request: ${inspectionId.toString()}');
+      }
+
+      // Log the full request for debugging
+      log('Upload request fields: section=$section, itemId=$itemId, inspectionId=$inspectionId');
+      log('Request URL: $baseUrl$uploadImageEndPoint');
+
+      // Send the request
+      final response = await request.send();
+
+      final responseBody = await response.stream.bytesToString();
+      log('Image upload response status: ${response.statusCode}');
+      log('Image upload response body: $responseBody');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(responseBody);
+
+        if (responseData['status'] == 'success' &&
+            responseData['imagePath'] != null) {
+          log('Image uploaded successfully. URL: ${responseData['imagePath']['url']}');
+
+          return {
+            'success': true,
+            'url': responseData['imagePath']['url'],
+            'path': responseData['imagePath']['path'],
+            'message': responseData['message'] ?? 'Image uploaded successfully',
+          };
+        } else {
+          return {
+            'success': false,
+            'message': responseData['message'] ?? 'Failed to upload image',
+          };
+        }
+      } else {
+        log('Error response: $responseBody');
+        return {
+          'success': false,
+          'message': _handleErrorFromString(responseBody, response.statusCode),
+        };
+      }
+    } catch (e) {
+      log('Error uploading image: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  static String _handleErrorFromString(String responseBody, int statusCode) {
+    try {
+      final errorData = json.decode(responseBody);
+      if (errorData['message'] != null) {
+        return errorData['message'];
+      } else if (errorData['error'] != null) {
+        return errorData['error'];
+      }
+      return 'An error occurred ($statusCode)';
+    } catch (e) {
+      return 'An error occurred ($statusCode)';
     }
   }
 

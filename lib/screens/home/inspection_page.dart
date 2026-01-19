@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer';
 import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
@@ -24,10 +25,13 @@ import '../../utils/ads manager/rewarded_interstitial_ad.dart';
 class InspectionScreen extends StatefulWidget {
   final bool isNewInspection;
   final Map<String, dynamic>? vehicleDetails;
+  final int? inspectionId;
+
   const InspectionScreen({
     super.key,
     this.isNewInspection = false,
     this.vehicleDetails,
+    this.inspectionId,
   });
 
   @override
@@ -53,6 +57,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   bool _isScrollable = false;
   bool _isSubmitting = false;
   bool _showSectionTitle = false;
+  Set<String> _uploadingImages = {};
 
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
@@ -782,13 +787,35 @@ class _InspectionScreenState extends State<InspectionScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Captured Image:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Captured Image:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
+                      ),
+                      if (_uploadingImages.contains(item.uniqueId)) ...[
+                        const SizedBox(width: 8),
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Uploading...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
@@ -805,10 +832,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          File(itemImages[item.uniqueId]!),
-                          fit: BoxFit.cover,
-                        ),
+                        child: _buildImageWidget(itemImages[item.uniqueId]!),
                       ),
                     ),
                   ),
@@ -822,13 +846,35 @@ class _InspectionScreenState extends State<InspectionScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Captured Images:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Captured Images:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
+                      ),
+                      if (_uploadingImages.contains(item.uniqueId)) ...[
+                        const SizedBox(width: 8),
+                        const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Uploading...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
@@ -853,11 +899,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
                             children: [
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
-                                child: Image.file(
-                                  File(imagePath),
+                                child: SizedBox(
                                   width: 150,
                                   height: 150,
-                                  fit: BoxFit.cover,
+                                  child: _buildImageWidget(imagePath),
                                 ),
                               ),
                               Positioned(
@@ -1148,13 +1193,81 @@ class _InspectionScreenState extends State<InspectionScreen> {
       );
 
       if (image != null && mounted) {
+        final String sectionTitle =
+            _sections[_currentSection]['title'] as String;
+
+        // Save image to local storage first
+        final String savedPath =
+            await LocalStorageService.saveImage(image.path);
+
+        // Set local path for immediate display
         setState(() {
-          itemImages[item.uniqueId] = image.path;
+          itemImages[item.uniqueId] = savedPath;
+          _uploadingImages.add(item.uniqueId);
         });
-        _autoSave();
+
+        // Auto-save to preserve the image path
+        await _saveDataLocally();
+
+        // Check internet connectivity and upload if available
+        final bool hasInternet =
+            await ConnectivityChecker.hasInternetConnection();
+
+        if (hasInternet) {
+          // Try to upload immediately
+          final result = await ApiService.uploadImage(
+            savedPath,
+            inspectionId: widget.inspectionId,
+            section: sectionTitle,
+            itemId: item.id,
+          );
+
+          if (mounted) {
+            setState(() {
+              _uploadingImages.remove(item.uniqueId);
+            });
+
+            if (result['success']) {
+              // Store the uploaded image URL
+              setState(() {
+                itemImages[item.uniqueId] = result['url'] as String;
+              });
+              log('Image uploaded successfully: ${result['url']}');
+
+              // Save immediately after getting URL
+              await _saveDataLocally();
+            } else {
+              // Upload failed - keep local path, will upload later
+              log('Image upload failed: ${result['message']}. Will upload when online.');
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content:
+                      Text('Image saved locally. Will upload when online.'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+          }
+        } else {
+          // Offline - keep local path for later upload
+          if (mounted) {
+            setState(() {
+              _uploadingImages.remove(item.uniqueId);
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Image saved locally. Will upload when online.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _uploadingImages.remove(item.uniqueId);
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to pick image: $e'),
@@ -1174,8 +1287,20 @@ class _InspectionScreenState extends State<InspectionScreen> {
       );
 
       if (images.isNotEmpty && mounted) {
+        // Get current section title
+        final String sectionTitle =
+            _sections[_currentSection]['title'] as String;
+
         final currentImages = itemMultiImages[item.uniqueId] ?? [];
-        final newImagePaths = images.map((img) => img.path).toList();
+
+        // Save all images to local storage
+        final List<String> savedPaths = [];
+        for (var image in images) {
+          final savedPath = await LocalStorageService.saveImage(image.path);
+          savedPaths.add(savedPath);
+        }
+
+        final newImagePaths = savedPaths;
         final updatedPaths = [...currentImages, ...newImagePaths];
 
         // Limit to 11 images max
@@ -1183,8 +1308,67 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
         setState(() {
           itemMultiImages[item.uniqueId] = finalPaths;
+          _uploadingImages.add(item.uniqueId);
         });
-        _autoSave();
+
+        // Auto-save
+        await _saveDataLocally();
+
+        // Check internet connectivity
+        final bool hasInternet =
+            await ConnectivityChecker.hasInternetConnection();
+
+        if (hasInternet) {
+          // Upload all new images and collect URLs
+          final List<String> uploadedUrls = [];
+
+          for (int i = 0; i < finalPaths.length; i++) {
+            final path = finalPaths[i];
+            // Check if this is a new image (not already uploaded)
+            if (!path.startsWith('http')) {
+              final result = await ApiService.uploadImage(
+                path,
+                inspectionId: widget.inspectionId,
+                section: sectionTitle,
+                itemId: item.id,
+              );
+
+              if (result['success']) {
+                uploadedUrls.add(result['url'] as String);
+              } else {
+                // Keep local path if upload fails
+                log('Failed to upload image: ${result['message']}');
+                uploadedUrls.add(path);
+              }
+            } else {
+              // Already uploaded (URL)
+              uploadedUrls.add(path);
+            }
+          }
+
+          if (mounted) {
+            setState(() {
+              _uploadingImages.remove(item.uniqueId);
+              itemMultiImages[item.uniqueId] = uploadedUrls;
+            });
+
+            // Save immediately after all uploads complete
+            await _saveDataLocally();
+          }
+        } else {
+          // Offline - keep local paths for later upload
+          if (mounted) {
+            setState(() {
+              _uploadingImages.remove(item.uniqueId);
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Images saved locally. Will upload when online.'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
 
         if (images.length > 11 - currentImages.length) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1198,6 +1382,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
       }
     } catch (e) {
       if (mounted) {
+        setState(() {
+          _uploadingImages.remove(item.uniqueId);
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Failed to pick images: $e'),
@@ -1205,6 +1392,38 @@ class _InspectionScreenState extends State<InspectionScreen> {
           ),
         );
       }
+    }
+  }
+
+  Widget _buildImageWidget(String imagePath) {
+    if (imagePath.startsWith('http')) {
+      // Remote URL - use Image.network
+      return Image.network(
+        imagePath,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Center(
+            child: CircularProgressIndicator(
+              value: loadingProgress.expectedTotalBytes != null
+                  ? loadingProgress.cumulativeBytesLoaded /
+                      loadingProgress.expectedTotalBytes!
+                  : null,
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          return const Center(
+            child: Icon(Icons.broken_image, size: 48, color: Colors.grey),
+          );
+        },
+      );
+    } else {
+      // Local file - use Image.file
+      return Image.file(
+        File(imagePath),
+        fit: BoxFit.cover,
+      );
     }
   }
 
@@ -1250,10 +1469,20 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     boundaryMargin: const EdgeInsets.all(20),
                     minScale: 0.5,
                     maxScale: 4,
-                    child: Image.file(
-                      File(imagePath),
-                      fit: BoxFit.contain,
-                    ),
+                    child: imagePath.startsWith('http')
+                        ? Image.network(
+                            imagePath,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Center(
+                                child: Icon(Icons.broken_image, size: 48),
+                              );
+                            },
+                          )
+                        : Image.file(
+                            File(imagePath),
+                            fit: BoxFit.contain,
+                          ),
                   ),
                 ),
               ],
@@ -1386,6 +1615,21 @@ class _InspectionScreenState extends State<InspectionScreen> {
       // Prepare data for submission
       Map<String, String?> finalItemImages = Map.from(itemImages);
       Map<String, String> summaryImagePaths = {};
+      Map<String, dynamic> imageMetadata = {};
+
+      // Build image metadata for single images
+      for (var section in _sections) {
+        final sectionTitle = section['title'] as String;
+        final items = section['items'] as List<InspectionItem<String>>;
+        for (var item in items) {
+          if (itemImages.containsKey(item.uniqueId)) {
+            imageMetadata[item.uniqueId] = {
+              'section': sectionTitle,
+              'itemId': item.id,
+            };
+          }
+        }
+      }
 
       // Handle multi-images for all sections
       itemMultiImages.forEach((key, images) {
@@ -1397,13 +1641,35 @@ class _InspectionScreenState extends State<InspectionScreen> {
               final imageKey = 'summary_image_${i + 1}';
               summaryImagePaths[imageKey] = imagePath;
               finalItemImages[imageKey] = imagePath;
+              // Add metadata for summary images
+              imageMetadata[imageKey] = {
+                'section': 'Summary / Remarks',
+                'itemId': 'summary_image_${i + 1}',
+              };
             }
           } else {
-            // Handle other section multi-images
+            // Find the section title for this multi-image key
+            String sectionTitle = '';
+            for (var section in _sections) {
+              final items = section['items'] as List<InspectionItem<String>>;
+              for (var item in items) {
+                if (item.uniqueId == key) {
+                  sectionTitle = section['title'] as String;
+                  break;
+                }
+              }
+              if (sectionTitle.isNotEmpty) break;
+            }
+
             for (int i = 0; i < images.length; i++) {
               final imagePath = images[i];
               final imageKey = '${key}_${i + 1}';
               finalItemImages[imageKey] = imagePath;
+              // Add metadata for multi-images
+              imageMetadata[imageKey] = {
+                'section': sectionTitle,
+                'itemId': '${key}_${i + 1}',
+              };
             }
           }
         }
@@ -1425,6 +1691,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
         data: formattedData,
         images: finalItemImages,
         status: 'pending', // Mark as pending initially
+        imageMetadata: imageMetadata,
       );
 
       // Complete the current inspection locally
@@ -1566,7 +1833,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
       // If internet is available, attempt to submit
       try {
-        final result = await ApiService.sendInspectionData(formattedData);
+        final result = await ApiService.sendInspectionData(
+          formattedData,
+          inspectionId: widget.inspectionId,
+        );
 
         if (result['success']) {
           await _completeInspection();
