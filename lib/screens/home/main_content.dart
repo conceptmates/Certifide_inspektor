@@ -10,7 +10,8 @@ import '../../routes/routes.dart';
 import '../../widgets/fade_animation.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/inspection_provider.dart';
-import '../../utils/ads manager/banner_ad_manager.dart';
+import '../../utils/ads%20manager/banner_ad_manager.dart';
+import 'inspection_history_screen.dart';
 
 class MainContent extends StatefulWidget {
   const MainContent({super.key});
@@ -529,6 +530,22 @@ class _MainContentState extends State<MainContent>
                         ),
                       ),
                       _buildQuickActionCard(
+                        icon: Icons.replay,
+                        title: 'Recent Inspections',
+                        subtitle: 'View your recent inspection history',
+                        color: Color(0xFF6366F1),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const InspectionHistoryScreen(),
+                            ),
+                          );
+                        },
+                      ),
+
+                      _buildQuickActionCard(
                         icon: Icons.handshake_outlined,
                         title: 'Expert Opinion',
                         subtitle: 'Get expert reviews on inspections',
@@ -559,15 +576,6 @@ class _MainContentState extends State<MainContent>
                             await inspectionProvider.loadInspections();
                           },
                         ),
-                      _buildQuickActionCard(
-                        icon: Icons.replay,
-                        title: 'Recent Inspections',
-                        subtitle: 'View your recent inspection history',
-                        color: Color(0xFF6366F1),
-                        onTap: () {
-                          // Navigate to history
-                        },
-                      ),
                     ],
                   ),
                 ),

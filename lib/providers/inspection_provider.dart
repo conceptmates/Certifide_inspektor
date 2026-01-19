@@ -191,6 +191,7 @@ class InspectionProvider extends ChangeNotifier {
       final inspectionData = Map<String, dynamic>.from(inspection.data);
 
       // Replace local image paths with uploaded URLs
+      // Update all images that have URLs (whether they were uploaded before or just now)
       for (var entry in inspection.images.entries) {
         if (entry.value.startsWith('http')) {
           // Update the data map with the URL
@@ -233,12 +234,52 @@ class InspectionProvider extends ChangeNotifier {
     String key,
     String url,
   ) {
-    // This is a helper to update nested image paths in the data map
-    // Implementation depends on how the data is structured
-    if (data.containsKey('images')) {
-      final images = data['images'] as Map<String, dynamic>?;
-      if (images != null && images.containsKey(key)) {
-        images[key] = url;
+    // Update nested image paths in inspection_data structure
+    
+    // Handle inspection_data array
+    if (data.containsKey('inspection_data')) {
+      final inspectionData = data['inspection_data'];
+      if (inspectionData is List) {
+        for (var section in inspectionData) {
+          if (section is Map<String, dynamic> && section.containsKey('items')) {
+            final items = section['items'] as List<dynamic>;
+            for (var item in items) {
+              if (item is Map<String, dynamic>) {
+                // Check for imagePath
+                if (item['id'] == key && item.containsKey('imagePath')) {
+                  item['imagePath'] = url;
+                }
+                // Check for multiImages
+                if (item.containsKey('multiImages') && item['multiImages'] is List) {
+                  final multiImages = item['multiImages'] as List<dynamic>;
+                  for (var img in multiImages) {
+                    if (img is Map<String, dynamic> && img.containsKey('imagePath')) {
+                      // If the current path matches, replace with URL
+                      final currentPath = img['imagePath'];
+                      if (currentPath is String && !currentPath.startsWith('http')) {
+                        img['imagePath'] = url;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Handle summaryImages
+    if (data.containsKey('summaryImages')) {
+      final summaryImages = data['summaryImages'];
+      if (summaryImages is List) {
+        for (var img in summaryImages) {
+          if (img is Map<String, dynamic> && img.containsKey('key')) {
+            if (img['key'] == key && img.containsKey('imagePath')) {
+              img['imagePath'] = url;
+            }
+          }
+        }
       }
     }
   }

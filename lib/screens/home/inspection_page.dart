@@ -1681,157 +1681,44 @@ class _InspectionScreenState extends State<InspectionScreen> {
         itemImages: finalItemImages,
         itemRemarks: itemRemarks,
         sections: _sections,
+        multiImages: itemMultiImages,
         additionalData: {
           'summaryImagePaths': summaryImagePaths,
         },
       );
 
-      // Save inspection locally first
-      await LocalStorageService.saveInspection(
-        data: formattedData,
-        images: finalItemImages,
-        status: 'pending', // Mark as pending initially
-        imageMetadata: imageMetadata,
-      );
-
-      // Complete the current inspection locally
-      await _completeInspection();
-      await _cleanupCurrentInspection();
-
-      // Navigate to LocalInspections page
-      _navigateToLocalInspections(context);
-
-      // Show success message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Inspection saved locally. Will attempt to submit.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      print('Error in submission process: $e');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving inspection: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _saveOfflineInspection(
-    Map<String, dynamic> formattedData,
-    Map<String, String?> finalItemImages, {
-    String status = 'offline',
-  }) async {
-    try {
-      await LocalStorageService.saveInspection(
-        data: formattedData,
-        images: finalItemImages,
-        status: status,
-      );
-
-      // Delete the current inspection from Hive
-      await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
-    } catch (e) {
-      print('Error saving offline inspection: $e');
-      rethrow;
-    }
-  }
-
-  void _navigateToLocalInspections(BuildContext context) {
-    Navigator.of(context).popUntil((route) => route.isFirst);
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => MainScreen(
-          initialIndex: context.read<UserProvider>().isAdmin() ? 3 : 2,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _processSubmissionInBackground() async {
-    try {
-      // Create a copy of itemImages to modify
-      Map<String, String?> finalItemImages = Map.from(itemImages);
-
-      // Create a dictionary to store summary image paths
-      Map<String, String> summaryImagePaths = {};
-
-      // Handle multi-images for all sections
-      itemMultiImages.forEach((key, images) {
-        if (images != null && images.isNotEmpty) {
-          // Special handling for summary section
-          if (key.contains('summary')) {
-            for (int i = 0; i < images.length; i++) {
-              final imagePath = images[i];
-              final imageKey = 'summary_image_${i + 1}';
-
-              // Add to summary image paths dictionary
-              summaryImagePaths[imageKey] = imagePath;
-
-              // Also add to finalItemImages for backward compatibility
-              finalItemImages[imageKey] = imagePath;
-            }
-          } else {
-            // Handle other section multi-images
-            for (int i = 0; i < images.length; i++) {
-              final imagePath = images[i];
-              final imageKey = '${key}_${i + 1}';
-              finalItemImages[imageKey] = imagePath;
-            }
-          }
-        }
-      });
-
-      // Prepare formatted data with summary image paths
-      final formattedData = InspectionDataFormatter.formatData(
-        itemValues: itemValues,
-        itemImages: finalItemImages,
-        itemRemarks: itemRemarks,
-        sections: _sections,
-        additionalData: {
-          'summaryImagePaths': summaryImagePaths,
-        },
-      );
-
-      // Check internet connectivity
+      // Check internet connectivity first
       bool hasInternet = await ConnectivityChecker.hasInternetConnection();
 
       if (!hasInternet) {
-        // Save offline if no internet
-        await LocalStorageService.saveOfflineInspection(
+        // No network connection - save to pending for later submission
+        await LocalStorageService.saveInspection(
           data: formattedData,
           images: finalItemImages,
-          status: 'offline',
+          status: 'pending',
+          imageMetadata: imageMetadata,
         );
+
+        // Complete the current inspection locally
+        await _completeInspection();
+        await _cleanupCurrentInspection();
+
+        // Navigate to LocalInspections page
+        _navigateToLocalInspections(context);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content:
-                  Text('Inspection saved locally. Will submit when online.'),
+                  Text('No internet connection. Inspection saved to pending.'),
               backgroundColor: Colors.orange,
             ),
           );
         }
-
-        await _cleanupCurrentInspection();
         return;
       }
 
-      // If internet is available, attempt to submit
+      // Network is available - send inspection directly
       try {
         final result = await ApiService.sendInspectionData(
           formattedData,
@@ -1839,8 +1726,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
         );
 
         if (result['success']) {
+          // Complete the current inspection locally
           await _completeInspection();
           await _cleanupCurrentInspection();
+
+          // Navigate to LocalInspections page
+          _navigateToLocalInspections(context);
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -1863,37 +1754,29 @@ class _InspectionScreenState extends State<InspectionScreen> {
               SnackBar(
                 content: Text(
                     'Failed to submit: ${result['message'] ?? 'Unknown error'}'),
-                backgroundColor: Colors.orange,
+                backgroundColor: Colors.red,
               ),
             );
           }
-          await _cleanupCurrentInspection();
         }
       } catch (apiError) {
-        // Network or API error, save as pending
-        await LocalStorageService.saveInspection(
-          data: formattedData,
-          images: finalItemImages,
-          status: 'pending',
-        );
-
+        // Network or API error - show error only, don't save to pending
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Submission error: $apiError. Will retry later.'),
+              content: Text('Submission error: $apiError'),
               backgroundColor: Colors.red,
             ),
           );
         }
-        await _cleanupCurrentInspection();
       }
     } catch (e) {
-      print('Unexpected error in submission: $e');
+      print('Error in submission process: $e');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Unexpected error: $e. Saving locally.'),
+            content: Text('Error saving inspection: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1905,6 +1788,17 @@ class _InspectionScreenState extends State<InspectionScreen> {
         });
       }
     }
+  }
+
+  void _navigateToLocalInspections(BuildContext context) {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => MainScreen(
+          initialIndex: context.read<UserProvider>().isAdmin() ? 3 : 2,
+        ),
+      ),
+    );
   }
 
   void _previousSection() async {

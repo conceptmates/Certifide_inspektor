@@ -451,7 +451,7 @@ class ApiService {
       log('Sending inspection data to: $baseUrl$endpoint');
       log('Inspection data: $inspectionData');
 
-      final response = await http.post(
+      final response = await http.put(
         Uri.parse('$baseUrl$endpoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(inspectionData),
@@ -557,7 +557,7 @@ class ApiService {
       // Add form fields
       request.fields['section'] = section;
       request.fields['itemId'] = itemId;
-      
+
       // Add inspection_id if available
       if (inspectionId != null) {
         request.fields['inspection_id'] = inspectionId.toString();
