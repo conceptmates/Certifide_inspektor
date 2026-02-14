@@ -13,12 +13,12 @@ final List<InspectionItem<String>> summary = [
 ];
 
 final List<InspectionItem<String>> documents = [
-  InspectionItem(
-    id: 'location',
-    title: 'Place of Inspection',
-    useTextField: true,
-    allowImage: false,
-  ),
+  // InspectionItem(
+  //   id: 'location',
+  //   title: 'Place of Inspection',
+  //   useTextField: true,
+  //   allowImage: false,
+  // ),
   InspectionItem(
     id: 'frontview',
     title: 'Front View',
@@ -106,13 +106,13 @@ final List<InspectionItem<String>> documents = [
     allowRemarks: true,
     allowImage: false,
   ),
-  InspectionItem(
-    id: 'seatingcapacity',
-    title: 'Seating Capacity',
-    useTextField: true,
-    allowRemarks: true,
-    allowImage: false,
-  ),
+  // InspectionItem(
+  //   id: 'seatingcapacity',
+  //   title: 'Seating Capacity',
+  //   useTextField: true,
+  //   allowRemarks: true,
+  //   allowImage: false,
+  // ),
   InspectionItem(
     id: 'rto',
     title: 'RTO',
@@ -158,30 +158,30 @@ final List<InspectionItem<String>> documents = [
     options: CommonDropdownOptions.yesNo,
     allowRemarks: true,
   ),
-  InspectionItem(
-    id: 'saleletter',
-    title: 'Sale Letter',
-    options: CommonDropdownOptions.insurance,
-    allowRemarks: true,
-  ),
-  InspectionItem(
-    id: 'rcownercontact',
-    title: 'RC OWNER CONTACT',
-    options: CommonDropdownOptions.available,
-    allowRemarks: true,
-  ),
+  // InspectionItem(
+  //   id: 'saleletter',
+  //   title: 'Sale Letter',
+  //   options: CommonDropdownOptions.insurance,
+  //   allowRemarks: true,
+  // ),
+  // InspectionItem(
+  //   id: 'rcownercontact',
+  //   title: 'RC OWNER CONTACT',
+  //   options: CommonDropdownOptions.available,
+  //   allowRemarks: true,
+  // ),
   InspectionItem(
     id: 'noc',
     title: 'NOC',
     options: CommonDropdownOptions.notNeeded,
     allowRemarks: true,
   ),
-  InspectionItem(
-    id: 'parivahancheck',
-    title: 'PARIVAHAN CHECK',
-    options: CommonDropdownOptions.doneNotDoneInverted,
-    allowRemarks: true,
-  ),
+  // InspectionItem(
+  //   id: 'parivahancheck',
+  //   title: 'PARIVAHAN CHECK',
+  //   options: CommonDropdownOptions.doneNotDoneInverted,
+  //   allowRemarks: true,
+  // ),
   InspectionItem(
     id: 'challan',
     title: 'CHALLAN',
@@ -202,24 +202,24 @@ final List<InspectionItem<String>> documents = [
     allowFileAttachment: true,
     allowImage: false,
   ),
-  InspectionItem(
-    id: 'periodicserviceaspervsh',
-    title: 'PERIODIC SERVICE AS PER VSH',
-    options: CommonDropdownOptions.doneNotDoneInverted,
-    allowRemarks: true,
-  ),
-  InspectionItem(
-    id: 'accidentalrepairaspervsh',
-    title: 'ACCIDENTAL REPAIR AS PER VSH',
-    options: CommonDropdownOptions.doneNotDone,
-    allowRemarks: true,
-  ),
-  InspectionItem(
-    id: 'MAJORMECHANICALREPAIRINVSH',
-    title: 'MAJOR MECHANICAL REPAIR IN VSH',
-    options: CommonDropdownOptions.doneNotDone,
-    allowRemarks: true,
-  ),
+  // InspectionItem(
+  //   id: 'periodicserviceaspervsh',
+  //   title: 'PERIODIC SERVICE AS PER VSH',
+  //   options: CommonDropdownOptions.doneNotDoneInverted,
+  //   allowRemarks: true,
+  // ),
+  // InspectionItem(
+  //   id: 'accidentalrepairaspervsh',
+  //   title: 'ACCIDENTAL REPAIR AS PER VSH',
+  //   options: CommonDropdownOptions.doneNotDone,
+  //   allowRemarks: true,
+  // ),
+  // InspectionItem(
+  //   id: 'MAJORMECHANICALREPAIRINVSH',
+  //   title: 'MAJOR MECHANICAL REPAIR IN VSH',
+  //   options: CommonDropdownOptions.doneNotDone,
+  //   allowRemarks: true,
+  // ),
 ];
 final List<InspectionItem<String>> floodAffectedSigns = [
   InspectionItem(
@@ -230,7 +230,7 @@ final List<InspectionItem<String>> floodAffectedSigns = [
   ),
   InspectionItem(
     id: 'underseat',
-    title: 'Under Seat',
+    title: 'Under FrontSeat',
     options: CommonDropdownOptions.floodAffected,
     allowRemarks: true,
   ),
@@ -398,11 +398,11 @@ final List<InspectionItem<String>> brakeFluid = [
 ];
 
 final List<InspectionItem<String>> dicky = [
-  InspectionItem(
-    id: 'stepny-alloy-disc',
-    title: 'STEPNY (ALLOY/DISC)',
-    options: CommonDropdownOptions.conditions,
-  ),
+  // InspectionItem(
+  //   id: 'stepny-alloy-disc',
+  //   title: 'STEPNY (ALLOY/DISC)',
+  //   options: CommonDropdownOptions.conditions,
+  // ),
   InspectionItem(
     id: 'toolkit',
     title: 'TOOL KIT',
@@ -804,18 +804,18 @@ final List<InspectionItem<String>> battery = [
     options: CommonDropdownOptions.conditions,
     allowRemarks: true,
   ),
-  InspectionItem(
-    id: 'alternator',
-    title: 'ALTERNATOR',
-    options: CommonDropdownOptions.conditions,
-    allowRemarks: true,
-  ),
-  InspectionItem(
-    id: 'starter',
-    title: 'STARTER',
-    options: CommonDropdownOptions.conditions,
-    allowRemarks: true,
-  ),
+  // InspectionItem(
+  //   id: 'alternator',
+  //   title: 'ALTERNATOR',
+  //   options: CommonDropdownOptions.conditions,
+  //   allowRemarks: true,
+  // ),
+  // InspectionItem(
+  //   id: 'starter',
+  //   title: 'STARTER',
+  //   options: CommonDropdownOptions.conditions,
+  //   allowRemarks: true,
+  // ),
 ];
 
 final List<InspectionItem<String>> dataSet1 = [

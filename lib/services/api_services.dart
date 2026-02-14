@@ -14,7 +14,7 @@ import '../screens/auth/login_page.dart';
 
 class ApiService {
   // static const String baseUrl = 'https://reports.certifide.in/api';
-  static const String baseUrl = 'https://aalekittanilla.com/api';
+  static const String baseUrl = 'https://backend.certifide.in/api';
 
   static final _storage = FlutterSecureStorage();
 
