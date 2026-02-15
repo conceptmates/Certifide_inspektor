@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../models/vehicle_model.dart';
 import '../../routes/routes.dart';
 import '../../services/api_services.dart';
 import '../../widgets/fade_animation.dart';
@@ -26,6 +27,15 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
   final _variantController = TextEditingController();
   final _colourController = TextEditingController();
   String _selectedTransmission = 'Manual';
+
+  // API Data
+  List<VehicleModel> _allModels = [];
+  List<VehicleBrand> _brands = [];
+  List<VehicleModel> _filteredModels = [];
+  VehicleBrand? _selectedMake;
+  VehicleModel? _selectedModel;
+  bool _isLoadingModels = false;
+  String? _modelError;
 
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
@@ -58,6 +68,69 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
 
     // Load interstitial ad
     _interstitialAdManager.loadAd();
+
+    // Load vehicle models from API
+    _loadModels();
+  }
+
+  Future<void> _loadModels() async {
+    setState(() {
+      _isLoadingModels = true;
+      _modelError = null;
+    });
+
+    try {
+      final result = await ApiService.getModels();
+
+      if (result['success'] && mounted) {
+        setState(() {
+          _allModels = List<VehicleModel>.from(result['data']);
+          _brands = List<VehicleBrand>.from(result['brands']);
+          _isLoadingModels = false;
+        });
+      } else if (mounted) {
+        setState(() {
+          _modelError = result['message'] ?? 'Failed to load models';
+          _isLoadingModels = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _modelError = 'Error loading models: ${e.toString()}';
+          _isLoadingModels = false;
+        });
+      }
+    }
+  }
+
+  void _onMakeChanged(VehicleBrand? newMake) {
+    setState(() {
+      _selectedMake = newMake;
+      _selectedModel = null;
+      _modelController.clear();
+
+      if (newMake != null) {
+        _filteredModels = _allModels
+            .where((model) => model.brand.id == newMake.id)
+            .toList();
+        // Sort models alphabetically
+        _filteredModels.sort((a, b) => a.name.compareTo(b.name));
+      } else {
+        _filteredModels = [];
+      }
+    });
+  }
+
+  void _onModelChanged(VehicleModel? newModel) {
+    setState(() {
+      _selectedModel = newModel;
+      if (newModel != null) {
+        _modelController.text = newModel.name;
+      } else {
+        _modelController.clear();
+      }
+    });
   }
 
   @override
@@ -77,12 +150,15 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
   void _proceedToInspection() async {
     if (_formKey.currentState!.validate()) {
       final vehicleData = {
-        'make': _makeController.text.trim(),
-        'model': _modelController.text.trim(),
+        'make': _selectedMake?.name ?? '',
+        'model': _selectedModel?.name ?? _modelController.text.trim(),
         'year': _yearController.text.trim(),
         'variant': _variantController.text.trim(),
         'colour': _colourController.text.trim(),
         'transmission': _selectedTransmission,
+        // Include brand_id and model_id for reference
+        if (_selectedMake != null) 'brand_id': _selectedMake!.id,
+        if (_selectedModel != null) 'model_id': _selectedModel!.id,
       };
 
       setState(() {
@@ -259,6 +335,141 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
     );
   }
 
+  Widget _buildMakeDropdown() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DropdownButtonFormField<VehicleBrand>(
+            value: _selectedMake,
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.white,
+            ),
+            dropdownColor: const Color(0xFF2C2C2C),
+            decoration: InputDecoration(
+              labelText: 'Make',
+              prefixIcon: Icon(Icons.business, color: Colors.blueAccent.shade200),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[700]!),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[700]!),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.blueAccent.shade200, width: 2),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.red, width: 2),
+              ),
+              focusedErrorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.red, width: 2),
+              ),
+              filled: true,
+              fillColor: const Color(0xFF2C2C2C),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 16,
+              ),
+            ),
+            items: _brands.map((VehicleBrand brand) {
+              return DropdownMenuItem<VehicleBrand>(
+                value: brand,
+                child: Text(brand.name),
+              );
+            }).toList(),
+            onChanged: _isLoadingModels ? null : _onMakeChanged,
+            validator: (value) {
+              if (value == null) {
+                return 'Please select a make';
+              }
+              return null;
+            },
+            hint: _isLoadingModels
+                ? const Text('Loading...')
+                : const Text('Select Make'),
+          ),
+          if (_modelError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _modelError!,
+                style: const TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModelDropdown() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      child: DropdownButtonFormField<VehicleModel>(
+        value: _selectedModel,
+        style: const TextStyle(
+          fontSize: 16,
+          color: Colors.white,
+        ),
+        dropdownColor: const Color(0xFF2C2C2C),
+        decoration: InputDecoration(
+          labelText: 'Model',
+          prefixIcon: Icon(Icons.car_rental, color: Colors.blueAccent.shade200),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey[700]!),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey[700]!),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.blueAccent.shade200, width: 2),
+          ),
+          errorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.red, width: 2),
+          ),
+          focusedErrorBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Colors.red, width: 2),
+          ),
+          filled: true,
+          fillColor: const Color(0xFF2C2C2C),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
+        ),
+        items: _filteredModels.map((VehicleModel model) {
+          return DropdownMenuItem<VehicleModel>(
+            value: model,
+            child: Text(model.name),
+          );
+        }).toList(),
+        onChanged: (_selectedMake == null || _isLoadingModels) ? null : _onModelChanged,
+        validator: (value) {
+          if (value == null) {
+            return 'Please select a model';
+          }
+          return null;
+        },
+        hint: _selectedMake == null
+            ? const Text('Select a make first')
+            : _filteredModels.isEmpty
+                ? const Text('No models available')
+                : const Text('Select Model'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -363,30 +574,10 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                       ),
                       child: Column(
                         children: [
-                          _buildTextField(
-                            controller: _makeController,
-                            label: 'Make',
-                            hint: 'e.g., Toyota, Honda, Ford',
-                            icon: Icons.business,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Please enter vehicle make';
-                              }
-                              return null;
-                            },
-                          ),
-                          _buildTextField(
-                            controller: _modelController,
-                            label: 'Model',
-                            hint: 'e.g., Camry, Civic, Mustang',
-                            icon: Icons.car_rental,
-                            validator: (value) {
-                              if (value == null || value.trim().isEmpty) {
-                                return 'Please enter vehicle model';
-                              }
-                              return null;
-                            },
-                          ),
+                          // Make Dropdown
+                          _buildMakeDropdown(),
+                          // Model Dropdown
+                          _buildModelDropdown(),
                           _buildTextField(
                             controller: _yearController,
                             label: 'Year',

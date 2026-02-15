@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../models/inspection_history_model.dart';
 import '../models/inspector.dart';
 import '../models/pagination_data_model.dart';
+import '../models/vehicle_model.dart';
 import '../utils/exception_handler.dart';
 import '../screens/auth/login_page.dart';
 
@@ -29,6 +30,7 @@ class ApiService {
   static const String getBalanceTokensEndPoint = '/tokens/balance';
   static const String getHistoryEndPoint = '/inspections';
   static const String initialInspectionEndPoint = '/inspections/initial';
+  static const String getModelsEndpoint = '/admin/vehicles/models';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -729,6 +731,112 @@ class ApiService {
       return {
         'status': 'error',
         'message': 'Failed to approve inspection: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> getModels() async {
+    try {
+      log('Fetching vehicle models from: $baseUrl$getModelsEndpoint');
+
+      final response = await http.get(
+        Uri.parse('$baseUrl$getModelsEndpoint'),
+        headers: await _getHeaders(requiresAuth: true),
+      );
+
+      log('Get models response status: ${response.statusCode}');
+      log('Get models response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final responseBody = response.body;
+        dynamic responseData;
+
+        // Try to parse the response
+        try {
+          responseData = json.decode(responseBody);
+        } catch (e) {
+          log('Error parsing JSON: $e');
+          return {
+            'success': false,
+            'message': 'Invalid response format',
+          };
+        }
+
+        // Handle both wrapped and unwrapped responses
+        List<dynamic> dataList;
+        if (responseData is List) {
+          // Direct array response
+          dataList = responseData;
+        } else if (responseData is Map<String, dynamic>) {
+          // Wrapped response with status/data
+          if (responseData['status'] == 'success' && responseData['data'] != null) {
+            dataList = responseData['data'] as List;
+          } else {
+            return {
+              'success': false,
+              'message': responseData['message'] ?? 'Failed to fetch models',
+            };
+          }
+        } else {
+          return {
+            'success': false,
+            'message': 'Unexpected response format',
+          };
+        }
+
+        // Parse models
+        List<VehicleModel> models = [];
+        for (var item in dataList) {
+          try {
+            if (item is Map<String, dynamic> || item is Map<dynamic, dynamic>) {
+              models.add(VehicleModel.fromJson(item));
+            }
+          } catch (e) {
+            log('Error parsing model item: $e');
+            // Continue with other items
+          }
+        }
+
+        if (models.isEmpty) {
+          return {
+            'success': false,
+            'message': 'No models found',
+          };
+        }
+
+        // Extract unique brands from the models
+        List<VehicleBrand> brands = [];
+        final brandMap = <int, VehicleBrand>{};
+
+        for (var model in models) {
+          if (!brandMap.containsKey(model.brand.id)) {
+            brandMap[model.brand.id] = model.brand;
+            brands.add(model.brand);
+          }
+        }
+
+        // Sort brands alphabetically
+        brands.sort((a, b) => a.name.compareTo(b.name));
+
+        log('Fetched ${models.length} models and ${brands.length} brands');
+
+        return {
+          'success': true,
+          'data': models,
+          'brands': brands,
+          'message': 'Models retrieved successfully',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': _handleError(response),
+        };
+      }
+    } catch (e) {
+      log('Error fetching models: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
       };
     }
   }
