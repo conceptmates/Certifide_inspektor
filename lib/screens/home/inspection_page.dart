@@ -1,3 +1,5 @@
+// lib/screens/home/inspection_page.dart
+
 import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
@@ -13,25 +15,28 @@ import '../../constants/hive_constants.dart';
 import '../../data/inspection_item.dart';
 import '../../data/inspection_storage_model.dart';
 import '../../models/inspection_item.dart';
+import '../../models/inspection_template_model.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
 import '../../services/local_storage_services.dart';
 import '../../utils/connectivity_checker.dart';
-import '../../utils/data_formatter.dart';
 import '../../widgets/inspection_field_info_sheet.dart';
 import '../main_screen.dart';
+import 'inspection_success_page.dart';
 import '../../utils/ads manager/rewarded_interstitial_ad.dart';
 
 class InspectionScreen extends StatefulWidget {
   final bool isNewInspection;
   final Map<String, dynamic>? vehicleDetails;
   final int? inspectionId;
+  final InspectionInitializationResponse? inspectionTemplate;
 
   const InspectionScreen({
     super.key,
     this.isNewInspection = false,
     this.vehicleDetails,
     this.inspectionId,
+    this.inspectionTemplate,
   });
 
   @override
@@ -59,86 +64,158 @@ class _InspectionScreenState extends State<InspectionScreen> {
   bool _showSectionTitle = false;
   Set<String> _uploadingImages = {};
 
+  // Dynamic inspection template from API
+  InspectionInitializationResponse? _inspectionTemplate;
+  bool _useDynamicTemplate = false;
+  bool _isLoadingTemplate = true; // Track if template is still loading
+
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
 
   final RewardedInterstitialAdManager _rewardedAdManager =
       RewardedInterstitialAdManager();
 
-  final List<Map<String, dynamic>> _sections = [
-    {
-      'title': 'Documents',
-      'items': documents as List<InspectionItem>,
-    },
-    {
-      'title': 'Body Panel',
-      'items': bodyPanel as List<InspectionItem>,
-    },
-    {
-      'title': 'Flood Affected Signs',
-      'items': floodAffectedSigns as List<InspectionItem>,
-    },
-    {
-      'title': 'Data Set - I',
-      'items': dataSet1 as List<InspectionItem>,
-    },
-    {
-      'title': 'Data Set - II',
-      'items': dataSet2 as List<InspectionItem>,
-    },
-    {
-      'title': 'Battery',
-      'items': battery as List<InspectionItem>,
-    },
-    {
-      'title': 'Coolant',
-      'items': coolant as List<InspectionItem>,
-    },
-    {
-      'title': 'Under Hood',
-      'items': underHood as List<InspectionItem>,
-    },
-    {
-      'title': 'Brake Fluid',
-      'items': brakeFluid as List<InspectionItem>,
-    },
-    {
-      'title': 'Tire',
-      'items': tire as List<InspectionItem>,
-    },
-    {
-      'title': 'Exterior',
-      'items': exterior as List<InspectionItem>,
-    },
-    {
-      'title': 'A/C',
-      'items': ac as List<InspectionItem>,
-    },
-    // {
-    //   'title': 'ECU Scan',
-    //   'items': ecuScan as List<InspectionItem>,
-    // },
-    {
-      'title': 'Interior',
-      'items': interior as List<InspectionItem>,
-    },
-    {
-      'title': 'Dicky',
-      'items': dicky as List<InspectionItem>,
-    },
-    {
-      'title': 'Test Drive',
-      'items': testDrive as List<InspectionItem>,
-    },
-    {
-      'title': 'After WarmUp',
-      'items': afterWarmUp as List<InspectionItem>,
-    },
-    {
-      'title': 'Summary / Remarks',
-      'items': summary as List<InspectionItem>,
+  // // Fallback sections for when API template is not available
+  // final List<Map<String, dynamic>> _defaultSections = [
+  //   {
+  //     'title': 'Documents',
+  //     'items': documents as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Body Panel',
+  //     'items': bodyPanel as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Flood Affected Signs',
+  //     'items': floodAffectedSigns as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Data Set - I',
+  //     'items': dataSet1 as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Data Set - II',
+  //     'items': dataSet2 as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Battery',
+  //     'items': battery as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Coolant',
+  //     'items': coolant as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Under Hood',
+  //     'items': underHood as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Brake Fluid',
+  //     'items': brakeFluid as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Tire',
+  //     'items': tire as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Exterior',
+  //     'items': exterior as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'A/C',
+  //     'items': ac as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Interior',
+  //     'items': interior as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Dicky',
+  //     'items': dicky as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Test Drive',
+  //     'items': testDrive as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'After WarmUp',
+  //     'items': afterWarmUp as List<InspectionItem>,
+  //   },
+  //   {
+  //     'title': 'Summary / Remarks',
+  //     'items': summary as List<InspectionItem>,
+  //   }
+  // ];
+
+  // Get sections - either from dynamic template or default
+  List<Map<String, dynamic>> get _sections {
+    if (_useDynamicTemplate && _inspectionTemplate != null) {
+      final sections = _inspectionTemplate!.structure.sections;
+      // Sort sections by order
+      sections.sort((a, b) => a.order.compareTo(b.order));
+      return sections.map((section) {
+        // Sort fields by order
+        final sortedFields = List<InspectionField>.from(section.fields);
+        sortedFields.sort((a, b) => a.order.compareTo(b.order));
+        
+        return {
+          'title': section.title,
+          'name': section.name,
+          'id': section.id,
+          'order': section.order,
+          'items': sortedFields.map((field) {
+            return _createDynamicItem(field);
+          }).toList(),
+        };
+      }).toList();
     }
-  ];
+    // return _defaultSections;
+    return [];
+  }
+
+  // Create a dynamic item from API field
+  dynamic _createDynamicItem(InspectionField field) {
+    final fieldType = field.fieldType.toLowerCase();
+
+    // Check if this is an image field type or has hasImage flag
+    final isImageField = fieldType == 'image' || field.hasImage;
+
+    return {
+      'id': field.fieldId,
+      'title': field.title,
+      'fieldId': field.fieldId,
+      'fieldType': fieldType,
+      'isRequired': field.isRequired,
+      'hasRemarks': field.hasRemarks,
+      'hasImage':
+          isImageField, // Override hasImage based on field_type or hasImage flag
+      'hasVideo': field.hasVideo,
+      'hasFile': field.hasFile,
+      'useTextField': fieldType == 'text' || fieldType == 'date',
+      'options': field.options
+          .map((opt) => {
+                'id': opt.id,
+                'value': opt.value,
+                'label': opt.label,
+                'colorName': opt.colorName,
+                'colorCode': opt.colorCode,
+                'order': opt.order,
+              })
+          .toList(),
+      'order': field.order,
+      'metadata': field.metadata,
+      'referenceMedia': field.referenceMedia
+          .map((m) => {
+                'id': m.id,
+                'mediaType': m.mediaType,
+                'filePath': m.filePath,
+                'url': m.url,
+                'description': m.description,
+                'order': m.order,
+              })
+          .toList(),
+    };
+  }
 
   @override
   void initState() {
@@ -153,6 +230,31 @@ class _InspectionScreenState extends State<InspectionScreen> {
       // Set vehicle details from widget
       vehicleDetails = widget.vehicleDetails;
 
+      // Check if we have a dynamic inspection template from API
+      if (widget.inspectionTemplate != null) {
+        _inspectionTemplate = widget.inspectionTemplate;
+        _useDynamicTemplate = true;
+      } else if (vehicleDetails != null &&
+          vehicleDetails!.containsKey('inspectionTemplate')) {
+        final templateData = vehicleDetails!['inspectionTemplate'];
+        if (templateData != null) {
+          if (templateData is InspectionInitializationResponse) {
+            _inspectionTemplate = templateData;
+          } else {
+            try {
+              _inspectionTemplate = InspectionInitializationResponse.fromJson(
+                templateData is Map<String, dynamic>
+                    ? templateData
+                    : templateData as Map<String, dynamic>,
+              );
+            } catch (e) {
+              log('Error parsing inspection template: $e');
+            }
+          }
+          _useDynamicTemplate = _inspectionTemplate != null;
+        }
+      }
+
       if (widget.isNewInspection) {
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
         _initializeValues();
@@ -165,7 +267,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
       _rewardedAdManager.loadRewardedInterstitialAd();
 
       if (mounted) {
-        setState(() {});
+        setState(() {
+          _isLoadingTemplate = false;
+        });
       }
     });
   }
@@ -187,7 +291,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
       }
     } catch (e) {
       print('Error initializing Hive: $e');
-      // If there's an error, try to delete the box and recreate it
       await Hive.deleteBoxFromDisk(INSPECTION_BOX);
       final appDocumentDir = await getApplicationDocumentsDirectory();
       await Hive.initFlutter(appDocumentDir.path);
@@ -202,13 +305,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
     }
 
     try {
-      // Collect current remarks from controllers
       Map<String, String> currentRemarks = {};
       remarksControllers.forEach((key, controller) {
         currentRemarks[key] = controller.text;
       });
 
-      // Prepare multi-images map
       Map<String, List<String>> currentMultiImages = {};
       itemMultiImages.forEach((key, images) {
         if (images != null && images.isNotEmpty) {
@@ -236,9 +337,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
         storageModel,
       );
 
-      print('Data saved locally: ${storageModel.itemValues}');
-      print('Images saved: ${storageModel.itemImages}');
-      print('Multi-Images saved: ${storageModel.multiImages}');
+      print('Data saved locally');
     } catch (e) {
       print('Error saving data: $e');
     }
@@ -246,7 +345,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   Future<void> _completeInspection() async {
     try {
-      // Ensure inspection box is open
       if (!(_inspectionBox?.isOpen ?? false)) {
         await _initHive();
       }
@@ -254,7 +352,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
       final currentData =
           _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
       if (currentData != null) {
-        // Create a new completed inspection
         final completedInspection = InspectionStorageModel(
           itemValues: Map<String, String>.from(currentData.itemValues),
           itemImages: Map<String, String?>.from(currentData.itemImages),
@@ -264,21 +361,15 @@ class _InspectionScreenState extends State<InspectionScreen> {
               Map<String, String>.from(currentData.textFieldValues),
           isCompleted: true,
           timestamp: DateTime.now(),
-          status: 'submitted', // Set status to submitted
+          status: 'submitted',
         );
 
-        // Open history box
         final historyBox = await Hive.openBox<InspectionStorageModel>(
           HiveConstants.INSPECTION_HISTORY_BOX,
         );
 
-        // Add to history
         await historyBox.add(completedInspection);
-
-        // Delete current inspection
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
-
-        // Close history box
         await historyBox.close();
       }
     } catch (e) {
@@ -301,9 +392,45 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   IconData _getSectionIcon(String sectionTitle) {
-    switch (sectionTitle.toLowerCase()) {
+    final title = sectionTitle.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+    
+    // Handle API section names (like documents, body_panel, dataset1, etc.)
+    switch (title) {
       case 'documents':
         return Icons.description;
+      case 'body_panel':
+        return Icons.directions_car;
+      case 'flood_affected':
+        return Icons.water_damage;
+      case 'dataset1':
+      case 'data_set_1':
+        return Icons.analytics;
+      case 'dataset2':
+      case 'data_set_2':
+        return Icons.analytics;
+      case 'battery':
+        return Icons.battery_full;
+      case 'coolant':
+        return Icons.opacity;
+      case 'under_hood':
+        return Icons.car_repair;
+      case 'brake_fluid':
+        return Icons.speed;
+      case 'tire':
+        return Icons.tire_repair;
+      case 'exterior':
+        return Icons.directions_car_filled;
+      case 'a_c':
+        return Icons.ac_unit;
+      case 'interior':
+        return Icons.airline_seat_recline_normal;
+      case 'dicky':
+        return Icons.luggage;
+      case 'test_drive':
+        return Icons.drive_eta;
+      case 'after_warmup':
+        return Icons.local_fire_department;
+      // Fallback to original titles
       case 'body panel':
         return Icons.directions_car;
       case 'flood affected signs':
@@ -311,24 +438,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
       case 'data set - i':
       case 'data set - ii':
         return Icons.analytics;
-      case 'battery':
-        return Icons.battery_full;
-      case 'coolant':
-        return Icons.opacity;
       case 'under hood':
         return Icons.car_repair;
       case 'brake fluid':
         return Icons.speed;
-      case 'tire':
-        return Icons.tire_repair;
-      case 'exterior':
-        return Icons.directions_car_filled;
       case 'a/c':
         return Icons.ac_unit;
-      case 'interior':
-        return Icons.airline_seat_recline_normal;
-      case 'dicky':
-        return Icons.luggage;
       case 'test drive':
         return Icons.drive_eta;
       case 'after warmup':
@@ -342,32 +457,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   String _getPlaceholderText(String itemTitle, String sectionTitle) {
     final title = itemTitle.toLowerCase();
-    final section = sectionTitle.toLowerCase();
 
-    // Numeric placeholders
-    if (title.contains('battery voltage') || title.contains('voltage')) {
-      return 'e.g. 12.4V';
-    }
-    if (title.contains('specific gravity') || title.contains('sg')) {
-      return 'e.g. 1.265';
-    }
-    if (title.contains('tyre pressure') || title.contains('pressure')) {
-      return 'e.g. 32 PSI';
-    }
-    if (title.contains('tread depth') || title.contains('depth')) {
-      return 'e.g. 4.5mm';
-    }
-    if (title.contains('odometer') || title.contains('mileage')) {
-      return 'e.g. 45,678 km';
-    }
-    if (title.contains('engine rpm') || title.contains('rpm')) {
-      return 'e.g. 850 RPM';
-    }
-    if (title.contains('temperature') || title.contains('temp')) {
-      return 'e.g. 85°C';
-    }
-
-    // Text/description placeholders
     if (title.contains('registration') ||
         title.contains('number') ||
         title.contains('plate')) {
@@ -376,41 +466,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (title.contains('chassis') || title.contains('vin')) {
       return 'e.g. MA1234567890123456';
     }
-    if (title.contains('engine number') || title.contains('engine no')) {
+    if (title.contains('engine number')) {
       return 'e.g. G4FC123456';
     }
-    if (title.contains('model') || title.contains('variant')) {
-      return 'e.g. Verna SX 1.6L';
-    }
-    if (title.contains('year') || title.contains('manufacture')) {
-      return 'e.g. 2019';
-    }
-    if (title.contains('color') || title.contains('colour')) {
-      return 'e.g. Pearl White';
-    }
 
-    // Condition-based placeholders
-    if (title.contains('scratch') || title.contains('dent')) {
-      return 'e.g. Minor scratch on door';
-    }
-    if (title.contains('noise') || title.contains('sound')) {
-      return 'e.g. Slight grinding noise';
-    }
-    if (title.contains('leak') || title.contains('fluid')) {
-      return 'e.g. No leakage observed';
-    }
-
-    // Section-specific placeholders
-    switch (section) {
-      case 'documents':
-        return 'Enter document details...';
-      case 'test drive':
-        return 'Describe driving performance...';
-      case 'summary / remarks':
-        return 'Overall condition summary...';
-      default:
-        return 'Enter inspection details...';
-    }
+    return 'Enter details...';
   }
 
   Future<void> _loadDataFromStorage() async {
@@ -419,59 +479,40 @@ class _InspectionScreenState extends State<InspectionScreen> {
           _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
 
       if (storedData != null) {
-        // Clean up existing controllers
         _cleanupControllers();
 
-        // Update state with stored data
         setState(() {
-          // Load item values
           itemValues = storedData.typedItemValues;
-
-          // Load images
           itemImages = storedData.typedItemImages;
-
-          // Load remarks
           itemRemarks = storedData.typedItemRemarks;
-
-          // Load current section
           _currentSection = storedData.currentSection;
-
-          // Load multi-images
           itemMultiImages = storedData.typedMultiImages;
         });
 
-        // Initialize controllers for each section
         for (var section in _sections) {
-          for (var item in section['items'] as List<InspectionItem>) {
-            // Handle remarks controllers
-            if (item.allowRemarks || item.id == 'summary') {
-              remarksControllers[item.uniqueId] = TextEditingController(
-                text: storedData.typedItemRemarks[item.uniqueId] ?? '',
+          final items = section['items'] as List<dynamic>;
+          for (var item in items) {
+            final uniqueId = _getItemUniqueId(item);
+
+            if (_itemHasRemarks(item)) {
+              remarksControllers[uniqueId] = TextEditingController(
+                text: storedData.typedItemRemarks[uniqueId] ?? '',
               );
             }
 
-            // Handle text field controllers
-            if (item.useTextField) {
-              textFieldControllers[item.uniqueId] = TextEditingController(
-                text: storedData.typedItemValues[item.uniqueId] ?? '',
+            if (_itemUsesTextField(item)) {
+              textFieldControllers[uniqueId] = TextEditingController(
+                text: storedData.typedItemValues[uniqueId] ?? '',
               );
             }
           }
         }
-
-        // Debug print to verify loaded data
-        print('Loaded Item Values: $itemValues');
-        print('Loaded Images: $itemImages');
-        print('Loaded Multi-Images: $itemMultiImages');
       } else {
-        // If no stored data, initialize values and controllers
         _initializeValues();
         _initializeControllers();
       }
     } catch (e) {
       print('Error loading data: $e');
-
-      // Fallback to initialization if loading fails
       _initializeValues();
       _initializeControllers();
     }
@@ -480,7 +521,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
   void _onScroll() {
     if (!_isScrollable) return;
 
-    // Check if we should show section title in app bar (when scrolled past header)
     bool shouldShowSectionTitle = _scrollController.position.pixels > 100;
 
     if (shouldShowSectionTitle != _showSectionTitle) {
@@ -489,7 +529,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
       });
     }
 
-    // Check if we should show bottom button
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 50) {
       if (!_showButton) {
@@ -525,72 +564,32 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   void _initializeControllers() {
-    // First, clean up any existing controllers to prevent memory leaks
     _cleanupControllers();
-
-    // Reset controller maps
     remarksControllers.clear();
     textFieldControllers.clear();
     numberRemarkControllers.clear();
 
-    // Iterate through all sections and items
     for (var section in _sections) {
-      for (var item in section['items'] as List<InspectionItem>) {
-        try {
-          // Handle Remarks Controllers
-          if (item.allowRemarks || item.id == 'summary') {
-            // Initialize remarks controller
-            final initialRemarks = itemRemarks[item.uniqueId] ?? '';
+      final items = section['items'] as List<dynamic>;
+      for (var item in items) {
+        final uniqueId = _getItemUniqueId(item);
 
-            remarksControllers[item.uniqueId] = TextEditingController(
-              text: initialRemarks,
-            );
+        if (_itemHasRemarks(item)) {
+          remarksControllers[uniqueId] = TextEditingController(
+            text: itemRemarks[uniqueId] ?? '',
+          );
+          remarksControllers[uniqueId]?.addListener(() {
+            itemRemarks[uniqueId] = remarksControllers[uniqueId]?.text ?? '';
+          });
+        }
 
-            // Add listener to update itemRemarks in real-time
-            remarksControllers[item.uniqueId]?.addListener(() {
-              final currentText = remarksControllers[item.uniqueId]?.text ?? '';
-
-              // Update itemRemarks map
-              itemRemarks[item.uniqueId] = currentText;
-            });
-          }
-
-          // Handle Text Field Controllers
-          if (item.useTextField) {
-            // Determine initial value
-            final initialValue = itemValues[item.uniqueId] ?? '';
-
-            textFieldControllers[item.uniqueId] = TextEditingController(
-              text: initialValue,
-            );
-
-            // Add listener to update itemValues in real-time
-            textFieldControllers[item.uniqueId]?.addListener(() {
-              final currentText =
-                  textFieldControllers[item.uniqueId]?.text ?? '';
-
-              // Update itemValues map
-              itemValues[item.uniqueId] = currentText;
-            });
-          }
-
-          // Optional: Handle Number Remark Controllers (if you have specific number input fields)
-          if (item.id.contains('number_remark')) {
-            numberRemarkControllers[item.uniqueId] = TextEditingController(
-              text: itemValues[item.uniqueId] ?? '',
-            );
-
-            numberRemarkControllers[item.uniqueId]?.addListener(() {
-              final currentText =
-                  numberRemarkControllers[item.uniqueId]?.text ?? '';
-
-              // Update itemValues map
-              itemValues[item.uniqueId] = currentText;
-            });
-          }
-        } catch (e) {
-          // Minimal error handling
-          print('Error initializing controllers for item ${item.uniqueId}');
+        if (_itemUsesTextField(item)) {
+          textFieldControllers[uniqueId] = TextEditingController(
+            text: itemValues[uniqueId] ?? '',
+          );
+          textFieldControllers[uniqueId]?.addListener(() {
+            itemValues[uniqueId] = textFieldControllers[uniqueId]?.text ?? '';
+          });
         }
       }
     }
@@ -602,24 +601,169 @@ class _InspectionScreenState extends State<InspectionScreen> {
     itemMultiImages = {};
 
     for (var section in _sections) {
-      for (var item in section['items'] as List<InspectionItem>) {
-        if (item.useTextField) {
-          itemValues[item.uniqueId] = '';
-        } else if (item.options != null && item.options!.isNotEmpty) {
-          // Set default value to 'N/A' for dropdowns
-          itemValues[item.uniqueId] = 'N/A';
+      final items = section['items'] as List<dynamic>;
+      for (var item in items) {
+        final uniqueId = _getItemUniqueId(item);
+
+        if (_itemUsesTextField(item)) {
+          itemValues[uniqueId] = '';
+        } else if (_itemHasOptions(item)) {
+          itemValues[uniqueId] = 'N/A';
         }
 
-        if (item.allowRemarks || item.id == 'summary') {
-          // Include summary item
-          itemRemarks[item.uniqueId] = '';
+        if (_itemHasRemarks(item)) {
+          itemRemarks[uniqueId] = '';
         }
       }
     }
   }
 
-  _buildInspectionSection(String title, List<InspectionItem<String>> items) {
-    // Ensure current item index is within bounds
+  // Helper methods for handling both dynamic and regular items
+  String _getItemUniqueId(dynamic item) {
+    if (item is InspectionItem) {
+      return item.uniqueId;
+    } else if (item is Map) {
+      return item['fieldId'] ?? item['id'] ?? '';
+    }
+    return '';
+  }
+
+  String _getItemTitle(dynamic item) {
+    if (item is InspectionItem) {
+      return item.title;
+    } else if (item is Map) {
+      return item['title'] ?? '';
+    }
+    return '';
+  }
+
+  bool _itemHasImage(dynamic item) {
+    if (item is InspectionItem) {
+      return item.allowImage;
+    } else if (item is Map) {
+      return item['hasImage'] ?? false;
+    }
+    return false;
+  }
+
+  bool _itemHasMultiImage(dynamic item) {
+    if (item is InspectionItem) {
+      return item.allowMultiImage;
+    } else if (item is Map) {
+      return item['hasVideo'] ?? false;
+    }
+    return false;
+  }
+
+  bool _itemUsesTextField(dynamic item) {
+    if (item is InspectionItem) {
+      return item.useTextField;
+    } else if (item is Map) {
+      return item['useTextField'] ?? false;
+    }
+    return false;
+  }
+
+  bool _itemHasRemarks(dynamic item) {
+    if (item is InspectionItem) {
+      return item.allowRemarks;
+    } else if (item is Map) {
+      return item['hasRemarks'] ?? false;
+    }
+    return false;
+  }
+
+  bool _itemIsRequired(dynamic item) {
+    if (item is InspectionItem) {
+      // InspectionItem doesn't have isRequired, default to false
+      return false;
+    } else if (item is Map) {
+      return item['isRequired'] ?? false;
+    }
+    return false;
+  }
+
+  bool _itemHasVideo(dynamic item) {
+    if (item is InspectionItem) {
+      // InspectionItem doesn't have allowVideo, default to false
+      return false;
+    } else if (item is Map) {
+      return item['hasVideo'] ?? false;
+    }
+    return false;
+  }
+
+  bool _itemHasFile(dynamic item) {
+    if (item is InspectionItem) {
+      // InspectionItem doesn't have allowFile, default to false
+      return false;
+    } else if (item is Map) {
+      return item['hasFile'] ?? false;
+    }
+    return false;
+  }
+
+  List<Map<String, dynamic>> _getItemReferenceMedia(dynamic item) {
+    if (item is Map) {
+      final media = item['referenceMedia'];
+      if (media is List && media.isNotEmpty) {
+        return media.cast<Map<String, dynamic>>();
+      }
+    }
+    return [];
+  }
+
+  bool _itemHasOptions(dynamic item) {
+    if (item is InspectionItem) {
+      return item.options != null && item.options!.isNotEmpty;
+    } else if (item is Map) {
+      return item['options'] != null && (item['options'] as List).isNotEmpty;
+    }
+    return false;
+  }
+
+  List<dynamic> _getItemOptions(dynamic item) {
+    if (item is InspectionItem) {
+      return item.options?.map((opt) {
+            // Convert DropdownOption to a map with consistent properties
+            Color color = opt.color;
+            String colorCode = '#000000';
+            String colorName = 'default';
+
+            // Try to extract color code from the color
+            try {
+              colorCode =
+                  '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
+            } catch (e) {
+              // Use default
+            }
+
+            return {
+              'id': 0,
+              'value': opt.value,
+              'label': opt.label,
+              'colorName': colorName,
+              'colorCode': colorCode,
+              'order': 0,
+            };
+          }).toList() ??
+          [];
+    } else if (item is Map) {
+      return item['options'] ?? [];
+    }
+    return [];
+  }
+
+  String _getItemFieldId(dynamic item) {
+    if (item is InspectionItem) {
+      return item.id;
+    } else if (item is Map) {
+      return item['fieldId'] ?? item['id'] ?? '';
+    }
+    return '';
+  }
+
+  Widget _buildInspectionSection(String title, List<dynamic> items) {
     if (_currentItemIndex >= items.length) {
       _currentItemIndex = 0;
     }
@@ -693,7 +837,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
           ),
         ),
         _buildSingleItemContainer(item, title),
-        // Navigation buttons
         Padding(
           padding: const EdgeInsets.all(16.0),
           child: Row(
@@ -729,8 +872,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
     );
   }
 
-  Widget _buildSingleItemContainer(
-      InspectionItem<String> item, String sectionTitle) {
+  Widget _buildSingleItemContainer(dynamic item, String sectionTitle) {
+    final uniqueId = _getItemUniqueId(item);
+    final title = _getItemTitle(item);
+    final allowImage = _itemHasImage(item);
+    final allowMultiImage = _itemHasMultiImage(item);
+    final isRequired = _itemIsRequired(item);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -744,8 +891,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
           ),
         ],
         border: Border.all(
-          color: Theme.of(context).dividerColor.withAlpha(51),
-          width: 1,
+          color: isRequired 
+              ? Colors.orange.withAlpha(128) 
+              : Theme.of(context).dividerColor.withAlpha(51),
+          width: isRequired ? 2 : 1,
         ),
       ),
       child: Padding(
@@ -753,26 +902,40 @@ class _InspectionScreenState extends State<InspectionScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: Item name + Camera button
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
-                  child: Text(
-                    item.title,
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).textTheme.titleLarge?.color,
-                    ),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).textTheme.titleLarge?.color,
+                          ),
+                        ),
+                      ),
+                      if (isRequired)
+                        const Text(
+                          ' *',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
-                if (item.allowImage || item.allowMultiImage)
+                if (allowImage || allowMultiImage)
                   IconButton(
                     icon: const Icon(Icons.camera_alt, size: 28),
                     color: Colors.blue,
                     onPressed: () {
-                      if (item.allowMultiImage) {
+                      if (allowMultiImage) {
                         _pickMultiImages(item);
                       } else {
                         _showImagePickerOptions(item);
@@ -782,8 +945,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            // Captured image preview (if exists)
-            if (item.allowImage && itemImages[item.uniqueId] != null)
+            if (allowImage && itemImages[uniqueId] != null)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -797,52 +959,44 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           color: Theme.of(context).textTheme.bodyMedium?.color,
                         ),
                       ),
-                      if (_uploadingImages.contains(item.uniqueId)) ...[
+                      if (_uploadingImages.contains(uniqueId)) ...[
                         const SizedBox(width: 8),
                         const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           'Uploading...',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange,
-                          ),
+                          style: TextStyle(fontSize: 12, color: Colors.orange),
                         ),
                       ],
                     ],
                   ),
                   const SizedBox(height: 8),
                   GestureDetector(
-                    onTap: () => _showImagePreview(itemImages[item.uniqueId]!),
+                    onTap: () => _showImagePreview(itemImages[uniqueId]!),
                     child: Container(
                       width: double.infinity,
                       height: 200,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.grey.shade300,
-                          width: 1,
-                        ),
+                        border:
+                            Border.all(color: Colors.grey.shade300, width: 1),
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: _buildImageWidget(itemImages[item.uniqueId]!),
+                        child: _buildImageWidget(itemImages[uniqueId]!),
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
                 ],
               ),
-            // Multi-image preview (if exists)
-            if (item.allowMultiImage &&
-                itemMultiImages[item.uniqueId] != null &&
-                itemMultiImages[item.uniqueId]!.isNotEmpty)
+            if (allowMultiImage &&
+                itemMultiImages[uniqueId] != null &&
+                itemMultiImages[uniqueId]!.isNotEmpty)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -856,24 +1010,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           color: Theme.of(context).textTheme.bodyMedium?.color,
                         ),
                       ),
-                      if (_uploadingImages.contains(item.uniqueId)) ...[
-                        const SizedBox(width: 8),
-                        const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Uploading...',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.orange,
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -881,19 +1017,16 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     height: 150,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
-                      itemCount: itemMultiImages[item.uniqueId]!.length,
+                      itemCount: itemMultiImages[uniqueId]!.length,
                       itemBuilder: (context, imgIndex) {
-                        final imagePath =
-                            itemMultiImages[item.uniqueId]![imgIndex];
+                        final imagePath = itemMultiImages[uniqueId]![imgIndex];
                         return Container(
                           margin: const EdgeInsets.only(right: 8),
                           width: 150,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: Colors.grey.shade300,
-                              width: 1,
-                            ),
+                                color: Colors.grey.shade300, width: 1),
                           ),
                           child: Stack(
                             children: [
@@ -911,10 +1044,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
                                 child: GestureDetector(
                                   onTap: () {
                                     final updatedPaths = List<String>.from(
-                                        itemMultiImages[item.uniqueId]!)
+                                        itemMultiImages[uniqueId]!)
                                       ..removeAt(imgIndex);
                                     setState(() {
-                                      itemMultiImages[item.uniqueId] =
+                                      itemMultiImages[uniqueId] =
                                           updatedPaths.isEmpty
                                               ? null
                                               : updatedPaths;
@@ -926,11 +1059,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                                       color: Colors.white,
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(
-                                      Icons.cancel,
-                                      size: 18,
-                                      color: Colors.red,
-                                    ),
+                                    child: const Icon(Icons.cancel,
+                                        size: 18, color: Colors.red),
                                   ),
                                 ),
                               ),
@@ -943,54 +1073,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   const SizedBox(height: 16),
                 ],
               ),
-            // Reference placeholder image (only for items that allow images)
-            if (item.allowImage || item.allowMultiImage)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Reference Image:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    height: 200,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: Colors.grey.shade300,
-                        width: 1,
-                      ),
-                    ),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.image,
-                          size: 64,
-                          color: Colors.grey.shade400,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Reference Image',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            // Item controls (dropdown/text field/remarks)
             _buildItemControls(item, sectionTitle),
           ],
         ),
@@ -998,57 +1080,56 @@ class _InspectionScreenState extends State<InspectionScreen> {
     );
   }
 
-  Widget _buildItemControls(InspectionItem<String> item, String sectionTitle) {
+  Widget _buildItemControls(dynamic item, String sectionTitle) {
+    final uniqueId = _getItemUniqueId(item);
+    final useTextField = _itemUsesTextField(item);
+    final hasRemarks = _itemHasRemarks(item);
+    final options = _getItemOptions(item);
+    final title = _getItemTitle(item);
+    final referenceMedia = _getItemReferenceMedia(item);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Dropdown or TextField
-        if (item.useTextField)
+        if (useTextField)
           TextField(
-            controller: textFieldControllers[item.uniqueId],
+            controller: textFieldControllers[uniqueId],
             decoration: InputDecoration(
               filled: true,
               fillColor: Theme.of(context).brightness == Brightness.dark
                   ? Colors.grey[850]
                   : Colors.grey[50],
-              hintText: _getPlaceholderText(item.title, sectionTitle),
+              hintText: _getPlaceholderText(title, sectionTitle),
               hintStyle: TextStyle(
                 color: Theme.of(context).hintColor.withAlpha(153),
                 fontSize: 14,
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Theme.of(context).dividerColor,
-                ),
+                borderSide: BorderSide(color: Theme.of(context).dividerColor),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(
-                  color: Theme.of(context).dividerColor.withAlpha(128),
-                ),
+                    color: Theme.of(context).dividerColor.withAlpha(128)),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                  color: Theme.of(context).primaryColor,
-                  width: 2,
-                ),
+                borderSide:
+                    BorderSide(color: Theme.of(context).primaryColor, width: 2),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 12,
-              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
             ),
             keyboardType: TextInputType.multiline,
             onChanged: (value) {
               setState(() {
-                itemValues[item.uniqueId] = value;
+                itemValues[uniqueId] = value;
               });
               _autoSave();
             },
           )
-        else if (item.options != null)
+        else if (options.isNotEmpty)
           Container(
             decoration: BoxDecoration(
               color: Theme.of(context).brightness == Brightness.dark
@@ -1061,55 +1142,36 @@ class _InspectionScreenState extends State<InspectionScreen> {
             ),
             child: DropdownButton<String>(
               isExpanded: true,
-              value: item.options?.any((option) =>
-                          option.value == itemValues[item.uniqueId]) ==
-                      true
-                  ? itemValues[item.uniqueId]
+              value: options.any((opt) => opt['value'] == itemValues[uniqueId])
+                  ? itemValues[uniqueId]
                   : null,
               underline: Container(),
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              items: item.options
-                      ?.map((option) => DropdownMenuItem<String>(
-                            value: option.value,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (option.icon != null) ...[
-                                  Icon(
-                                    option.icon,
-                                    size: 18,
-                                    color: option.color,
-                                  ),
-                                  const SizedBox(width: 8),
-                                ],
-                                Flexible(
-                                  child: Text(
-                                    option.label,
-                                    style: TextStyle(
-                                      color: option.color,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ))
-                      .toList() ??
-                  [],
+              items: options
+                  .map((opt) => DropdownMenuItem<String>(
+                        value: opt['value'],
+                        child: Text(
+                          opt['label'],
+                          style: TextStyle(
+                            color: _parseColor(opt['colorCode']),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ))
+                  .toList(),
               onChanged: (String? newValue) {
                 if (newValue != null && mounted) {
                   setState(() {
-                    itemValues[item.uniqueId] = newValue;
+                    itemValues[uniqueId] = newValue;
                   });
                   _autoSave();
                 }
               },
             ),
           ),
-        // Remarks field
-        if (item.allowRemarks) ...[
+        if (hasRemarks) ...[
           const SizedBox(height: 16),
           Container(
             decoration: BoxDecoration(
@@ -1123,35 +1185,46 @@ class _InspectionScreenState extends State<InspectionScreen> {
             ),
             child: TextField(
               controller:
-                  remarksControllers[item.uniqueId] ?? TextEditingController(),
-              decoration: InputDecoration(
-                hintText: '✍️ Add remarks...',
-                hintStyle: TextStyle(
-                  color: Theme.of(context).hintColor,
-                  fontSize: 14,
-                ),
+                  remarksControllers[uniqueId] ?? TextEditingController(),
+              decoration: const InputDecoration(
+                hintText: 'Add remarks...',
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
               maxLines: 3,
               onChanged: (value) {
-                itemRemarks[item.uniqueId] = value;
+                itemRemarks[uniqueId] = value;
                 _autoSave();
               },
             ),
           ),
         ],
-        // Info button
         const SizedBox(height: 12),
-        InspectionInfoButton(fieldId: item.uniqueId),
+        InspectionInfoButton(
+          fieldId: uniqueId,
+          referenceMedia: referenceMedia,
+        ),
       ],
     );
   }
 
-  void _showImagePickerOptions(InspectionItem<String> item) {
+  Color _parseColor(String? colorCode) {
+    if (colorCode == null) return Colors.black;
+    try {
+      if (colorCode.startsWith('#')) {
+        return Color(int.parse(colorCode.replaceFirst('#', '0xFF')));
+      }
+      return Colors.black;
+    } catch (e) {
+      return Colors.black;
+    }
+  }
+
+  void _showImagePickerOptions(dynamic item) {
+    final uniqueId = _getItemUniqueId(item);
+    final fieldId = _getItemFieldId(item);
+
     showModalBottomSheet(
       context: context,
       builder: (BuildContext context) {
@@ -1164,7 +1237,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                 title: const Text('Take Photo'),
                 onTap: () {
                   Navigator.pop(context);
-                  _pickImage(ImageSource.camera, item);
+                  _pickImage(ImageSource.camera, uniqueId, fieldId);
                 },
               ),
               ListTile(
@@ -1172,7 +1245,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                 title: const Text('Choose from Gallery'),
                 onTap: () {
                   Navigator.pop(context);
-                  _pickImage(ImageSource.gallery, item);
+                  _pickImage(ImageSource.gallery, uniqueId, fieldId);
                 },
               ),
             ],
@@ -1183,7 +1256,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   Future<void> _pickImage(
-      ImageSource source, InspectionItem<String> item) async {
+      ImageSource source, String uniqueId, String fieldId) async {
     try {
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
@@ -1195,70 +1268,53 @@ class _InspectionScreenState extends State<InspectionScreen> {
       if (image != null && mounted) {
         final String sectionTitle =
             _sections[_currentSection]['title'] as String;
+        final savedPath = await LocalStorageService.saveImage(image.path);
 
-        // Save image to local storage first
-        final String savedPath =
-            await LocalStorageService.saveImage(image.path);
-
-        // Set local path for immediate display
         setState(() {
-          itemImages[item.uniqueId] = savedPath;
-          _uploadingImages.add(item.uniqueId);
+          itemImages[uniqueId] = savedPath;
+          _uploadingImages.add(uniqueId);
         });
 
-        // Auto-save to preserve the image path
         await _saveDataLocally();
 
-        // Check internet connectivity and upload if available
         final bool hasInternet =
             await ConnectivityChecker.hasInternetConnection();
 
         if (hasInternet) {
-          // Try to upload immediately
           final result = await ApiService.uploadImage(
             savedPath,
             inspectionId: widget.inspectionId,
             section: sectionTitle,
-            itemId: item.id,
+            itemId: fieldId,
           );
 
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(item.uniqueId);
+              _uploadingImages.remove(uniqueId);
             });
 
             if (result['success']) {
-              // Store the uploaded image URL
               setState(() {
-                itemImages[item.uniqueId] = result['url'] as String;
+                itemImages[uniqueId] = result['url'] as String;
               });
-              log('Image uploaded successfully: ${result['url']}');
-
-              // Save immediately after getting URL
               await _saveDataLocally();
             } else {
-              // Upload failed - keep local path, will upload later
-              log('Image upload failed: ${result['message']}. Will upload when online.');
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content:
-                      Text('Image saved locally. Will upload when online.'),
-                  backgroundColor: Colors.orange,
-                ),
+                const SnackBar(
+                    content:
+                        Text('Image saved locally. Will upload when online.')),
               );
             }
           }
         } else {
-          // Offline - keep local path for later upload
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(item.uniqueId);
+              _uploadingImages.remove(uniqueId);
             });
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Image saved locally. Will upload when online.'),
-                backgroundColor: Colors.orange,
-              ),
+              const SnackBar(
+                  content:
+                      Text('Image saved locally. Will upload when online.')),
             );
           }
         }
@@ -1266,19 +1322,19 @@ class _InspectionScreenState extends State<InspectionScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _uploadingImages.remove(item.uniqueId);
+          _uploadingImages.remove(uniqueId);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to pick image: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Failed to pick image: $e')),
         );
       }
     }
   }
 
-  Future<void> _pickMultiImages(InspectionItem<String> item) async {
+  Future<void> _pickMultiImages(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    final fieldId = _getItemFieldId(item);
+
     try {
       final ImagePicker picker = ImagePicker();
       final List<XFile> images = await picker.pickMultiImage(
@@ -1287,109 +1343,74 @@ class _InspectionScreenState extends State<InspectionScreen> {
       );
 
       if (images.isNotEmpty && mounted) {
-        // Get current section title
         final String sectionTitle =
             _sections[_currentSection]['title'] as String;
-
-        final currentImages = itemMultiImages[item.uniqueId] ?? [];
-
-        // Save all images to local storage
+        final currentImages = itemMultiImages[uniqueId] ?? [];
         final List<String> savedPaths = [];
+
         for (var image in images) {
           final savedPath = await LocalStorageService.saveImage(image.path);
           savedPaths.add(savedPath);
         }
 
-        final newImagePaths = savedPaths;
-        final updatedPaths = [...currentImages, ...newImagePaths];
-
-        // Limit to 11 images max
-        final finalPaths = updatedPaths.take(11).toList();
+        final updatedPaths =
+            [...currentImages, ...savedPaths].take(11).toList();
 
         setState(() {
-          itemMultiImages[item.uniqueId] = finalPaths;
-          _uploadingImages.add(item.uniqueId);
+          itemMultiImages[uniqueId] = updatedPaths;
+          _uploadingImages.add(uniqueId);
         });
 
-        // Auto-save
         await _saveDataLocally();
 
-        // Check internet connectivity
         final bool hasInternet =
             await ConnectivityChecker.hasInternetConnection();
 
         if (hasInternet) {
-          // Upload all new images and collect URLs
           final List<String> uploadedUrls = [];
 
-          for (int i = 0; i < finalPaths.length; i++) {
-            final path = finalPaths[i];
-            // Check if this is a new image (not already uploaded)
+          for (int i = 0; i < updatedPaths.length; i++) {
+            final path = updatedPaths[i];
             if (!path.startsWith('http')) {
               final result = await ApiService.uploadImage(
                 path,
                 inspectionId: widget.inspectionId,
                 section: sectionTitle,
-                itemId: item.id,
+                itemId: fieldId,
               );
 
               if (result['success']) {
                 uploadedUrls.add(result['url'] as String);
               } else {
-                // Keep local path if upload fails
-                log('Failed to upload image: ${result['message']}');
                 uploadedUrls.add(path);
               }
             } else {
-              // Already uploaded (URL)
               uploadedUrls.add(path);
             }
           }
 
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(item.uniqueId);
-              itemMultiImages[item.uniqueId] = uploadedUrls;
+              _uploadingImages.remove(uniqueId);
+              itemMultiImages[uniqueId] = uploadedUrls;
             });
-
-            // Save immediately after all uploads complete
             await _saveDataLocally();
           }
         } else {
-          // Offline - keep local paths for later upload
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(item.uniqueId);
+              _uploadingImages.remove(uniqueId);
             });
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Images saved locally. Will upload when online.'),
-                backgroundColor: Colors.orange,
-              ),
-            );
           }
-        }
-
-        if (images.length > 11 - currentImages.length) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  'Only ${11 - currentImages.length} images added. Maximum is 11.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _uploadingImages.remove(item.uniqueId);
+          _uploadingImages.remove(uniqueId);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to pick images: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Failed to pick images: $e')),
         );
       }
     }
@@ -1397,7 +1418,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   Widget _buildImageWidget(String imagePath) {
     if (imagePath.startsWith('http')) {
-      // Remote URL - use Image.network
       return Image.network(
         imagePath,
         fit: BoxFit.cover,
@@ -1419,7 +1439,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
         },
       );
     } else {
-      // Local file - use Image.file
       return Image.file(
         File(imagePath),
         fit: BoxFit.cover,
@@ -1451,11 +1470,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     IconButton(
                       icon: const Icon(Icons.delete),
                       onPressed: () {
-                        final item = _sections[_currentSection]['items']
-                            as List<InspectionItem<String>>;
-                        final currentItem = item[_currentItemIndex];
+                        final items = _sections[_currentSection]['items']
+                            as List<dynamic>;
+                        final currentItem = items[_currentItemIndex];
+                        final uniqueId = _getItemUniqueId(currentItem);
                         setState(() {
-                          itemImages[currentItem.uniqueId] = null;
+                          itemImages[uniqueId] = null;
                         });
                         _autoSave();
                         Navigator.of(context).pop();
@@ -1470,19 +1490,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     minScale: 0.5,
                     maxScale: 4,
                     child: imagePath.startsWith('http')
-                        ? Image.network(
-                            imagePath,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return const Center(
-                                child: Icon(Icons.broken_image, size: 48),
-                              );
-                            },
-                          )
-                        : Image.file(
-                            File(imagePath),
-                            fit: BoxFit.contain,
-                          ),
+                        ? Image.network(imagePath, fit: BoxFit.contain)
+                        : Image.file(File(imagePath), fit: BoxFit.contain),
                   ),
                 ),
               ],
@@ -1495,7 +1504,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   void _nextItem() {
     final currentSection = _sections[_currentSection];
-    final items = currentSection['items'] as List<InspectionItem<String>>;
+    final items = currentSection['items'] as List<dynamic>;
     if (_currentItemIndex < items.length - 1) {
       setState(() {
         _currentItemIndex++;
@@ -1513,11 +1522,56 @@ class _InspectionScreenState extends State<InspectionScreen> {
     }
   }
 
+  List<String> _getRequiredFieldErrors() {
+    final section = _sections[_currentSection];
+    final items = section['items'] as List<dynamic>;
+    final errors = <String>[];
+
+    for (var item in items) {
+      if (!_itemIsRequired(item)) continue;
+
+      final uniqueId = _getItemUniqueId(item);
+      final title = _getItemTitle(item);
+
+      if (_itemUsesTextField(item)) {
+        final value = itemValues[uniqueId]?.trim() ?? '';
+        if (value.isEmpty) {
+          errors.add(title);
+        }
+      } else if (_itemHasOptions(item)) {
+        final value = itemValues[uniqueId] ?? 'N/A';
+        if (value == 'N/A' || value.isEmpty) {
+          errors.add(title);
+        }
+      }
+
+      if (_itemHasImage(item)) {
+        if (itemImages[uniqueId] == null || itemImages[uniqueId]!.isEmpty) {
+          errors.add('$title (image)');
+        }
+      }
+    }
+
+    return errors;
+  }
+
   void _nextSection() {
+    final errors = _getRequiredFieldErrors();
+    if (errors.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Required fields missing: ${errors.join(", ")}'),
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     if (_currentSection < _sections.length - 1) {
       setState(() {
         _currentSection++;
-        _currentItemIndex = 0; // Reset item index when changing sections
+        _currentItemIndex = 0;
         _showButton = false;
         _isScrollable = false;
       });
@@ -1536,7 +1590,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
         }
       });
     } else {
-      if (_isSubmitting) return; // Prevent multiple submissions
+      if (_isSubmitting) return;
 
       showDialog(
         context: context,
@@ -1563,11 +1617,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Text('Submit'),
               ),
@@ -1582,26 +1632,67 @@ class _InspectionScreenState extends State<InspectionScreen> {
     try {
       await _rewardedAdManager.showRewardedInterstitialAd(
         onUserEarnedReward: (ad, rewardItem) {
-          print('User earned reward: ${rewardItem.amount} ${rewardItem.type}');
-          // Proceed with submission after earning reward
           _handleSubmission();
         },
         onAdClosed: () {
-          print('Rewarded ad closed');
-          // Still proceed with submission even if ad was closed without reward
           _handleSubmission();
         },
         onAdFailedToShow: () {
-          print('Failed to show rewarded ad');
-          // Proceed with submission if ad fails to show
           _handleSubmission();
         },
       );
     } catch (e) {
-      print('Error showing rewarded ad: $e');
-      // Proceed with submission if there's an error
       _handleSubmission();
     }
+  }
+
+  Map<String, dynamic> _buildSubmissionBody() {
+    Map<String, dynamic> inspectionData = {};
+
+    for (var section in _sections) {
+      final sectionName = section['name'] ??
+          (section['title'] as String).toLowerCase().replaceAll(' ', '_');
+      List<Map<String, dynamic>> sectionItems = [];
+
+      for (var item in section['items'] as List<dynamic>) {
+        final uniqueId = _getItemUniqueId(item);
+        final title = _getItemTitle(item);
+        final value = itemValues[uniqueId] ?? '';
+        final remarks = itemRemarks[uniqueId];
+        final imagePath = itemImages[uniqueId];
+
+        sectionItems.add({
+          'id': uniqueId,
+          'title': title,
+          'value': value,
+          'remarks': (remarks != null && remarks.isNotEmpty) ? remarks : null,
+          'imagePath': imagePath,
+        });
+      }
+
+      inspectionData[sectionName] = {
+        'title': section['title'],
+        'items': sectionItems,
+      };
+    }
+
+    String registrationNumber = '';
+    for (var key in itemValues.keys) {
+      if (key.toLowerCase().contains('registration') ||
+          key.toLowerCase().contains('regnumber') ||
+          key.toLowerCase().contains('reg_number')) {
+        registrationNumber = itemValues[key] ?? '';
+        break;
+      }
+    }
+
+    return {
+      'template_type': 'default',
+      'vehicle_brand_id': vehicleDetails?['brand_id'],
+      'vehicle_model_id': vehicleDetails?['model_id'],
+      'registration_number': registrationNumber,
+      'inspection_data': inspectionData,
+    };
   }
 
   Future<void> _handleSubmission() async {
@@ -1612,139 +1703,57 @@ class _InspectionScreenState extends State<InspectionScreen> {
     });
 
     try {
-      // Prepare data for submission
-      Map<String, String?> finalItemImages = Map.from(itemImages);
-      Map<String, String> summaryImagePaths = {};
-      Map<String, dynamic> imageMetadata = {};
-
-      // Build image metadata for single images
-      for (var section in _sections) {
-        final sectionTitle = section['title'] as String;
-        final items = section['items'] as List<InspectionItem<String>>;
-        for (var item in items) {
-          if (itemImages.containsKey(item.uniqueId)) {
-            imageMetadata[item.uniqueId] = {
-              'section': sectionTitle,
-              'itemId': item.id,
-            };
-          }
-        }
-      }
-
-      // Handle multi-images for all sections
-      itemMultiImages.forEach((key, images) {
-        if (images != null && images.isNotEmpty) {
-          // Special handling for summary section
-          if (key.contains('summary')) {
-            for (int i = 0; i < images.length; i++) {
-              final imagePath = images[i];
-              final imageKey = 'summary_image_${i + 1}';
-              summaryImagePaths[imageKey] = imagePath;
-              finalItemImages[imageKey] = imagePath;
-              // Add metadata for summary images
-              imageMetadata[imageKey] = {
-                'section': 'Summary / Remarks',
-                'itemId': 'summary_image_${i + 1}',
-              };
-            }
-          } else {
-            // Find the section title for this multi-image key
-            String sectionTitle = '';
-            for (var section in _sections) {
-              final items = section['items'] as List<InspectionItem<String>>;
-              for (var item in items) {
-                if (item.uniqueId == key) {
-                  sectionTitle = section['title'] as String;
-                  break;
-                }
-              }
-              if (sectionTitle.isNotEmpty) break;
-            }
-
-            for (int i = 0; i < images.length; i++) {
-              final imagePath = images[i];
-              final imageKey = '${key}_${i + 1}';
-              finalItemImages[imageKey] = imagePath;
-              // Add metadata for multi-images
-              imageMetadata[imageKey] = {
-                'section': sectionTitle,
-                'itemId': '${key}_${i + 1}',
-              };
-            }
-          }
-        }
-      });
-
-      // Prepare formatted data with summary image paths
-      final formattedData = InspectionDataFormatter.formatData(
-        itemValues: itemValues,
-        itemImages: finalItemImages,
-        itemRemarks: itemRemarks,
-        sections: _sections,
-        multiImages: itemMultiImages,
-        additionalData: {
-          'summaryImagePaths': summaryImagePaths,
-        },
-      );
-
-      // Check internet connectivity first
       bool hasInternet = await ConnectivityChecker.hasInternetConnection();
 
       if (!hasInternet) {
-        // No network connection - save to pending for later submission
+        Map<String, String?> finalItemImages = Map.from(itemImages);
+        final body = _buildSubmissionBody();
+
         await LocalStorageService.saveInspection(
-          data: formattedData,
+          data: body,
           images: finalItemImages,
           status: 'pending',
-          imageMetadata: imageMetadata,
         );
 
-        // Complete the current inspection locally
         await _completeInspection();
         await _cleanupCurrentInspection();
-
-        // Navigate to LocalInspections page
         _navigateToLocalInspections(context);
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content:
-                  Text('No internet connection. Inspection saved to pending.'),
-              backgroundColor: Colors.orange,
-            ),
+                content: Text(
+                    'No internet connection. Inspection saved to pending.')),
           );
         }
         return;
       }
 
-      // Network is available - send inspection directly
       try {
-        final result = await ApiService.sendInspectionData(
-          formattedData,
-          inspectionId: widget.inspectionId,
-        );
+        final body = _buildSubmissionBody();
+        final result = await ApiService.submitInspection(body);
 
         if (result['success']) {
-          // Complete the current inspection locally
           await _completeInspection();
           await _cleanupCurrentInspection();
 
-          // Navigate to LocalInspections page
-          _navigateToLocalInspections(context);
-
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Inspection submitted successfully'),
-                backgroundColor: Colors.green,
+            final data = result['data'] as Map<String, dynamic>;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (context) => InspectionSuccessPage(
+                  redirectUrl: data['redirect_url'] ?? '',
+                  inspectionId: data['inspection_id'] ?? 0,
+                  uuid: data['uuid'] ?? '',
+                ),
               ),
+              (route) => false,
             );
           }
         } else {
-          // If API submission fails, save as pending
+          Map<String, String?> finalItemImages = Map.from(itemImages);
           await LocalStorageService.saveInspection(
-            data: formattedData,
+            data: _buildSubmissionBody(),
             images: finalItemImages,
             status: 'pending',
           );
@@ -1752,21 +1761,14 @@ class _InspectionScreenState extends State<InspectionScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(
-                    'Failed to submit: ${result['message'] ?? 'Unknown error'}'),
-                backgroundColor: Colors.red,
-              ),
+                  content: Text('Failed to submit: ${result['message']}')),
             );
           }
         }
       } catch (apiError) {
-        // Network or API error - show error only, don't save to pending
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Submission error: $apiError'),
-              backgroundColor: Colors.red,
-            ),
+            SnackBar(content: Text('Submission error: $apiError')),
           );
         }
       }
@@ -1775,10 +1777,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving inspection: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Error saving inspection: $e')),
         );
       }
     } finally {
@@ -1806,11 +1805,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (_currentSection > 0) {
       setState(() {
         _currentSection--;
-        _currentItemIndex = 0; // Reset item index when changing sections
-        _showButton = false; // Hide button when changing sections
+        _currentItemIndex = 0;
+        _showButton = false;
+        _isScrollable = false;
       });
 
-      // Reset scroll position for new section
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController.jumpTo(0);
@@ -1825,16 +1824,68 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Show loading while template is being initialized
+    if (_isLoadingTemplate) {
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator.adaptive(),
+              SizedBox(height: 16),
+              Text('Loading inspection template...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Handle empty sections case
+    if (_sections.isEmpty) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.orange),
+              const SizedBox(height: 16),
+              const Text(
+                'No inspection template loaded',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Debug: _useDynamicTemplate = $_useDynamicTemplate',
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Debug: _inspectionTemplate = ${_inspectionTemplate != null ? "loaded" : "null"}',
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Debug: widget.inspectionTemplate = ${widget.inspectionTemplate != null ? "loaded" : "null"}',
+                style: const TextStyle(fontSize: 14, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Go Back'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final currentSection = _sections[_currentSection];
 
     return PopScope(
       canPop: false,
       onPopInvoked: (bool didPop) async {
-        if (didPop) {
-          return;
-        }
+        if (didPop) return;
 
-        // Show confirmation dialog
         final bool shouldClose = await showDialog(
               context: context,
               builder: (BuildContext context) {
@@ -1926,7 +1977,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           child: const Text('Cancel'),
                         ),
                         TextButton(
-                          onPressed: _handleClose, // Add this line
+                          onPressed: _handleClose,
                           child: const Text('Stop'),
                         ),
                       ],
@@ -1949,7 +2000,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
               : null,
           automaticallyImplyLeading: false,
         ),
-        endDrawer: _buildDrawer(), // Add this line
+        endDrawer: _buildDrawer(),
         body: Column(
           children: [
             Container(
@@ -1997,7 +2048,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   ),
                   Text(
                     '${((_currentSection + 1) / _sections.length * 100).round()}% Complete',
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
                       color: Colors.white,
                       fontWeight: FontWeight.w600,
@@ -2008,13 +2059,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
             ),
             Expanded(
               child: ListView(
-                key: PageStorageKey<int>(
-                    _currentSection), // Add a key to force rebuild
+                key: PageStorageKey<int>(_currentSection),
                 controller: _scrollController,
                 children: [
                   _buildInspectionSection(
                     currentSection['title'],
-                    currentSection['items'] as List<InspectionItem<String>>,
+                    currentSection['items'] as List<dynamic>,
                   ),
                   Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -2024,18 +2074,14 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       child: Container(
                         decoration: BoxDecoration(
                           gradient: _currentSection == _sections.length - 1
-                              ? const LinearGradient(
-                                  colors: [
-                                    Color(0xFF11998e),
-                                    Color(0xFF38ef7d)
-                                  ],
-                                )
-                              : const LinearGradient(
-                                  colors: [
-                                    Color(0xFF667eea),
-                                    Color(0xFF764ba2)
-                                  ],
-                                ),
+                              ? const LinearGradient(colors: [
+                                  Color(0xFF11998e),
+                                  Color(0xFF38ef7d)
+                                ])
+                              : const LinearGradient(colors: [
+                                  Color(0xFF667eea),
+                                  Color(0xFF764ba2)
+                                ]),
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
@@ -2108,34 +2154,30 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (sectionIndex >= _sections.length) return false;
 
     final section = _sections[sectionIndex];
-    final items = section['items'] as List<InspectionItem<String>>;
+    final items = section['items'] as List<dynamic>;
 
     for (var item in items) {
-      // Check items with allowImage - must have image captured
-      if (item.allowImage) {
-        if (itemImages[item.uniqueId] == null ||
-            itemImages[item.uniqueId]!.isEmpty) {
+      final uniqueId = _getItemUniqueId(item);
+
+      if (_itemHasImage(item)) {
+        if (itemImages[uniqueId] == null || itemImages[uniqueId]!.isEmpty) {
           return false;
         }
       }
 
-      // Check items with useTextField - must have value
-      if (item.useTextField) {
-        final value = itemValues[item.uniqueId] ?? '';
+      if (_itemUsesTextField(item)) {
+        final value = itemValues[uniqueId] ?? '';
         if (value.trim().isEmpty) {
           return false;
         }
       }
 
-      // Check items with options (dropdown) - must have selected value (not 'N/A')
-      if (item.options != null && item.options!.isNotEmpty) {
-        final value = itemValues[item.uniqueId] ?? 'N/A';
+      if (_itemHasOptions(item)) {
+        final value = itemValues[uniqueId] ?? 'N/A';
         if (value == 'N/A' || value.isEmpty) {
           return false;
         }
       }
-
-      // Remarks are optional, so we don't check them
     }
 
     return true;
@@ -2148,7 +2190,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
       child: SafeArea(
         child: Column(
           children: [
-            // Premium Header with gradient
             SizedBox(
               height: 140,
               width: double.infinity,
@@ -2187,10 +2228,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
-            // Sections list
             Expanded(
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -2209,10 +2247,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                             ? const LinearGradient(
                                 begin: Alignment.centerLeft,
                                 end: Alignment.centerRight,
-                                colors: [
-                                  Color(0xFF667eea),
-                                  Color(0xFF764ba2),
-                                ],
+                                colors: [Color(0xFF667eea), Color(0xFF764ba2)],
                               )
                             : null,
                         color: isSelected ? null : Theme.of(context).cardColor,
@@ -2229,11 +2264,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
                                   color: const Color(0xFF667eea).withAlpha(76),
                                   blurRadius: 12,
                                   offset: const Offset(0, 4),
-                                ),
-                                BoxShadow(
-                                  color: const Color(0xFF764ba2).withAlpha(51),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
                                 ),
                               ]
                             : null,
@@ -2270,17 +2300,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           ),
                         ),
                         trailing: isCompleted
-                            ? const Icon(
-                                Icons.check_circle,
-                                color: Colors.green,
-                                size: 20,
-                              )
+                            ? const Icon(Icons.check_circle,
+                                color: Colors.green, size: 20)
                             : isSelected
-                                ? Icon(
-                                    Icons.arrow_forward_ios,
-                                    size: 14,
-                                    color: Colors.white,
-                                  )
+                                ? Icon(Icons.arrow_forward_ios,
+                                    size: 14, color: Colors.white)
                                 : null,
                         title: Text(
                           section['title'],
@@ -2309,8 +2333,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         onTap: () {
                           setState(() {
                             _currentSection = index;
-                            _currentItemIndex =
-                                0; // Reset item index when selecting section
+                            _currentItemIndex = 0;
                             _isScrollable = false;
                             _showButton = true;
                           });
@@ -2347,7 +2370,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   void _cleanupControllers() {
-    // Dispose old controllers
     for (var controller in remarksControllers.values) {
       controller.dispose();
     }
@@ -2366,7 +2388,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
     _isSubmitting = false;
     _rewardedAdManager.dispose();
 
-    // Close the box if it's open
     if (_inspectionBox?.isOpen ?? false) {
       _inspectionBox?.close();
     }
@@ -2375,13 +2396,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   void _handleClose() async {
     try {
-      await _saveDataLocally(); // Ensure data is saved before closing
+      await _saveDataLocally();
       if (!mounted) return;
-      Navigator.of(context).pop(); // Close dialog
-      Navigator.of(context).pop(); // Close inspection screen
+      Navigator.of(context).pop();
+      Navigator.of(context).pop();
     } catch (e) {
       print('Error handling close: $e');
-      // Show error message to user if needed
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error saving data')),
       );

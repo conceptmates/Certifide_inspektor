@@ -33,6 +33,9 @@ dependencies:
   open_file: ^3.5.10
   google_mobile_ads: ^6.0.0
   webview_flutter: ^4.8.0
+  video_player: ^2.9.2
+  chewie: ^1.8.5
+  just_audio: ^0.9.42
 
 dev_dependencies:
   flutter_test:

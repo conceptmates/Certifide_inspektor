@@ -1,5 +1,9 @@
 // lib/routes/routes.dart
+
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
+import '../models/inspection_template_model.dart';
 import '../screens/auth/login_page.dart';
 import '../screens/credits/add_credit_page.dart';
 import '../screens/history/history_page.dart';
@@ -40,10 +44,27 @@ class AppRoutes {
                 ? int.tryParse(inspectionIdValue)
                 : null;
 
+        // Parse inspectionTemplate from arguments
+        dynamic templateData = args?['inspectionTemplate'];
+        InspectionInitializationResponse? inspectionTemplate;
+        
+        if (templateData != null) {
+          if (templateData is InspectionInitializationResponse) {
+            inspectionTemplate = templateData;
+          } else if (templateData is Map<String, dynamic>) {
+            try {
+              inspectionTemplate = InspectionInitializationResponse.fromJson(templateData);
+            } catch (e) {
+              log('Error parsing inspection template in routes: $e');
+            }
+          }
+        }
+
         return InspectionScreen(
           isNewInspection: args?['isNew'] ?? false,
           vehicleDetails: args?['vehicleDetails'],
           inspectionId: inspectionId,
+          inspectionTemplate: inspectionTemplate,
         );
       },
       Routes.vehicleDetails: (context) {

@@ -149,32 +149,43 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
 
   void _proceedToInspection() async {
     if (_formKey.currentState!.validate()) {
+      // Validate that brand and model are selected
+      if (_selectedMake == null || _selectedModel == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select both make and model'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
       final vehicleData = {
-        'make': _selectedMake?.name ?? '',
-        'model': _selectedModel?.name ?? _modelController.text.trim(),
+        'make': _selectedMake!.name,
+        'model': _selectedModel!.name,
         'year': _yearController.text.trim(),
         'variant': _variantController.text.trim(),
         'colour': _colourController.text.trim(),
         'transmission': _selectedTransmission,
-        // Include brand_id and model_id for reference
-        if (_selectedMake != null) 'brand_id': _selectedMake!.id,
-        if (_selectedModel != null) 'model_id': _selectedModel!.id,
+        'brand_id': _selectedMake!.id,
+        'model_id': _selectedModel!.id,
       };
 
       setState(() {
         _isLoading = true;
       });
 
-      // Call the API to create initial inspection
-      final result = await ApiService.createInitialInspection(vehicleData);
+      // Call the new initializeInspection API with vehicle_brand_id and vehicle_model_id
+      final result = await ApiService.initializeInspection(
+        vehicleBrandId: _selectedMake!.id,
+        vehicleModelId: _selectedModel!.id,
+      );
 
       setState(() {
         _isLoading = false;
       });
 
       if (result['success']) {
-        final inspectionData = result['data'] as Map<String, dynamic>;
-
         // Show interstitial ad before proceeding to inspection
         _interstitialAdManager.showAdIfReady();
 
@@ -182,16 +193,15 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         if (mounted) {
           Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted) {
+              final inspectionData = result['data'];
               Navigator.pushReplacementNamed(
                 context,
                 Routes.inspection,
                 arguments: {
                   'isNew': widget.isNewInspection,
                   'vehicleDetails': vehicleData,
-                  'inspectionId': inspectionData['inspection_id'],
-                  'inspectionUuid': inspectionData['uuid'],
-                  'referenceNumber': inspectionData['reference_number'],
-                  'viewUrl': inspectionData['view_url'],
+                  'inspectionId': result['inspection_id'],
+                  'inspectionTemplate': inspectionData,
                 },
               );
             }

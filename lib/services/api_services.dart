@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../models/inspection_history_model.dart';
+import '../models/inspection_template_model.dart';
 import '../models/inspector.dart';
 import '../models/pagination_data_model.dart';
 import '../models/vehicle_model.dart';
@@ -30,7 +31,12 @@ class ApiService {
   static const String getBalanceTokensEndPoint = '/tokens/balance';
   static const String getHistoryEndPoint = '/inspections';
   static const String initialInspectionEndPoint = '/inspections/initial';
+  static const String initializeInspectionEndPoint = '/inspections/initialize';
+  static const String initializeDynamicInspectionEndPoint =
+      '/dynamic-inspections/initialize';
   static const String getModelsEndpoint = '/admin/vehicles/models';
+  static const String submitDynamicInspectionEndPoint =
+      '/dynamic-inspections';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -74,6 +80,72 @@ class ApiService {
       }
     } catch (e) {
       log('Error creating initial inspection: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> initializeInspection({
+    required int vehicleBrandId,
+    required int vehicleModelId,
+  }) async {
+    try {
+      log('Initializing inspection for brand_id: $vehicleBrandId, model_id: $vehicleModelId');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl$initializeDynamicInspectionEndPoint'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: json.encode({
+          'vehicle_brand_id': vehicleBrandId,
+          'vehicle_model_id': vehicleModelId,
+        }),
+      );
+
+      log('Initialize inspection response status: ${response.statusCode}');
+      log('Initialize inspection response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body);
+
+        if (responseData['status'] == 'success' &&
+            responseData['data'] != null) {
+          final data = responseData['data'];
+
+          // Parse the inspection template structure
+          InspectionInitializationResponse? inspectionResponse;
+          try {
+            inspectionResponse =
+                InspectionInitializationResponse.fromJson(data);
+          } catch (e) {
+            log('Error parsing inspection template: $e');
+          }
+
+          log('Inspection initialized successfully');
+
+          return {
+            'success': true,
+            'data': inspectionResponse ?? data,
+            'inspection_id': data['inspection_id'] ?? data['inspectionId'],
+            'message': responseData['message'] ??
+                'Inspection initialized successfully',
+          };
+        } else {
+          return {
+            'success': false,
+            'message':
+                responseData['message'] ?? 'Failed to initialize inspection',
+          };
+        }
+      } else {
+        return {
+          'success': false,
+          'message': _handleError(response),
+        };
+      }
+    } catch (e) {
+      log('Error initializing inspection: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',
@@ -735,6 +807,54 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> submitInspection(
+      Map<String, dynamic> body) async {
+    try {
+      log('Submitting dynamic inspection to: $baseUrl$submitDynamicInspectionEndPoint');
+      log('Submission body: $body');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl$submitDynamicInspectionEndPoint'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: json.encode(body),
+      );
+
+      log('Submit inspection response status: ${response.statusCode}');
+      log('Submit inspection response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body);
+
+        if (responseData['status'] == 'success' &&
+            responseData['data'] != null) {
+          return {
+            'success': true,
+            'data': responseData['data'],
+            'message':
+                responseData['message'] ?? 'Inspection created successfully',
+          };
+        } else {
+          return {
+            'success': false,
+            'message':
+                responseData['message'] ?? 'Failed to submit inspection',
+          };
+        }
+      } else {
+        return {
+          'success': false,
+          'message': _handleError(response),
+        };
+      }
+    } catch (e) {
+      log('Error submitting inspection: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
   static Future<Map<String, dynamic>> getModels() async {
     try {
       log('Fetching vehicle models from: $baseUrl$getModelsEndpoint');
@@ -769,7 +889,8 @@ class ApiService {
           dataList = responseData;
         } else if (responseData is Map<String, dynamic>) {
           // Wrapped response with status/data
-          if (responseData['status'] == 'success' && responseData['data'] != null) {
+          if (responseData['status'] == 'success' &&
+              responseData['data'] != null) {
             dataList = responseData['data'] as List;
           } else {
             return {
