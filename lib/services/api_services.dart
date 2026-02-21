@@ -90,14 +90,16 @@ class ApiService {
   static Future<Map<String, dynamic>> initializeInspection({
     required int vehicleBrandId,
     required int vehicleModelId,
+    String templateType = 'default',
   }) async {
     try {
-      log('Initializing inspection for brand_id: $vehicleBrandId, model_id: $vehicleModelId');
+      log('Initializing inspection for brand_id: $vehicleBrandId, model_id: $vehicleModelId, template_type: $templateType');
 
       final response = await http.post(
         Uri.parse('$baseUrl$initializeDynamicInspectionEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode({
+          'template_type': templateType,
           'vehicle_brand_id': vehicleBrandId,
           'vehicle_model_id': vehicleModelId,
         }),
@@ -823,29 +825,57 @@ class ApiService {
       log('Submit inspection response body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = json.decode(response.body);
-
-        if (responseData['status'] == 'success' &&
-            responseData['data'] != null) {
-          return {
-            'success': true,
-            'data': responseData['data'],
-            'message':
-                responseData['message'] ?? 'Inspection created successfully',
-          };
-        } else {
+        Map<String, dynamic> responseData;
+        try {
+          responseData = Map<String, dynamic>.from(
+              json.decode(response.body) as Map<dynamic, dynamic>);
+        } catch (parseError) {
+          log('Error parsing submit response JSON: $parseError');
           return {
             'success': false,
             'message':
-                responseData['message'] ?? 'Failed to submit inspection',
+                'Invalid response from server (${response.statusCode}). Check logs.',
           };
         }
+
+        // Accept multiple response shapes from backend
+        Map<String, dynamic>? data = responseData['data'] as Map<String, dynamic>?;
+        final bool hasWrappedData =
+            (responseData['status'] == 'success' || responseData['success'] == true) &&
+                data != null;
+        final bool hasRootData = data == null &&
+            (responseData['inspection_id'] != null ||
+                responseData['redirect_url'] != null);
+        if (hasRootData) {
+          data = {
+            'inspection_id': responseData['inspection_id'],
+            'redirect_url': responseData['redirect_url'] ?? '',
+            'uuid': responseData['uuid'] ?? '',
+          };
+        }
+
+        if (hasWrappedData || hasRootData) {
+          return {
+            'success': true,
+            'data': data ?? responseData,
+            'message':
+                responseData['message'] ?? 'Inspection created successfully',
+          };
+        }
+
+        return {
+          'success': false,
+          'message':
+              responseData['message'] ?? 'Failed to submit inspection',
+        };
       } else {
         return {
           'success': false,
           'message': _handleError(response),
         };
       }
+    } on UnauthorizedException {
+      rethrow;
     } catch (e) {
       log('Error submitting inspection: $e');
       return {

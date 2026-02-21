@@ -157,7 +157,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
         // Sort fields by order
         final sortedFields = List<InspectionField>.from(section.fields);
         sortedFields.sort((a, b) => a.order.compareTo(b.order));
-        
+
         return {
           'title': section.title,
           'name': section.name,
@@ -392,8 +392,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   IconData _getSectionIcon(String sectionTitle) {
-    final title = sectionTitle.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
-    
+    final title =
+        sectionTitle.toLowerCase().replaceAll(' ', '_').replaceAll('-', '_');
+
     // Handle API section names (like documents, body_panel, dataset1, etc.)
     switch (title) {
       case 'documents':
@@ -891,8 +892,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
           ),
         ],
         border: Border.all(
-          color: isRequired 
-              ? Colors.orange.withAlpha(128) 
+          color: isRequired
+              ? Colors.orange.withAlpha(128)
               : Theme.of(context).dividerColor.withAlpha(51),
           width: isRequired ? 2 : 1,
         ),
@@ -914,7 +915,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
-                            color: Theme.of(context).textTheme.titleLarge?.color,
+                            color:
+                                Theme.of(context).textTheme.titleLarge?.color,
                           ),
                         ),
                       ),
@@ -1676,13 +1678,24 @@ class _InspectionScreenState extends State<InspectionScreen> {
       };
     }
 
+    // Prefer 'regno' (Documents field id) then any registration-like key
     String registrationNumber = '';
-    for (var key in itemValues.keys) {
-      if (key.toLowerCase().contains('registration') ||
-          key.toLowerCase().contains('regnumber') ||
-          key.toLowerCase().contains('reg_number')) {
-        registrationNumber = itemValues[key] ?? '';
-        break;
+    final regnoValue = (itemValues['regno'] ?? '').trim();
+    if (regnoValue.isNotEmpty && regnoValue != 'N/A') {
+      registrationNumber = regnoValue;
+    } else {
+      for (var key in itemValues.keys) {
+        final k = key.toLowerCase();
+        if (k.contains('registration') ||
+            k.contains('regnumber') ||
+            k.contains('reg_number') ||
+            k.contains('regno')) {
+          final value = (itemValues[key] ?? '').trim();
+          if (value.isNotEmpty && value != 'N/A') {
+            registrationNumber = value;
+            break;
+          }
+        }
       }
     }
 
@@ -1732,6 +1745,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
       try {
         final body = _buildSubmissionBody();
         final result = await ApiService.submitInspection(body);
+        log(body.toString());
+        log(result.toString());
 
         if (result['success']) {
           await _completeInspection();
@@ -1760,8 +1775,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text('Failed to submit: ${result['message']}')),
+              SnackBar(content: Text('Failed to submit: ${result['message']}')),
             );
           }
         }
