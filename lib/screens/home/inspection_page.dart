@@ -19,6 +19,7 @@ import '../../models/inspection_template_model.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
 import '../../services/local_storage_services.dart';
+import '../../services/reports_cache_service.dart';
 import '../../utils/connectivity_checker.dart';
 import '../../widgets/inspection_field_info_sheet.dart';
 import '../main_screen.dart';
@@ -1754,11 +1755,19 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
           if (mounted) {
             final data = result['data'] as Map<String, dynamic>;
+            final redirectUrl = data['redirect_url'] as String? ?? '';
+            final inspectionId = data['inspection_id'] as int? ?? 0;
+            if (redirectUrl.isNotEmpty) {
+              await ReportsCacheService.addReport(
+                redirectUrl: redirectUrl,
+                inspectionId: inspectionId,
+              );
+            }
             Navigator.of(context).pushAndRemoveUntil(
               MaterialPageRoute(
                 builder: (context) => InspectionSuccessPage(
-                  redirectUrl: data['redirect_url'] ?? '',
-                  inspectionId: data['inspection_id'] ?? 0,
+                  redirectUrl: redirectUrl,
+                  inspectionId: inspectionId,
                   uuid: data['uuid'] ?? '',
                 ),
               ),

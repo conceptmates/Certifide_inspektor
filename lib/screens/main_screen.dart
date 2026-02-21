@@ -5,6 +5,7 @@ import '../providers/user_provider.dart';
 
 import '../screens/profile/profile.dart';
 import '../screens/home/home.dart';
+import '../screens/home/reports_page.dart';
 import '../widgets/custom_nav.dart';
 
 class MainScreen extends StatefulWidget {
@@ -45,6 +46,7 @@ class _MainScreenState extends State<MainScreen> {
 
   final List<Widget> _userScreens = [
     const Home(key: ValueKey('home')),
+    const ReportsPage(key: ValueKey('reports')),
     const ProfilePage(key: ValueKey('profile')),
   ];
 
