@@ -134,7 +134,7 @@ class InspectionFieldInfoSheet {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (referenceMedia.isNotEmpty) ...[
-                        _ReferenceMediaSection(mediaList: referenceMedia),
+                        ReferenceMediaSection(mediaList: referenceMedia),
                         const SizedBox(height: 24),
                       ],
 
@@ -356,10 +356,12 @@ class InspectionFieldInfoSheet {
   }
 }
 
-class _ReferenceMediaSection extends StatelessWidget {
+/// Reusable widget to display reference media (images, video, audio, links).
+/// Used inline on inspection item cards and in the field info bottom sheet.
+class ReferenceMediaSection extends StatelessWidget {
   final List<Map<String, dynamic>> mediaList;
 
-  const _ReferenceMediaSection({required this.mediaList});
+  const ReferenceMediaSection({super.key, required this.mediaList});
 
   @override
   Widget build(BuildContext context) {

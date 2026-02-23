@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:camera/camera.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -22,6 +23,7 @@ import '../../services/local_storage_services.dart';
 import '../../services/reports_cache_service.dart';
 import '../../utils/connectivity_checker.dart';
 import '../../widgets/inspection_field_info_sheet.dart';
+import '../../widgets/section_camera_card.dart';
 import '../main_screen.dart';
 import 'inspection_success_page.dart';
 import '../../utils/ads manager/rewarded_interstitial_ad.dart';
@@ -724,38 +726,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
     return false;
   }
 
-  List<dynamic> _getItemOptions(dynamic item) {
-    if (item is InspectionItem) {
-      return item.options?.map((opt) {
-            // Convert DropdownOption to a map with consistent properties
-            Color color = opt.color;
-            String colorCode = '#000000';
-            String colorName = 'default';
-
-            // Try to extract color code from the color
-            try {
-              colorCode =
-                  '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
-            } catch (e) {
-              // Use default
-            }
-
-            return {
-              'id': 0,
-              'value': opt.value,
-              'label': opt.label,
-              'colorName': colorName,
-              'colorCode': colorCode,
-              'order': 0,
-            };
-          }).toList() ??
-          [];
-    } else if (item is Map) {
-      return item['options'] ?? [];
-    }
-    return [];
-  }
-
   String _getItemFieldId(dynamic item) {
     if (item is InspectionItem) {
       return item.id;
@@ -763,6 +733,13 @@ class _InspectionScreenState extends State<InspectionScreen> {
       return item['fieldId'] ?? item['id'] ?? '';
     }
     return '';
+  }
+
+  bool _isImageFieldType(dynamic item) {
+    if (item is Map) {
+      return (item['fieldType'] as String?)?.toLowerCase() == 'image';
+    }
+    return false;
   }
 
   Widget _buildInspectionSection(String title, List<dynamic> items) {
@@ -880,6 +857,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     final allowImage = _itemHasImage(item);
     final allowMultiImage = _itemHasMultiImage(item);
     final isRequired = _itemIsRequired(item);
+    final referenceMedia = _getItemReferenceMedia(item);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -900,7 +878,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -914,8 +892,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         child: Text(
                           title,
                           style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                             color:
                                 Theme.of(context).textTheme.titleLarge?.color,
                           ),
@@ -925,18 +903,23 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         const Text(
                           ' *',
                           style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                             color: Colors.red,
                           ),
                         ),
                     ],
                   ),
                 ),
-                if (allowImage || allowMultiImage)
+                if ((allowImage && !_isImageFieldType(item)) || allowMultiImage)
                   IconButton(
-                    icon: const Icon(Icons.camera_alt, size: 28),
+                    icon: const Icon(Icons.camera_alt, size: 22),
                     color: Colors.blue,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
                     onPressed: () {
                       if (allowMultiImage) {
                         _pickMultiImages(item);
@@ -947,7 +930,85 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            if (referenceMedia.isNotEmpty) ...[
+              ReferenceMediaSection(mediaList: referenceMedia),
+              const SizedBox(height: 10),
+            ],
+            if (_isImageFieldType(item) && itemImages[uniqueId] == null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SectionCameraCard(
+                    height: 220,
+                    borderRadius: BorderRadius.circular(12),
+                    onCapture: (XFile file) async {
+                      final fieldId = _getItemFieldId(item);
+                      final String sectionTitle =
+                          _sections[_currentSection]['title'] as String;
+                      final savedPath =
+                          await LocalStorageService.saveImage(file.path);
+
+                      setState(() {
+                        itemImages[uniqueId] = savedPath;
+                        _uploadingImages.add(uniqueId);
+                      });
+
+                      await _saveDataLocally();
+
+                      final bool hasInternet =
+                          await ConnectivityChecker.hasInternetConnection();
+
+                      if (hasInternet) {
+                        final result = await ApiService.uploadImage(
+                          savedPath,
+                          inspectionId: widget.inspectionId,
+                          section: sectionTitle,
+                          itemId: fieldId,
+                        );
+
+                        if (mounted) {
+                          setState(() {
+                            _uploadingImages.remove(uniqueId);
+                          });
+
+                          if (result['success']) {
+                            setState(() {
+                              itemImages[uniqueId] = result['url'] as String;
+                            });
+                            await _saveDataLocally();
+                          }
+                        }
+                      } else {
+                        if (mounted) {
+                          setState(() {
+                            _uploadingImages.remove(uniqueId);
+                          });
+                        }
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => _pickImage(
+                        ImageSource.gallery,
+                        uniqueId,
+                        _getItemFieldId(item),
+                      ),
+                      icon: const Icon(Icons.photo_library, size: 18),
+                      label: const Text('Gallery', style: TextStyle(fontSize: 13)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.blue,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
             if (allowImage && itemImages[uniqueId] != null)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -957,7 +1018,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       Text(
                         'Captured Image:',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: Theme.of(context).textTheme.bodyMedium?.color,
                         ),
@@ -965,19 +1026,19 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       if (_uploadingImages.contains(uniqueId)) ...[
                         const SizedBox(width: 8),
                         const SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 14,
+                          height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                         const SizedBox(width: 4),
                         Text(
                           'Uploading...',
-                          style: TextStyle(fontSize: 12, color: Colors.orange),
+                          style: TextStyle(fontSize: 11, color: Colors.orange),
                         ),
                       ],
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   GestureDetector(
                     onTap: () => _showImagePreview(itemImages[uniqueId]!),
                     child: Container(
@@ -1086,8 +1147,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
   Widget _buildItemControls(dynamic item, String sectionTitle) {
     final uniqueId = _getItemUniqueId(item);
     final useTextField = _itemUsesTextField(item);
-    final hasRemarks = _itemHasRemarks(item);
-    final options = _getItemOptions(item);
     final title = _getItemTitle(item);
     final referenceMedia = _getItemReferenceMedia(item);
 
@@ -1131,78 +1190,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
               });
               _autoSave();
             },
-          )
-        else if (options.isNotEmpty)
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.grey[850]
-                  : Colors.grey[50],
-              border: Border.all(
-                color: Theme.of(context).dividerColor.withAlpha(128),
-              ),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: DropdownButton<String>(
-              isExpanded: true,
-              value: options.any((opt) => opt['value'] == itemValues[uniqueId])
-                  ? itemValues[uniqueId]
-                  : null,
-              underline: Container(),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              items: options
-                  .map((opt) => DropdownMenuItem<String>(
-                        value: opt['value'],
-                        child: Text(
-                          opt['label'],
-                          style: TextStyle(
-                            color: _parseColor(opt['colorCode']),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ))
-                  .toList(),
-              onChanged: (String? newValue) {
-                if (newValue != null && mounted) {
-                  setState(() {
-                    itemValues[uniqueId] = newValue;
-                  });
-                  _autoSave();
-                }
-              },
-            ),
           ),
-        if (hasRemarks) ...[
-          const SizedBox(height: 16),
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.grey[850]
-                  : Colors.grey[50],
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: Theme.of(context).dividerColor.withAlpha(128),
-              ),
-            ),
-            child: TextField(
-              controller:
-                  remarksControllers[uniqueId] ?? TextEditingController(),
-              decoration: const InputDecoration(
-                hintText: 'Add remarks...',
-                border: InputBorder.none,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              ),
-              maxLines: 3,
-              onChanged: (value) {
-                itemRemarks[uniqueId] = value;
-                _autoSave();
-              },
-            ),
-          ),
-        ],
         const SizedBox(height: 12),
         InspectionInfoButton(
           fieldId: uniqueId,
@@ -1210,18 +1198,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
         ),
       ],
     );
-  }
-
-  Color _parseColor(String? colorCode) {
-    if (colorCode == null) return Colors.black;
-    try {
-      if (colorCode.startsWith('#')) {
-        return Color(int.parse(colorCode.replaceFirst('#', '0xFF')));
-      }
-      return Colors.black;
-    } catch (e) {
-      return Colors.black;
-    }
   }
 
   void _showImagePickerOptions(dynamic item) {

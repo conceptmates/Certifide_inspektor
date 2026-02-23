@@ -34,35 +34,22 @@ class _ReportsPageState extends State<ReportsPage> {
     final dateStr = report.createdAt.year == DateTime.now().year
         ? '${report.createdAt.day}/${report.createdAt.month}'
         : '${report.createdAt.day}/${report.createdAt.month}/${report.createdAt.year}';
-    // Accent matches Quick Actions on home; use primary in dark for contrast
     final accentColor = isDark ? theme.colorScheme.primary : const Color(0xFF6366F1);
-    final cardBg = isDark ? theme.colorScheme.surfaceContainerHighest : Colors.white;
-    final titleColor = isDark ? theme.colorScheme.onSurface : const Color(0xFF1F2937);
+    final cardBg = isDark ? theme.colorScheme.surface : Colors.white;
+    final titleColor = isDark ? theme.colorScheme.onSurface : Colors.black87;
     final subtitleColor = isDark
         ? theme.colorScheme.onSurfaceVariant
-        : const Color(0xFF6B7280);
+        : Colors.grey[600]!;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(20),
-        border: isDark ? Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)) : null,
-        boxShadow: isDark
-            ? null
-            : [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 15,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-      ),
+      margin: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
+        elevation: 3,
+        shadowColor: Colors.black12,
+        color: cardBg,
         child: InkWell(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           onTap: () {
             Navigator.push(
               context,
@@ -117,8 +104,8 @@ class _ReportsPageState extends State<ReportsPage> {
                 ),
                 Icon(
                   Icons.arrow_forward_ios,
-                  size: 16,
-                  color: subtitleColor,
+                  size: 18,
+                  color: isDark ? theme.colorScheme.onSurfaceVariant : Colors.grey[400],
                 ),
               ],
             ),
