@@ -3,7 +3,12 @@ import 'package:flutter/material.dart';
 import '../car_spy_data.dart';
 
 class CarSpyHeroSection extends StatelessWidget {
-  const CarSpyHeroSection({super.key});
+  const CarSpyHeroSection({
+    super.key,
+    required this.onInitializeScan,
+  });
+
+  final VoidCallback onInitializeScan;
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +99,7 @@ class CarSpyHeroSection extends StatelessWidget {
                     ),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
-                      onPressed: () {},
+                      onPressed: onInitializeScan,
                       icon: const Icon(Icons.qr_code_scanner, size: 18),
                       label: const Text(
                         'Initialize Scan',
