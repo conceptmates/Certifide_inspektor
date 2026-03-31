@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import '../../screens/auth/login_page.dart';
-import '../home/car_spy_home.dart';
+import '../home/car_spy/car_spy_home.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});

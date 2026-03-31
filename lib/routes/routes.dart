@@ -9,7 +9,7 @@ import '../screens/credits/add_credit_page.dart';
 import '../screens/history/history_page.dart';
 import '../screens/home/inspection_page.dart';
 import '../screens/home/vehicle_details_form.dart';
-import '../screens/home/car_spy_home.dart';
+import '../screens/home/car_spy/car_spy_home.dart';
 import '../screens/users/add_user_page.dart';
 import '../screens/profile/profile.dart';
 
