@@ -15,8 +15,8 @@ import '../utils/exception_handler.dart';
 import '../screens/auth/login_page.dart';
 
 class ApiService {
-  // static const String baseUrl = 'https://reports.certifide.in/api';
-  static const String baseUrl = 'https://backend.certifide.in/api';
+  // static const String baseUrl = 'https://api.estelledarcy.com/api';
+  static const String baseUrl = 'https://api.certifide.in/api';
 
   static final _storage = FlutterSecureStorage();
 
@@ -35,8 +35,7 @@ class ApiService {
   static const String initializeDynamicInspectionEndPoint =
       '/dynamic-inspections/initialize';
   static const String getModelsEndpoint = '/admin/vehicles/models';
-  static const String submitDynamicInspectionEndPoint =
-      '/dynamic-inspections';
+  static const String submitDynamicInspectionEndPoint = '/dynamic-inspections';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -839,10 +838,11 @@ class ApiService {
         }
 
         // Accept multiple response shapes from backend
-        Map<String, dynamic>? data = responseData['data'] as Map<String, dynamic>?;
-        final bool hasWrappedData =
-            (responseData['status'] == 'success' || responseData['success'] == true) &&
-                data != null;
+        Map<String, dynamic>? data =
+            responseData['data'] as Map<String, dynamic>?;
+        final bool hasWrappedData = (responseData['status'] == 'success' ||
+                responseData['success'] == true) &&
+            data != null;
         final bool hasRootData = data == null &&
             (responseData['inspection_id'] != null ||
                 responseData['redirect_url'] != null);
@@ -865,8 +865,7 @@ class ApiService {
 
         return {
           'success': false,
-          'message':
-              responseData['message'] ?? 'Failed to submit inspection',
+          'message': responseData['message'] ?? 'Failed to submit inspection',
         };
       } else {
         return {
