@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import '../../constants/const.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
-import '../main_screen.dart';
+import '../home/car_spy_home.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -167,7 +167,7 @@ class _LoginPageState extends State<LoginPage> {
             );
 
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const MainScreen()),
+              MaterialPageRoute(builder: (context) => const CarSpyHome()),
             );
           } else {
             _showErrorDialog('Unable to process login. Please try again.');

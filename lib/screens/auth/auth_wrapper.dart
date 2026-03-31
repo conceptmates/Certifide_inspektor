@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import '../../screens/auth/login_page.dart';
-import '../main_screen.dart';
+import '../home/car_spy_home.dart';
 
 class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
@@ -30,7 +30,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Widget build(BuildContext context) {
     return Consumer<UserProvider>(
       builder: (context, userProvider, child) {
-        return userProvider.isAuthenticated ? const MainScreen() : LoginPage();
+        return userProvider.isAuthenticated ? const CarSpyHome() : LoginPage();
       },
     );
   }

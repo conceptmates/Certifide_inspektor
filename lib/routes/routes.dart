@@ -9,9 +9,9 @@ import '../screens/credits/add_credit_page.dart';
 import '../screens/history/history_page.dart';
 import '../screens/home/inspection_page.dart';
 import '../screens/home/vehicle_details_form.dart';
+import '../screens/home/car_spy_home.dart';
 import '../screens/users/add_user_page.dart';
 import '../screens/profile/profile.dart';
-import '../screens/main_screen.dart';
 
 class Routes {
   static const String login = '/login';
@@ -29,7 +29,7 @@ class AppRoutes {
   static Map<String, WidgetBuilder> getRoutes() {
     return {
       Routes.login: (context) => LoginPage(),
-      Routes.home: (context) => const MainScreen(),
+      Routes.home: (context) => const CarSpyHome(),
       Routes.addUser: (context) => const AddUserPage(),
       Routes.addCredits: (context) => const AddCreditsPage(),
       Routes.profile: (context) => const ProfilePage(),
@@ -47,13 +47,14 @@ class AppRoutes {
         // Parse inspectionTemplate from arguments
         dynamic templateData = args?['inspectionTemplate'];
         InspectionInitializationResponse? inspectionTemplate;
-        
+
         if (templateData != null) {
           if (templateData is InspectionInitializationResponse) {
             inspectionTemplate = templateData;
           } else if (templateData is Map<String, dynamic>) {
             try {
-              inspectionTemplate = InspectionInitializationResponse.fromJson(templateData);
+              inspectionTemplate =
+                  InspectionInitializationResponse.fromJson(templateData);
             } catch (e) {
               log('Error parsing inspection template in routes: $e');
             }
