@@ -1,10 +1,12 @@
 // lib/screens/home/inspection_page.dart
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -13,7 +15,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/hive_constants.dart';
-import '../../data/inspection_item.dart';
 import '../../data/inspection_storage_model.dart';
 import '../../models/inspection_item.dart';
 import '../../models/inspection_template_model.dart';
@@ -54,6 +55,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
   int _currentSection = 0;
   int _currentItemIndex = 0;
   Map<String, String?> itemImages = {};
+  Map<String, String?> itemVideos = {};
+  Map<String, String?> itemAudios = {};
+  Map<String, String?> itemFiles = {};
   Map<String, String> itemRemarks = {};
   Map<String, String> itemValues = {};
   Map<String, List<String>?> itemMultiImages = {};
@@ -323,6 +327,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
       final storageModel = InspectionStorageModel(
         itemValues: Map<String, String>.from(itemValues),
         itemImages: Map<String, String?>.from(itemImages),
+        itemVideos: Map<String, String?>.from(itemVideos),
+        itemAudios: Map<String, String?>.from(itemAudios),
+        itemFiles: Map<String, String?>.from(itemFiles),
         itemRemarks: currentRemarks,
         currentSection: _currentSection,
         textFieldValues: Map<String, String>.from(
@@ -358,6 +365,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
         final completedInspection = InspectionStorageModel(
           itemValues: Map<String, String>.from(currentData.itemValues),
           itemImages: Map<String, String?>.from(currentData.itemImages),
+          itemVideos: Map<String, String?>.from(currentData.itemVideos),
+          itemAudios: Map<String, String?>.from(currentData.itemAudios),
+          itemFiles: Map<String, String?>.from(currentData.itemFiles),
           itemRemarks: Map<String, String>.from(currentData.itemRemarks),
           currentSection: currentData.currentSection,
           textFieldValues:
@@ -488,6 +498,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
         setState(() {
           itemValues = storedData.typedItemValues;
           itemImages = storedData.typedItemImages;
+          itemVideos = storedData.typedItemVideos;
+          itemAudios = storedData.typedItemAudios;
+          itemFiles = storedData.typedItemFiles;
           itemRemarks = storedData.typedItemRemarks;
           _currentSection = storedData.currentSection;
           itemMultiImages = storedData.typedMultiImages;
@@ -559,6 +572,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
         setState(() {
           itemValues.clear();
           itemImages.clear();
+          itemVideos.clear();
+          itemAudios.clear();
+          itemFiles.clear();
           itemRemarks.clear();
         });
       }
@@ -603,6 +619,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
     itemValues = {};
     itemRemarks = {};
     itemMultiImages = {};
+    itemVideos = {};
+    itemAudios = {};
+    itemFiles = {};
 
     for (var section in _sections) {
       final items = section['items'] as List<dynamic>;
@@ -654,7 +673,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (item is InspectionItem) {
       return item.allowMultiImage;
     } else if (item is Map) {
-      return item['hasVideo'] ?? false;
+      return item['allowMultiImage'] ?? false;
     }
     return false;
   }
@@ -911,23 +930,65 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     ],
                   ),
                 ),
-                if ((allowImage && !_isImageFieldType(item)) || allowMultiImage)
-                  IconButton(
-                    icon: const Icon(Icons.camera_alt, size: 22),
-                    color: Colors.blue,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                    onPressed: () {
-                      if (allowMultiImage) {
-                        _pickMultiImages(item);
-                      } else {
-                        _showImagePickerOptions(item);
-                      }
-                    },
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if ((allowImage && !_isImageFieldType(item)) || allowMultiImage)
+                      IconButton(
+                        icon: const Icon(Icons.camera_alt, size: 22),
+                        color: Colors.blue,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        onPressed: () {
+                          if (allowMultiImage) {
+                            _pickMultiImages(item);
+                          } else {
+                            _showImagePickerOptions(item);
+                          }
+                        },
+                      ),
+                    if (_itemHasVideo(item))
+                      IconButton(
+                        icon: const Icon(Icons.videocam, size: 22),
+                        color: Colors.deepPurple,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        onPressed: () => _showVideoPickerOptions(item),
+                      ),
+                    if (_itemHasFile(item))
+                      IconButton(
+                        icon: const Icon(Icons.attach_file, size: 22),
+                        color: Colors.teal,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        onPressed: () => _pickFile(item),
+                      ),
+                    if ((item is Map
+                            ? (item['fieldType'] as String?)
+                            : null)
+                        ?.toLowerCase() ==
+                        'audio')
+                      IconButton(
+                        icon: const Icon(Icons.audio_file, size: 22),
+                        color: Colors.orange,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        onPressed: () => _pickAudio(item),
+                      ),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -1137,6 +1198,30 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   const SizedBox(height: 16),
                 ],
               ),
+            if (itemVideos[uniqueId] != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Video selected: ${itemVideos[uniqueId]!.split('/').last}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            if (itemAudios[uniqueId] != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Audio selected: ${itemAudios[uniqueId]!.split('/').last}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            if (itemFiles[uniqueId] != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'File attached: ${_extractFileName(itemFiles[uniqueId]!)}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
             _buildItemControls(item, sectionTitle),
           ],
         ),
@@ -1185,6 +1270,46 @@ class _InspectionScreenState extends State<InspectionScreen> {
             ),
             keyboardType: TextInputType.multiline,
             onChanged: (value) {
+              setState(() {
+                itemValues[uniqueId] = value;
+              });
+              _autoSave();
+            },
+          ),
+        if (!useTextField && _itemHasOptions(item))
+          DropdownButtonFormField<String>(
+            value: itemValues[uniqueId] == 'N/A' ? null : itemValues[uniqueId],
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: Theme.of(context).brightness == Brightness.dark
+                  ? Colors.grey[850]
+                  : Colors.grey[50],
+              hintText: 'Select an option',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Theme.of(context).dividerColor),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                    color: Theme.of(context).dividerColor.withAlpha(128)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide:
+                    BorderSide(color: Theme.of(context).primaryColor, width: 2),
+              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            ),
+            items: ((item['options'] as List?) ?? [])
+                .map((opt) => DropdownMenuItem<String>(
+                      value: (opt['value'] ?? '').toString(),
+                      child: Text((opt['label'] ?? opt['value'] ?? '').toString()),
+                    ))
+                .toList(),
+            onChanged: (value) {
+              if (value == null) return;
               setState(() {
                 itemValues[uniqueId] = value;
               });
@@ -1395,6 +1520,114 @@ class _InspectionScreenState extends State<InspectionScreen> {
     }
   }
 
+  Future<void> _pickFile(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    try {
+      final result = await FilePicker.platform.pickFiles(allowMultiple: false);
+      if (result != null && result.files.single.path != null && mounted) {
+        final file = result.files.single;
+        final payload = json.encode({
+          'filePath': file.path,
+          'fileName': file.name,
+          'fileType': file.extension?.toLowerCase() ?? '',
+        });
+        setState(() {
+          itemFiles[uniqueId] = payload;
+        });
+        _autoSave();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick file: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickAudio(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['mp3', 'wav', 'm4a', 'aac'],
+        allowMultiple: false,
+      );
+      if (result != null && result.files.single.path != null && mounted) {
+        setState(() {
+          itemAudios[uniqueId] = result.files.single.path!;
+        });
+        _autoSave();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick audio: $e')),
+        );
+      }
+    }
+  }
+
+  void _showVideoPickerOptions(dynamic item) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.videocam, color: Colors.deepPurple),
+                title: const Text('Record Video'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickVideo(item, ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.video_library, color: Colors.deepPurple),
+                title: const Text('Choose Video'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickVideo(item, ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickVideo(dynamic item, ImageSource source) async {
+    final uniqueId = _getItemUniqueId(item);
+    try {
+      final picker = ImagePicker();
+      final video = await picker.pickVideo(source: source);
+      if (video != null && mounted) {
+        setState(() {
+          itemVideos[uniqueId] = video.path;
+        });
+        _autoSave();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick video: $e')),
+        );
+      }
+    }
+  }
+
+  String _extractFileName(String filePayload) {
+    try {
+      final parsed = json.decode(filePayload) as Map<String, dynamic>;
+      return (parsed['fileName'] ?? 'attached_file').toString();
+    } catch (_) {
+      return filePayload.split('/').last;
+    }
+  }
+
   Widget _buildImageWidget(String imagePath) {
     if (imagePath.startsWith('http')) {
       return Image.network(
@@ -1529,6 +1762,16 @@ class _InspectionScreenState extends State<InspectionScreen> {
           errors.add('$title (image)');
         }
       }
+      if (_itemHasVideo(item)) {
+        if (itemVideos[uniqueId] == null || itemVideos[uniqueId]!.isEmpty) {
+          errors.add('$title (video)');
+        }
+      }
+      if (_itemHasFile(item)) {
+        if (itemFiles[uniqueId] == null || itemFiles[uniqueId]!.isEmpty) {
+          errors.add('$title (file)');
+        }
+      }
     }
 
     return errors;
@@ -1639,13 +1882,23 @@ class _InspectionScreenState extends State<InspectionScreen> {
         final value = itemValues[uniqueId] ?? '';
         final remarks = itemRemarks[uniqueId];
         final imagePath = itemImages[uniqueId];
+        final multiImages = itemMultiImages[uniqueId];
+        final videoPath = itemVideos[uniqueId];
+        final audioPath = itemAudios[uniqueId];
+        final filePath = itemFiles[uniqueId];
 
         sectionItems.add({
           'id': uniqueId,
+          'fieldId': _getItemFieldId(item),
+          'fieldType': item is Map ? (item['fieldType'] ?? '').toString() : '',
           'title': title,
           'value': value,
           'remarks': (remarks != null && remarks.isNotEmpty) ? remarks : null,
           'imagePath': imagePath,
+          'multiImages': multiImages,
+          'videoPath': videoPath,
+          'audioPath': audioPath,
+          'filePath': filePath,
         });
       }
 

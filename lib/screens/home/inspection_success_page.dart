@@ -1,3 +1,4 @@
+import 'package:certifide_openapp/screens/home/car_spy/car_spy_home.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -30,7 +31,8 @@ class InspectionSuccessPage extends StatelessWidget {
 
   void _goToHomePage(BuildContext context) {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const MainScreen()),
+      MaterialPageRoute(builder: (context) => const CarSpyHome()),
+      // MaterialPageRoute(builder: (context) => const MainScreen()),
       (route) => false,
     );
   }
@@ -125,8 +127,7 @@ class InspectionSuccessPage extends StatelessWidget {
                         const SizedBox(height: 12),
                         Row(
                           children: [
-                            Icon(Icons.link,
-                                size: 18, color: Colors.blue[300]),
+                            Icon(Icons.link, size: 18, color: Colors.blue[300]),
                             const SizedBox(width: 8),
                             Text(
                               'Report URL',
@@ -142,8 +143,7 @@ class InspectionSuccessPage extends StatelessWidget {
                         GestureDetector(
                           onTap: () => _launchUrl(context),
                           onLongPress: () {
-                            Clipboard.setData(
-                                ClipboardData(text: redirectUrl));
+                            Clipboard.setData(ClipboardData(text: redirectUrl));
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                   content: Text('URL copied to clipboard')),
@@ -189,8 +189,8 @@ class InspectionSuccessPage extends StatelessWidget {
                           ),
                         ),
                         onPressed: () => _launchUrl(context),
-                        icon: const Icon(Icons.open_in_new,
-                            color: Colors.white),
+                        icon:
+                            const Icon(Icons.open_in_new, color: Colors.white),
                         label: const Text(
                           'View Report',
                           style: TextStyle(
