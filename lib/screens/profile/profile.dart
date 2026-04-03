@@ -28,11 +28,14 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _loadUserData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
       // First try to get data from storage
       final storedData = await _storage.read(key: 'user_data');
+      if (!mounted) return;
+
       if (storedData != null) {
         setState(() {
           _userData = json.decode(storedData);
@@ -45,8 +48,11 @@ class _ProfilePageState extends State<ProfilePage> {
       final shouldRefresh = _shouldRefreshData(lastUpdateStr);
 
       if (shouldRefresh) {
+        if (!mounted) return;
         // Fetch fresh data from API
         final result = await ApiService.getProfile(context);
+        if (!mounted) return;
+
         if (result['success']) {
           setState(() {
             _userData = result['data']['user'];
@@ -59,11 +65,14 @@ class _ProfilePageState extends State<ProfilePage> {
         }
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error loading profile: ${e.toString()}')),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

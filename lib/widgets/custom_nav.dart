@@ -33,6 +33,12 @@ class CustomBottomNavBar extends StatelessWidget {
       ),
       _NavItem(
         index: 1,
+        icon: Icons.description_outlined,
+        selectedIcon: Icons.description,
+        label: 'Reports',
+      ),
+      _NavItem(
+        index: 2,
         icon: Icons.person_outline,
         selectedIcon: Icons.person,
         label: 'Profile',

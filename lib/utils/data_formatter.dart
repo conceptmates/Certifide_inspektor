@@ -11,6 +11,7 @@ class InspectionDataFormatter {
     required Map<String, String> itemRemarks,
     required List<Map<String, dynamic>> sections,
     Map<String, dynamic>? additionalData,
+    Map<String, List<String>?>? multiImages,
   }) {
     List<Map<String, dynamic>> formattedSections = [];
     Map<String, dynamic> summaryData = {};
@@ -35,6 +36,11 @@ class InspectionDataFormatter {
         // Process attachments
         _processAttachments(item, itemImages, itemData);
 
+        // Process multi-images for this item if available
+        if (item.allowMultiImage && multiImages != null && multiImages.containsKey(item.uniqueId) && multiImages[item.uniqueId] != null) {
+          _processMultiImageAttachment(multiImages[item.uniqueId]!, itemData);
+        }
+
         items.add(itemData);
       }
 
@@ -54,12 +60,18 @@ class InspectionDataFormatter {
       List<Map<String, dynamic>> processedSummaryImages = [];
       summaryImagePaths.forEach((key, imagePath) {
         try {
-          final String? base64Image = ImageUtils.encodeImageToBase64(imagePath);
-
-          if (base64Image != null) {
+          // Check if the image path is a remote URL
+          if (imagePath.startsWith('http')) {
             processedSummaryImages.add({
               'key': key,
-              'image': base64Image,
+              'imagePath': imagePath,
+            });
+          } else {
+            // For local files, keep the path as-is
+            // The images will be uploaded when submitting the inspection
+            processedSummaryImages.add({
+              'key': key,
+              'imagePath': imagePath,
             });
           }
         } catch (e) {
@@ -130,10 +142,39 @@ class InspectionDataFormatter {
 
   static void _processImageAttachment(
       String imagePath, Map<String, dynamic> itemData) {
-    final String? base64Image = ImageUtils.encodeImageToBase64(imagePath);
+    // Check if the image path is a remote URL
+    if (imagePath.startsWith('http')) {
+      // Use the uploaded URL directly as imagePath
+      itemData['imagePath'] = imagePath;
+    } else {
+      // For local files, keep the path as-is
+      // The images will be uploaded when submitting the inspection
+      // and the paths will be replaced with URLs
+      itemData['imagePath'] = imagePath;
+    }
+  }
 
-    if (base64Image != null) {
-      itemData['imagePath'] = base64Image;
+  static void _processMultiImageAttachment(
+      List<String> imagePaths, Map<String, dynamic> itemData) {
+    List<Map<String, dynamic>> processedImages = [];
+
+    for (String imagePath in imagePaths) {
+      if (imagePath.startsWith('http')) {
+        // Use the uploaded URL directly
+        processedImages.add({
+          'imagePath': imagePath,
+        });
+      } else {
+        // For local files, keep the path as-is
+        // The images will be uploaded when submitting the inspection
+        processedImages.add({
+          'imagePath': imagePath,
+        });
+      }
+    }
+
+    if (processedImages.isNotEmpty) {
+      itemData['multiImages'] = processedImages;
     }
   }
 

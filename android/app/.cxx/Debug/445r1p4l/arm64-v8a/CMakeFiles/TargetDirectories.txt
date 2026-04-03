@@ -1,2 +1,0 @@
-/Users/ryn/Developer/conceptmates/certifide_app/android/app/.cxx/Debug/445r1p4l/arm64-v8a/CMakeFiles/edit_cache.dir
-/Users/ryn/Developer/conceptmates/certifide_app/android/app/.cxx/Debug/445r1p4l/arm64-v8a/CMakeFiles/rebuild_cache.dir

@@ -33,6 +33,15 @@ class InspectionStorageModel extends HiveObject {
   @HiveField(8, defaultValue: 'draft')
   final String status;
 
+  @HiveField(9)
+  final Map<dynamic, dynamic> itemVideos;
+
+  @HiveField(10)
+  final Map<dynamic, dynamic> itemAudios;
+
+  @HiveField(11)
+  final Map<dynamic, dynamic> itemFiles;
+
   InspectionStorageModel({
     Map<String, String>? itemValues,
     Map<String, String?>? itemImages,
@@ -43,6 +52,9 @@ class InspectionStorageModel extends HiveObject {
     bool? isCompleted,
     Map<String, List<String>>? multiImages,
     String? status,
+    Map<String, String?>? itemVideos,
+    Map<String, String?>? itemAudios,
+    Map<String, String?>? itemFiles,
   })  : this.itemValues = Map<dynamic, dynamic>.from(itemValues ?? {}),
         this.itemImages = Map<dynamic, dynamic>.from(itemImages ?? {}),
         this.itemRemarks = Map<dynamic, dynamic>.from(itemRemarks ?? {}),
@@ -54,7 +66,10 @@ class InspectionStorageModel extends HiveObject {
         this.multiImages = multiImages != null
             ? Map<dynamic, dynamic>.from(multiImages)
             : null,
-        this.status = status ?? 'draft';
+        this.status = status ?? 'draft',
+        this.itemVideos = Map<dynamic, dynamic>.from(itemVideos ?? {}),
+        this.itemAudios = Map<dynamic, dynamic>.from(itemAudios ?? {}),
+        this.itemFiles = Map<dynamic, dynamic>.from(itemFiles ?? {});
 
   // Convert dynamic Maps back to strongly typed Maps
   Map<String, String> get typedItemValues {
@@ -76,6 +91,30 @@ class InspectionStorageModel extends HiveObject {
   Map<String, String> get typedItemRemarks {
     try {
       return Map<String, String>.from(itemRemarks);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Map<String, String?> get typedItemVideos {
+    try {
+      return Map<String, String?>.from(itemVideos);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Map<String, String?> get typedItemAudios {
+    try {
+      return Map<String, String?>.from(itemAudios);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Map<String, String?> get typedItemFiles {
+    try {
+      return Map<String, String?>.from(itemFiles);
     } catch (_) {
       return {};
     }
@@ -115,6 +154,9 @@ class InspectionStorageModel extends HiveObject {
           ? _safeConvertMultiImageMap(map['multiImages'])
           : null,
       status: map['status'] ?? 'draft',
+      itemVideos: _safeConvertMap<String?>(map['itemVideos']),
+      itemAudios: _safeConvertMap<String?>(map['itemAudios']),
+      itemFiles: _safeConvertMap<String?>(map['itemFiles']),
     );
   }
 
@@ -154,6 +196,9 @@ class InspectionStorageModel extends HiveObject {
       'isCompleted': isCompleted,
       'multiImages': typedMultiImages,
       'status': status,
+      'itemVideos': typedItemVideos,
+      'itemAudios': typedItemAudios,
+      'itemFiles': typedItemFiles,
     };
   }
 
@@ -167,6 +212,9 @@ class InspectionStorageModel extends HiveObject {
     bool? isCompleted,
     Map<String, List<String>>? multiImages,
     String? status,
+    Map<String, String?>? itemVideos,
+    Map<String, String?>? itemAudios,
+    Map<String, String?>? itemFiles,
   }) {
     return InspectionStorageModel(
       itemValues: itemValues ?? typedItemValues,
@@ -178,6 +226,9 @@ class InspectionStorageModel extends HiveObject {
       isCompleted: isCompleted ?? this.isCompleted,
       multiImages: multiImages ?? typedMultiImages,
       status: status ?? this.status,
+      itemVideos: itemVideos ?? typedItemVideos,
+      itemAudios: itemAudios ?? typedItemAudios,
+      itemFiles: itemFiles ?? typedItemFiles,
     );
   }
 }

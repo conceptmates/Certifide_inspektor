@@ -1,4 +1,5 @@
 import 'dart:convert';
+
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class UserRole {
@@ -17,10 +18,9 @@ class UserRole {
         // Check if roles exists and is a List
         if (user.containsKey('roles') && user['roles'] is List) {
           final roles = List<Map<String, dynamic>>.from(user['roles']);
-          return roles.any((role) =>
-              role is Map<String, dynamic> &&
-              role.containsKey('name') &&
-              role['name'] == ADMIN);
+          return roles.any(
+            (role) => role.containsKey('name') && role['name'] == ADMIN,
+          );
         }
       }
       return false;
@@ -40,8 +40,7 @@ class UserRole {
         if (user.containsKey('roles') && user['roles'] is List) {
           final roles = List<Map<String, dynamic>>.from(user['roles']);
           return roles
-              .where((role) =>
-                  role is Map<String, dynamic> && role.containsKey('name'))
+              .where((role) => role.containsKey('name'))
               .map((role) => role['name'].toString())
               .toList();
         }

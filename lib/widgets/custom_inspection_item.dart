@@ -1,11 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:open_file/open_file.dart';
+
 import '../models/drop_down.dart';
+import 'inspection_field_info_sheet.dart';
 
 class CustomInspectionItem<T> extends StatefulWidget {
   final String title;
@@ -25,6 +28,9 @@ class CustomInspectionItem<T> extends StatefulWidget {
   final bool allowMultiImage;
   final List<String>? multiImagePaths;
   final Function(List<String>?)? onMultiImageChanged;
+  final String? placeholderText;
+  final String? fieldId;
+  final bool showInfoButton;
 
   const CustomInspectionItem({
     super.key,
@@ -45,6 +51,9 @@ class CustomInspectionItem<T> extends StatefulWidget {
     this.allowMultiImage = false,
     this.multiImagePaths,
     this.onMultiImageChanged,
+    this.placeholderText,
+    this.fieldId,
+    this.showInfoButton = false,
   });
 
   @override
@@ -626,23 +635,45 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withAlpha(25),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withAlpha(51),
+          width: 1,
+        ),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(8),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
                 Expanded(
-                  child: Text(
-                    widget.title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          widget.title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color:
+                                Theme.of(context).textTheme.titleMedium?.color,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 if (widget.useTextField)
@@ -654,11 +685,38 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                         controller: _textFieldController,
                         maxLines: null,
                         decoration: InputDecoration(
+                          filled: true,
+                          fillColor:
+                              Theme.of(context).brightness == Brightness.dark
+                                  ? Colors.grey[850]
+                                  : Colors.grey[50],
+                          hintText: widget.placeholderText,
+                          hintStyle: TextStyle(
+                            color: Theme.of(context).hintColor.withAlpha(153),
+                            fontSize: 14,
+                          ),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).dividerColor,
+                            ),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color:
+                                  Theme.of(context).dividerColor.withAlpha(128),
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: Theme.of(context).primaryColor,
+                              width: 2,
+                            ),
                           ),
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 8),
+                              horizontal: 12, vertical: 12),
                         ),
                         keyboardType: TextInputType.multiline,
                       ),
@@ -670,8 +728,13 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                       constraints:
                           const BoxConstraints(minWidth: 120, maxWidth: 150),
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(8),
+                        color: Theme.of(context).brightness == Brightness.dark
+                            ? Colors.grey[850]
+                            : Colors.grey[50],
+                        border: Border.all(
+                          color: Theme.of(context).dividerColor.withAlpha(128),
+                        ),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: DropdownButton<T>(
                         isExpanded: true,
@@ -687,9 +750,29 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                         items: widget.dropdownOptions
                                 ?.map((option) => DropdownMenuItem<T>(
                                       value: option.value,
-                                      child: Text(
-                                        option.label,
-                                        style: TextStyle(color: option.color),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (option.icon != null) ...[
+                                            Icon(
+                                              option.icon,
+                                              size: 18,
+                                              color: option.color,
+                                            ),
+                                            const SizedBox(width: 8),
+                                          ],
+                                          Flexible(
+                                            child: Text(
+                                              option.label,
+                                              style: TextStyle(
+                                                color: option.color,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ))
                                 .toList() ??
@@ -709,25 +792,33 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (widget.allowRemarks) ...[
-                  IconButton(
-                    padding: const EdgeInsets.all(8),
-                    constraints: const BoxConstraints(),
-                    icon: Icon(
-                      _showRemarks
-                          ? Icons.comment
-                          : widget.remarksController.text.isNotEmpty
-                              ? Icons.comment
-                              : Icons.add_comment,
+                  Container(
+                    decoration: BoxDecoration(
                       color: widget.remarksController.text.isNotEmpty
-                          ? Colors.green
-                          : Colors.blue,
-                      size: 22,
+                          ? Colors.green.withAlpha(25)
+                          : Theme.of(context).primaryColor.withAlpha(25),
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    onPressed: () {
-                      setState(() {
-                        _showRemarks = !_showRemarks;
-                      });
-                    },
+                    child: IconButton(
+                      padding: const EdgeInsets.all(8),
+                      constraints: const BoxConstraints(),
+                      icon: Icon(
+                        _showRemarks
+                            ? Icons.comment
+                            : widget.remarksController.text.isNotEmpty
+                                ? Icons.comment
+                                : Icons.add_comment,
+                        color: widget.remarksController.text.isNotEmpty
+                            ? Colors.green
+                            : Theme.of(context).primaryColor,
+                        size: 22,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _showRemarks = !_showRemarks;
+                        });
+                      },
+                    ),
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -792,7 +883,7 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                                     Positioned.fill(
                                       child: Container(
                                         decoration: BoxDecoration(
-                                          color: Colors.black.withOpacity(0.1),
+                                          color: Colors.black.withAlpha(25),
                                           borderRadius:
                                               BorderRadius.circular(4),
                                         ),
@@ -837,27 +928,48 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
               ],
             ),
             if (widget.allowRemarks && _showRemarks) ...[
-              const SizedBox(height: 8),
-              TextField(
-                controller: widget.remarksController,
-                decoration: InputDecoration(
-                  hintText: 'Add remarks',
-                  border: const OutlineInputBorder(
-                    borderRadius: BorderRadius.all(Radius.circular(8)),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
+              const SizedBox(height: 12),
+              Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.grey[850]
+                      : Colors.grey[50],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Theme.of(context).dividerColor.withAlpha(128),
                   ),
                 ),
-                maxLines: 2,
-                onChanged: (value) {
-                  if (mounted) {
-                    widget.onDataChanged?.call();
-                  }
-                },
+                child: TextField(
+                  controller: widget.remarksController,
+                  decoration: InputDecoration(
+                    hintText: '✍️ Add remarks...',
+                    hintStyle: TextStyle(
+                      color: Theme.of(context).hintColor,
+                      fontSize: 14,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                  maxLines: 3,
+                  onChanged: (value) {
+                    if (mounted) {
+                      widget.onDataChanged?.call();
+                    }
+                  },
+                ),
               ),
             ],
+            // Info button at bottom left corner
+            if (widget.showInfoButton && widget.fieldId != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: InspectionInfoButton(
+                  fieldId: widget.fieldId!,
+                ),
+              ),
           ],
         ),
       ),

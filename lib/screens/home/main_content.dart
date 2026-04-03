@@ -8,19 +8,13 @@ import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
 import '../../routes/routes.dart';
 import '../../widgets/fade_animation.dart';
-import '../../widgets/menu_icon.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/inspection_provider.dart';
+import '../../utils/ads%20manager/banner_ad_manager.dart';
 
 class MainContent extends StatefulWidget {
-  final VoidCallback onMenuTap;
-  final bool isDrawerOpen;
+  const MainContent({super.key});
 
-  const MainContent({
-    super.key,
-    required this.onMenuTap,
-    required this.isDrawerOpen,
-  });
   @override
   _MainContentState createState() => _MainContentState();
 }
@@ -34,6 +28,17 @@ class _MainContentState extends State<MainContent>
   late Animation<double> rippleAnimation;
   Box<InspectionStorageModel>? _inspectionBox;
   late Animation<double> scaleAnimation;
+
+  // Design tokens
+  static const _primary = Color(0xFF0F172A);
+  static const _accent = Color(0xFF3B82F6);
+  static const _accentLight = Color(0xFFEFF6FF);
+  static const _surface = Color(0xFFF8FAFC);
+  static const _cardBg = Colors.white;
+  static const _textPrimary = Color(0xFF0F172A);
+  static const _textSecondary = Color(0xFF64748B);
+  static const _indigo = Color(0xFF6366F1);
+  static const _indigoLight = Color(0xFFEEF2FF);
 
   @override
   void initState() {
@@ -69,17 +74,6 @@ class _MainContentState extends State<MainContent>
       }
     } catch (e) {
       print('Error loading user name: $e');
-    }
-  }
-
-  String _getGreeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) {
-      return 'Good Morning';
-    } else if (hour < 17) {
-      return 'Good Afternoon';
-    } else {
-      return 'Good Evening';
     }
   }
 
@@ -133,7 +127,6 @@ class _MainContentState extends State<MainContent>
       }
     } catch (e) {
       print('Error initializing Hive: $e');
-      // Try to recover from error
       await Hive.deleteBoxFromDisk(HiveConstants.INSPECTION_BOX);
       await Hive.initFlutter();
       _inspectionBox = await Hive.openBox<InspectionStorageModel>(
@@ -150,31 +143,24 @@ class _MainContentState extends State<MainContent>
         );
       }
 
-      // Get current inspection data
       final existingData =
           _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
 
-      // Check if there's existing data, it's not completed, and has valid content
       if (existingData != null) {
-        // First check if it's completed or submitted
         if (existingData.isCompleted ||
             existingData.status == 'submitted' ||
             existingData.status == 'offline') {
-          return false; // Return false if inspection is completed or saved offline
+          return false;
         }
 
-        // Check if the inspection has valid data
         bool hasValidData = existingData.itemValues.isNotEmpty ||
             existingData.itemImages.isNotEmpty ||
             existingData.itemRemarks.isNotEmpty;
 
-        // Additional check: Ensure the inspection is not too old (e.g., more than 24 hours)
         if (hasValidData) {
           final inspectionTime = existingData.timestamp;
           final currentTime = DateTime.now();
           final timeDifference = currentTime.difference(inspectionTime);
-
-          // If inspection is less than 24 hours old, consider it existing
           return timeDifference.inHours < 24;
         }
       }
@@ -200,6 +186,9 @@ class _MainContentState extends State<MainContent>
           barrierDismissible: false,
           builder: (BuildContext context) {
             return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               title: const Text('Continue Previous Inspection?'),
               content: const Text(
                 'Would you like to continue your previous inspection or start a new one?',
@@ -240,7 +229,6 @@ class _MainContentState extends State<MainContent>
 
   void _navigateToInspection(bool isNew) {
     if (isNew) {
-      // For new inspections, go to vehicle details form first
       Navigator.pushNamed(
         context,
         Routes.vehicleDetails,
@@ -251,7 +239,6 @@ class _MainContentState extends State<MainContent>
         }
       });
     } else {
-      // For continuing inspections, go directly to inspection screen
       Navigator.pushNamed(
         context,
         Routes.inspection,
@@ -288,28 +275,40 @@ class _MainContentState extends State<MainContent>
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Material(
-        borderRadius: BorderRadius.circular(16),
-        elevation: 3,
-        shadowColor: Colors.black12,
-        color: Colors.white,
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           onTap: onTap,
+          splashColor: color.withValues(alpha: 0.08),
+          highlightColor: color.withValues(alpha: 0.04),
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
             child: Row(
               children: [
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 52,
+                  height: 52,
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(16),
+                    color: color.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(icon, color: color, size: 28),
+                  child: Icon(icon, color: color, size: 24),
                 ),
-                const SizedBox(width: 20),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -317,24 +316,37 @@ class _MainContentState extends State<MainContent>
                       Text(
                         title,
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: Colors.black87,
+                          color: _textPrimary,
+                          letterSpacing: -0.2,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 3),
                       Text(
                         subtitle,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: _textSecondary,
+                          height: 1.3,
                         ),
                       ),
                     ],
                   ),
                 ),
-                Icon(Icons.arrow_forward_ios,
-                    size: 18, color: Colors.grey[400]),
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                    color: _textSecondary,
+                  ),
+                ),
               ],
             ),
           ),
@@ -348,167 +360,305 @@ class _MainContentState extends State<MainContent>
     return SafeArea(
       child: Consumer2<UserProvider, InspectionProvider>(
         builder: (context, userProvider, inspectionProvider, child) {
-          final pendingCount = inspectionProvider.inspections.length;
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header with menu and greeting
-                FadeAnimation(
-                  1.0,
-                  Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.06),
-                          blurRadius: 15,
-                          offset: const Offset(0, 5),
+          return Container(
+            color: _surface,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Header ──────────────────────────────────────────────
+                  FadeAnimation(
+                    1.0,
+                    Row(
+                      children: [
+                        // Avatar
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF3B82F6), Color(0xFF6366F1)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Center(
+                            child: Text(
+                              _userName.isNotEmpty
+                                  ? _userName[0].toUpperCase()
+                                  : 'U',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
-                    child: Row(
-                        children: [
-                        NeumorphicAnimatedIcon(
-                          onTap: widget.onMenuTap,
-                          isDrawerOpen: widget.isDrawerOpen,
-                        ),
-                        const SizedBox(width: 20),
+                        const SizedBox(width: 14),
                         Expanded(
                           child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                            _getGreeting(),
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.grey[600],
-                            ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                            _userName,
-                            style: const TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black87,
-                            ),
-                            ),
-                          ],
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Welcome back',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _textSecondary,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _userName,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  color: _textPrimary,
+                                  letterSpacing: -0.4,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        Badge(
-                          backgroundColor: Colors.red,
-                          label: Text('3'),
-                          child: IconButton(
-                          onPressed: () {
-                            // Handle notification tap
-                          },
-                          icon: Icon(
-                            Icons.notifications_outlined,
-                            color: Colors.blue[600],
-                            size: 24,
-                          ),
-                          style: IconButton.styleFrom(
-                            backgroundColor: Colors.blue.withValues(alpha: 0.1),
-                            padding: const EdgeInsets.all(12),
-                            shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                        // Notification bell
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: _cardBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFE2E8F0),
+                                  width: 1,
+                                ),
+                              ),
+                              child: IconButton(
+                                onPressed: () {},
+                                icon: const Icon(
+                                  Icons.notifications_outlined,
+                                  color: _textPrimary,
+                                  size: 22,
+                                ),
+                                padding: EdgeInsets.zero,
+                              ),
                             ),
-                          ),
-                          ),
+                            Positioned(
+                              top: -2,
+                              right: -2,
+                              child: Container(
+                                width: 18,
+                                height: 18,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFEF4444),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Center(
+                                  child: Text(
+                                    '3',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 24),
+                  const SizedBox(height: 28),
 
-                // Main action - Start Inspection
-                FadeAnimation(
-                  1.4,
-                  Container(
-                    width: double.infinity,
-                    height: 160,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFF1A73E8), Color(0xFF1557B0)],
-                      ),
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF1A73E8).withValues(alpha: 0.3),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8),
+                  // ── Start Inspection Hero Card ───────────────────────────
+                  FadeAnimation(
+                    1.3,
+                    GestureDetector(
+                      onTap: _handleInspectionTap,
+                      child: Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(24),
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF1E3A5F),
+                              Color(0xFF1A73E8),
+                              Color(0xFF2563EB),
+                            ],
+                            stops: [0.0, 0.55, 1.0],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF1A73E8)
+                                  .withValues(alpha: 0.35),
+                              blurRadius: 24,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(24),
-                        onTap: _handleInspectionTap,
-                        child: Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Row(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: Stack(
                             children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisAlignment: MainAxisAlignment.center,
+                              // Decorative circle top-right
+                              Positioned(
+                                top: -30,
+                                right: -20,
+                                child: Container(
+                                  width: 130,
+                                  height: 130,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withValues(alpha: 0.06),
+                                  ),
+                                ),
+                              ),
+                              Positioned(
+                                bottom: -20,
+                                right: 40,
+                                child: Container(
+                                  width: 80,
+                                  height: 80,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withValues(alpha: 0.05),
+                                  ),
+                                ),
+                              ),
+                              // Content
+                              Padding(
+                                padding: const EdgeInsets.all(26),
+                                child: Row(
                                   children: [
-                                    const Text(
-                                      'Start Inspection',
-                                      style: TextStyle(
-                                        fontSize: 26,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: const Text(
+                                              'QUALITY CONTROL',
+                                              style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 10,
+                                                fontWeight: FontWeight.w700,
+                                                letterSpacing: 1.2,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                          const Text(
+                                            'Start\nInspection',
+                                            style: TextStyle(
+                                              fontSize: 28,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white,
+                                              height: 1.15,
+                                              letterSpacing: -0.5,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 8),
+                                          Text(
+                                            'Begin your quality check process',
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.75),
+                                              height: 1.4,
+                                            ),
+                                          ),
+                                          // const SizedBox(height: 18),
+                                          // Row(
+                                          //   children: [
+                                          //     Container(
+                                          //       padding:
+                                          //           const EdgeInsets.symmetric(
+                                          //               horizontal: 16,
+                                          //               vertical: 8),
+                                          //       decoration: BoxDecoration(
+                                          //         color: Colors.white,
+                                          //         borderRadius:
+                                          //             BorderRadius.circular(10),
+                                          //       ),
+                                          //       child: const Text(
+                                          //         'Tap to begin →',
+                                          //         style: TextStyle(
+                                          //           color: Color(0xFF1A73E8),
+                                          //           fontSize: 13,
+                                          //           fontWeight: FontWeight.w700,
+                                          //         ),
+                                          //       ),
+                                          //     ),
+                                          //   ],
+                                          // ),
+                                        ],
                                       ),
                                     ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Begin your quality control process',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        color: Colors.white
-                                            .withValues(alpha: 0.85),
+                                    const SizedBox(width: 16),
+                                    // Animated play button
+                                    AnimatedBuilder(
+                                      animation: rippleAnimation,
+                                      builder: (context, child) => SizedBox(
+                                        width: 72,
+                                        height: 72,
+                                        child: Stack(
+                                          alignment: Alignment.center,
+                                          children: [
+                                            // Outer pulse ring
+                                            Container(
+                                              width:
+                                                  rippleAnimation.value * 1.1,
+                                              height:
+                                                  rippleAnimation.value * 1.1,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.08),
+                                              ),
+                                            ),
+                                            // Inner button
+                                            Container(
+                                              width: 56,
+                                              height: 56,
+                                              decoration: BoxDecoration(
+                                                shape: BoxShape.circle,
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.18),
+                                                border: Border.all(
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.4),
+                                                  width: 1.5,
+                                                ),
+                                              ),
+                                              child: const Icon(
+                                                Icons.play_arrow_rounded,
+                                                color: Colors.white,
+                                                size: 30,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ],
-                                ),
-                              ),
-                              AnimatedBuilder(
-                                animation: rippleAnimation,
-                                builder: (context, child) => Container(
-                                  width: 72,
-                                  height: 72,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: Colors.white.withValues(alpha: 0.15),
-                                  ),
-                                  child: Transform.scale(
-                                    scale: rippleAnimation.value / 62.5,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.white
-                                            .withValues(alpha: 0.25),
-                                      ),
-                                      child: const Icon(
-                                        Icons.play_arrow_rounded,
-                                        color: Colors.white,
-                                        size: 36,
-                                      ),
-                                    ),
-                                  ),
                                 ),
                               ),
                             ],
@@ -517,68 +667,61 @@ class _MainContentState extends State<MainContent>
                       ),
                     ),
                   ),
-                ),
 
-                const SizedBox(height: 24),
+                  const SizedBox(height: 28),
 
-                // Quick Actions Section
-                FadeAnimation(
-                  1.6,
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 4),
-                        child: Text(
-                          'Quick Actions',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
+                  // ── Section heading ──────────────────────────────────────
+                  FadeAnimation(
+                    1.5,
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 14),
+                      child: Text(
+                        'Quick Actions',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: _textPrimary,
+                          letterSpacing: -0.3,
                         ),
                       ),
-                      _buildQuickActionCard(
-                        icon: Icons.handshake_outlined,
-                        title: 'Expert Opinion',
-                        subtitle: 'Get expert reviews on inspections',
-                        color: Color(0xFF6366F1),
-                        onTap: () {
-                          // Navigate to history
-                        },
-                      ),
-                      _buildQuickActionCard(
-                        icon: Icons.bookmark_added_outlined,
-                        title: 'Inspection Booking',
-                        subtitle: 'Get your car inspected by Professionals',
-                        color: Color(0xFF6366F1),
-                        onTap: _launchBookingWebsite,
-                      ),
-                      if (pendingCount > 0)
-                        _buildQuickActionCard(
-                          icon: Icons.cloud_upload_rounded,
-                          title: 'Sync Pending ($pendingCount)',
-                          subtitle: 'Upload pending inspections',
-                          color: Color(0xFFF59E0B),
-                          onTap: () async {
-                            await inspectionProvider.loadInspections();
-                          },
-                        ),
-                      _buildQuickActionCard(
-                        icon: Icons.replay,
-                        title: 'Recent Inspections',
-                        subtitle: 'View your recent inspection history',
-                        color: Color(0xFF6366F1),
-                        onTap: () {
-                          // Navigate to history
-                        },
-                      ),
-                    ],
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 20),
-              ],
+                  // ── Action Cards ─────────────────────────────────────────
+                  FadeAnimation(
+                    1.6,
+                    Column(
+                      children: [
+                        _buildQuickActionCard(
+                          icon: Icons.handshake_outlined,
+                          title: 'Expert Opinion',
+                          subtitle: 'Get expert reviews on inspections',
+                          color: _indigo,
+                          onTap: () {},
+                        ),
+                        _buildQuickActionCard(
+                          icon: Icons.bookmark_added_outlined,
+                          title: 'Inspection Booking',
+                          subtitle: 'Get your car inspected by Professionals',
+                          color: _accent,
+                          onTap: _launchBookingWebsite,
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // ── Banner Ad ────────────────────────────────────────────
+                  FadeAnimation(
+                    1.7,
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      child: const BannerAdWidget(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           );
         },

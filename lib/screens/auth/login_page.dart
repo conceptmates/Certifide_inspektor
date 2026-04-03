@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import '../../constants/const.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
-import '../main_screen.dart';
+import '../home/car_spy/car_spy_home.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -49,6 +49,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showErrorDialog(String message) {
+    if (!mounted) return;
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -150,9 +151,11 @@ class _LoginPageState extends State<LoginPage> {
           _passwordController.text,
         );
 
+        print('Login response: $response');
+
         if (!mounted) return;
 
-        if (response != null && response['success'] == true) {
+        if (response['success'] == true) {
           final userProvider =
               Provider.of<UserProvider>(context, listen: false);
           if (response['data'] != null &&
@@ -164,14 +167,14 @@ class _LoginPageState extends State<LoginPage> {
             );
 
             Navigator.of(context).pushReplacement(
-              MaterialPageRoute(builder: (context) => const MainScreen()),
+              MaterialPageRoute(builder: (context) => const CarSpyHome()),
             );
           } else {
             _showErrorDialog('Unable to process login. Please try again.');
           }
         } else {
           _showErrorDialog(
-              response?['message'] ?? 'Unable to sign in. Please try again.');
+              response['message'] ?? 'Unable to sign in. Please try again.');
         }
       } catch (e) {
         if (!mounted) return;

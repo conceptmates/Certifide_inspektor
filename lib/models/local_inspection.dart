@@ -1,6 +1,8 @@
 // lib/models/local_inspection.dart
 import 'package:hive/hive.dart';
 
+import 'pending_image.dart';
+
 part 'local_inspection.g.dart';
 
 @HiveType(typeId: 3)
@@ -23,6 +25,9 @@ class LocalInspection extends HiveObject {
   @HiveField(5)
   final String status;
 
+  @HiveField(6)
+  final Map<String, PendingImage> pendingImages;
+
   LocalInspection({
     required this.id,
     required this.createdAt,
@@ -30,5 +35,6 @@ class LocalInspection extends HiveObject {
     required this.images,
     this.isSubmitted = false,
     this.status = 'pending',
-  });
+    Map<String, PendingImage>? pendingImages,
+  }) : pendingImages = pendingImages ?? {};
 }
