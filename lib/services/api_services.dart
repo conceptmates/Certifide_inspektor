@@ -10,6 +10,7 @@ import '../models/inspection_history_model.dart';
 import '../models/inspection_template_model.dart';
 import '../models/inspector.dart';
 import '../models/pagination_data_model.dart';
+import '../models/public_cars_models.dart';
 import '../models/vehicle_model.dart';
 import '../utils/exception_handler.dart';
 import '../screens/auth/login_page.dart';
@@ -36,6 +37,8 @@ class ApiService {
       '/dynamic-inspections/initialize';
   static const String getModelsEndpoint = '/admin/vehicles/models';
   static const String submitDynamicInspectionEndPoint = '/dynamic-inspections';
+  static const String newCarsEndPoint = '/cars/new';
+  static const String carFiltersEndpoint = '/cars/filters';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -984,6 +987,133 @@ class ApiService {
       }
     } catch (e) {
       log('Error fetching models: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  /// Public metadata for filter UIs (`type`: `new` | `old`).
+  static Future<Map<String, dynamic>> getCarFilters({String? type}) async {
+    try {
+      final params = <String, String>{};
+      if (type != null && type.isNotEmpty) {
+        params['type'] = type;
+      }
+      final uri = Uri.parse('$baseUrl$carFiltersEndpoint')
+          .replace(queryParameters: params.isEmpty ? null : params);
+
+      log('GET car filters: $uri');
+
+      final response = await http.get(
+        uri,
+        headers: await _getHeaders(requiresAuth: false),
+      );
+
+      log('Car filters status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        final data = CarFiltersData.fromJson(responseData);
+        return {
+          'success': true,
+          'data': data,
+          'message': 'OK',
+        };
+      }
+
+      return {
+        'success': false,
+        'message': _handleError(response),
+      };
+    } catch (e) {
+      log('Error fetching car filters: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  /// Paginated published new car listings (`GET /api/cars/new`).
+  static Future<Map<String, dynamic>> getNewCars({
+    int page = 1,
+    int perPage = 15,
+    String sort = 'newest',
+    int? brandId,
+    int? vehicleModelId,
+    int? categoryId,
+    String? priceMin,
+    String? priceMax,
+    int? yearMin,
+    int? yearMax,
+    String? transmission,
+    String? fuelType,
+    String? bodyType,
+    int? seatingCapacity,
+    int? engineCapacityMin,
+    int? engineCapacityMax,
+    String? search,
+  }) async {
+    try {
+      final q = <String, String>{
+        'page': '$page',
+        'per_page': '$perPage',
+        'sort': sort,
+      };
+
+      void add(String key, Object? value) {
+        if (value == null) return;
+        final s = value.toString();
+        if (s.isEmpty) return;
+        q[key] = s;
+      }
+
+      add('brand_id', brandId);
+      add('vehicle_model_id', vehicleModelId);
+      add('category_id', categoryId);
+      add('price_min', priceMin);
+      add('price_max', priceMax);
+      add('year_min', yearMin);
+      add('year_max', yearMax);
+      add('transmission', transmission);
+      add('fuel_type', fuelType);
+      add('body_type', bodyType);
+      add('seating_capacity', seatingCapacity);
+      add('engine_capacity_min', engineCapacityMin);
+      add('engine_capacity_max', engineCapacityMax);
+      add('search', search);
+
+      final uri =
+          Uri.parse('$baseUrl$newCarsEndPoint').replace(queryParameters: q);
+
+      log('GET new cars: $uri');
+
+      final response = await http.get(
+        uri,
+        headers: await _getHeaders(requiresAuth: false),
+      );
+
+      log('New cars status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        final result = NewCarsResult.fromJson(responseData);
+        return {
+          'success': true,
+          'cars': result.cars,
+          'meta': result.meta,
+          'message': 'OK',
+        };
+      }
+
+      return {
+        'success': false,
+        'message': _handleError(response),
+      };
+    } catch (e) {
+      log('Error fetching new cars: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',

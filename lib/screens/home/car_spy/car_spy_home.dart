@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../../../constants/hive_constants.dart';
 import '../../../data/inspection_storage_model.dart';
 import '../../../routes/routes.dart';
+import 'new_cars_list_page.dart';
 import 'widgets/car_spy_bottom_nav_bar.dart';
 import 'widgets/car_spy_content_sections.dart';
 import 'widgets/car_spy_hero_section.dart';
@@ -179,7 +180,17 @@ class _CarSpyHomeState extends State<CarSpyHome> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CarSpyCoreServicesSection(),
+                    CarSpyCoreServicesSection(
+                      onServiceTap: (index) {
+                        if (index == 0) {
+                          Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (context) => const NewCarsListPage(),
+                            ),
+                          );
+                        }
+                      },
+                    ),
                     SizedBox(height: 32),
                     CarSpyPendingReportCard(),
                     SizedBox(height: 24),

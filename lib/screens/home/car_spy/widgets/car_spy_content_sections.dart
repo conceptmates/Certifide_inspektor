@@ -3,7 +3,13 @@ import 'package:flutter/material.dart';
 import '../car_spy_data.dart';
 
 class CarSpyCoreServicesSection extends StatelessWidget {
-  const CarSpyCoreServicesSection({super.key});
+  const CarSpyCoreServicesSection({
+    super.key,
+    this.onServiceTap,
+  });
+
+  /// Index matches [carSpyServices] (0 = New Car, 1 = Used Car, …).
+  final void Function(int index)? onServiceTap;
 
   @override
   Widget build(BuildContext context) {
@@ -47,7 +53,10 @@ class CarSpyCoreServicesSection extends StatelessWidget {
           ),
           itemBuilder: (context, index) {
             final service = carSpyServices[index];
-            return _ServiceItem(service: service);
+            return _ServiceItem(
+              service: service,
+              onTap: () => onServiceTap?.call(index),
+            );
           },
         ),
       ],
@@ -56,9 +65,13 @@ class CarSpyCoreServicesSection extends StatelessWidget {
 }
 
 class _ServiceItem extends StatelessWidget {
-  const _ServiceItem({required this.service});
+  const _ServiceItem({
+    required this.service,
+    this.onTap,
+  });
 
   final ServiceItemData service;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +92,7 @@ class _ServiceItem extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
-          onTap: () {},
+          onTap: onTap,
           child: Padding(
             padding: const EdgeInsets.all(18),
             child: Column(
