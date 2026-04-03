@@ -1,5 +1,5 @@
-import 'package:certifide_openapp/constants/ad_constants.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import '../../constants/ad_constants.dart';
 
 class RewardedInterstitialAdManager {
   RewardedInterstitialAd? _rewardedInterstitialAd;

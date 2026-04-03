@@ -1,8 +1,7 @@
-import 'package:certifide_openapp/screens/home/car_spy/car_spy_home.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../main_screen.dart';
+import 'car_spy/car_spy_home.dart';
 
 class InspectionSuccessPage extends StatelessWidget {
   final String redirectUrl;

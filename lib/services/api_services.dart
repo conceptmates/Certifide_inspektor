@@ -38,6 +38,7 @@ class ApiService {
   static const String getModelsEndpoint = '/admin/vehicles/models';
   static const String submitDynamicInspectionEndPoint = '/dynamic-inspections';
   static const String newCarsEndPoint = '/cars/new';
+  static const String userCarsEndPoint = '/cars/old';
   static const String carFiltersEndpoint = '/cars/filters';
 
   static Future<Map<String, dynamic>> createInitialInspection(
@@ -1114,6 +1115,92 @@ class ApiService {
       };
     } catch (e) {
       log('Error fetching new cars: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  /// Paginated published used car listings (`GET /api/cars/old`).
+  /// Same query contract as [getNewCars].
+  static Future<Map<String, dynamic>> getUsedCars({
+    int page = 1,
+    int perPage = 15,
+    String sort = 'newest',
+    int? brandId,
+    int? vehicleModelId,
+    int? categoryId,
+    String? priceMin,
+    String? priceMax,
+    int? yearMin,
+    int? yearMax,
+    String? transmission,
+    String? fuelType,
+    String? bodyType,
+    int? seatingCapacity,
+    int? engineCapacityMin,
+    int? engineCapacityMax,
+    String? search,
+  }) async {
+    try {
+      final q = <String, String>{
+        'page': '$page',
+        'per_page': '$perPage',
+        'sort': sort,
+      };
+
+      void add(String key, Object? value) {
+        if (value == null) return;
+        final s = value.toString();
+        if (s.isEmpty) return;
+        q[key] = s;
+      }
+
+      add('brand_id', brandId);
+      add('vehicle_model_id', vehicleModelId);
+      add('category_id', categoryId);
+      add('price_min', priceMin);
+      add('price_max', priceMax);
+      add('year_min', yearMin);
+      add('year_max', yearMax);
+      add('transmission', transmission);
+      add('fuel_type', fuelType);
+      add('body_type', bodyType);
+      add('seating_capacity', seatingCapacity);
+      add('engine_capacity_min', engineCapacityMin);
+      add('engine_capacity_max', engineCapacityMax);
+      add('search', search);
+
+      final uri =
+          Uri.parse('$baseUrl$userCarsEndPoint').replace(queryParameters: q);
+
+      log('GET used cars: $uri');
+
+      final response = await http.get(
+        uri,
+        headers: await _getHeaders(requiresAuth: false),
+      );
+
+      log('Used cars status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        final result = NewCarsResult.fromJson(responseData);
+        return {
+          'success': true,
+          'cars': result.cars,
+          'meta': result.meta,
+          'message': 'OK',
+        };
+      }
+
+      return {
+        'success': false,
+        'message': _handleError(response),
+      };
+    } catch (e) {
+      log('Error fetching used cars: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',

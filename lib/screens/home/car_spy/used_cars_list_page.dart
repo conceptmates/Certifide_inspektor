@@ -7,14 +7,14 @@ import 'car_spy_data.dart';
 import 'widgets/public_car_listing_card.dart';
 import 'widgets/public_car_listing_detail_page.dart';
 
-class NewCarsListPage extends StatefulWidget {
-  const NewCarsListPage({super.key});
+class UsedCarsListPage extends StatefulWidget {
+  const UsedCarsListPage({super.key});
 
   @override
-  State<NewCarsListPage> createState() => _NewCarsListPageState();
+  State<UsedCarsListPage> createState() => _UsedCarsListPageState();
 }
 
-class _NewCarsListPageState extends State<NewCarsListPage> {
+class _UsedCarsListPageState extends State<UsedCarsListPage> {
   final List<PublicCarListing> _cars = [];
   bool _loading = true;
   bool _loadingMore = false;
@@ -61,7 +61,7 @@ class _NewCarsListPageState extends State<NewCarsListPage> {
       });
     }
 
-    final result = await ApiService.getNewCars(
+    final result = await ApiService.getUsedCars(
       page: _page,
       perPage: 15,
       sort: 'newest',
@@ -92,7 +92,7 @@ class _NewCarsListPageState extends State<NewCarsListPage> {
     if (_page >= _lastPage || _loadingMore) return;
     setState(() => _loadingMore = true);
     _page += 1;
-    final result = await ApiService.getNewCars(
+    final result = await ApiService.getUsedCars(
       page: _page,
       perPage: 15,
       sort: 'newest',
@@ -135,7 +135,7 @@ class _NewCarsListPageState extends State<NewCarsListPage> {
         foregroundColor: CarSpyColors.onSurface,
         elevation: 0,
         title: const Text(
-          'New cars',
+          'Used cars',
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
