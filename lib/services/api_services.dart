@@ -40,6 +40,7 @@ class ApiService {
   static const String newCarsEndPoint = '/cars/new';
   static const String userCarsEndPoint = '/cars/old';
   static const String carFiltersEndpoint = '/cars/filters';
+  static const String vehicleDetailsEndPoint = '/api/ulip/vehicle-details';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -1201,6 +1202,58 @@ class ApiService {
       };
     } catch (e) {
       log('Error fetching used cars: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> getVehicleDetails({
+    required String vehicleNumber,
+  }) async {
+    try {
+      log('Fetching vehicle details for: $vehicleNumber');
+
+      final response = await http.post(
+        Uri.parse('$baseUrl$vehicleDetailsEndPoint'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: json.encode({
+          'vehiclenumber': vehicleNumber,
+        }),
+      );
+
+      log('Vehicle details response status: ${response.statusCode}');
+      log('Vehicle details response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body);
+
+        if (responseData['status'] == 'success' &&
+            responseData['data'] != null) {
+          log('Vehicle details fetched successfully for: $vehicleNumber');
+
+          return {
+            'success': true,
+            'data': responseData['data'],
+            'message': responseData['message'] ??
+                'Vehicle details fetched successfully',
+          };
+        } else {
+          return {
+            'success': false,
+            'message':
+                responseData['message'] ?? 'Failed to fetch vehicle details',
+          };
+        }
+      } else {
+        return {
+          'success': false,
+          'message': _handleError(response),
+        };
+      }
+    } catch (e) {
+      log('Error fetching vehicle details: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',
