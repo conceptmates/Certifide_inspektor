@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../constants/const.dart';
 import '../car_spy_data.dart';
 
 class CarSpyCoreServicesSection extends StatelessWidget {
@@ -239,8 +240,10 @@ class CarSpyPendingReportCard extends StatelessWidget {
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
-                        Positioned(left: 0, child: _AvatarIcon(icon: Icons.person)),
-                        Positioned(left: 32, child: _AvatarIcon(icon: Icons.shield)),
+                        Positioned(
+                            left: 0, child: _AvatarIcon(icon: Icons.person)),
+                        Positioned(
+                            left: 32, child: _AvatarIcon(icon: Icons.shield)),
                       ],
                     ),
                   ),
@@ -433,13 +436,9 @@ class CarSpyHeritageVaultCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Image.network(
-              'https://lh3.googleusercontent.com/aida-public/AB6AXuAmy81rY0oqiXmahKk59c_VNyodtccEl3MC_PdX9b2h7pk-KgJwWBwJGi6lAnLLkwD1ERkG7GdwpneN4vXcFKvXzIrhO08kBJjzu31kwqWQ3z3T0RvGTLHOXBvre9-KFJ5KaA1tzOIvujN3E2KoxuxIcrljn68_YfdAyxroYiLdDQwheTRmqCQQJ9d0_zyzmZ5Ab-2xwbO86xzsBV4wXzqnruKc6Z4fWFGTQCC9OcHw_OGAIySrCzhoMRAKTBxgb015qBAl8vLbT1g',
+            Image.asset(
+              carSpyHeritageVault,
               fit: BoxFit.cover,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Container(color: Colors.grey.shade300);
-              },
             ),
             Container(
               decoration: const BoxDecoration(

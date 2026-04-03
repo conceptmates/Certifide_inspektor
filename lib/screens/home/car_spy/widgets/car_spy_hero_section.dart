@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../constants/const.dart';
 import '../car_spy_data.dart';
 
 class CarSpyHeroSection extends StatelessWidget {
@@ -22,17 +23,9 @@ class CarSpyHeroSection extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              Image.network(
-                'https://lh3.googleusercontent.com/aida-public/AB6AXuBZZl9y6ns2Xt-xDgHnZ-9CKXJC_O0pSFYTKVYi-U5sBpT7tk8TLEuiD3xLAvM3SmEz6u_sYCm0RzFgI53Au0NCeinw2VZWWS9ekH1G0mY37Vpwf_NGMqkBgSdaUYmUJAZwfaugBXBEPZoV02Y9A3qTCqSu5e6EM8t5HZRAgoRgevFYjc7dAp5VivcDkq0GUH9C-wPulYkRL-V05pmonim1Qlovzfm6LDx6xrEl2h-WBuLH-R-kJ0EZ267kaQ9677JKy2sCPHDqUwQ',
+              Image.asset(
+                carSpyHeroSection,
                 fit: BoxFit.cover,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return Container(
-                    color: Colors.grey.shade300,
-                    child: const Center(
-                        child: CircularProgressIndicator.adaptive()),
-                  );
-                },
               ),
               Container(
                 decoration: const BoxDecoration(
