@@ -42,111 +42,169 @@ class _PublicCarListingDetailPageState
     super.dispose();
   }
 
-  String _fmtMoney(String? raw) {
-    if (raw == null || raw.isEmpty) return '—';
+  String? _fmtMoney(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
     final v = double.tryParse(raw);
     if (v == null) return raw;
     return _inr.format(v);
-  }
-
-  String _str(Object? v) {
-    if (v == null) return '—';
-    final s = v.toString().trim();
-    return s.isEmpty ? '—' : s;
   }
 
   @override
   Widget build(BuildContext context) {
     final l = widget.listing;
     final barTitle = widget.appBarTitle ?? l.title;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor:
+          Colors.grey.shade50, // Softer background for contrast with cards
       appBar: AppBar(
         backgroundColor: Colors.white,
         foregroundColor: CarSpyColors.onSurface,
         elevation: 0,
+        scrolledUnderElevation: 2,
         title: Text(
           barTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w700),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
       ),
       body: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildGallery(l),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            Container(
+              color: Colors.white,
+              padding: const EdgeInsets.only(bottom: 24),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    l.title,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      color: CarSpyColors.onSurface,
-                      height: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _fmtMoney(l.price),
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      color: CarSpyColors.primary,
-                    ),
-                  ),
-                  if (l.description != null && l.description!.trim().isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 20),
-                      child: Text(
-                        l.description!,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          height: 1.5,
-                          color: CarSpyColors.onSurface,
+                  _buildGallery(l),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // --- TITLE & PRICE ---
+                        Text(
+                          l.title,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: CarSpyColors.onSurface,
+                            height: 1.2,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _fmtMoney(l.price) ?? 'Price on request',
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                            color: CarSpyColors.primary,
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // --- QUICK GLANCE SPECS ---
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            if (l.year != null)
+                              _buildGlanceChip(
+                                  Icons.calendar_today_outlined, '${l.year}'),
+                            if (l.transmission != null &&
+                                l.transmission!.isNotEmpty)
+                              _buildGlanceChip(Icons.settings_suggest_outlined,
+                                  l.transmission!),
+                            if (l.fuelType != null && l.fuelType!.isNotEmpty)
+                              _buildGlanceChip(Icons.local_gas_station_outlined,
+                                  l.fuelType!),
+                            if (l.mileageKm != null)
+                              _buildGlanceChip(
+                                  Icons.speed_outlined, '${l.mileageKm} km'),
+                          ],
+                        ),
+                      ],
                     ),
-                  const SizedBox(height: 24),
-                  _sectionTitle('Listing'),
-                  _kv('Year', _str(l.year)),
-                  _kv('Mileage (km)', _str(l.mileageKm)),
-                  _kv('Registration number', _str(l.registrationNumber)),
-                  // _kv('Chassis number', _str(l.chassisNumber)),
-                  const SizedBox(height: 20),
-                  _sectionTitle('Seller'),
-                  // _kv('Dealer ID', _str(l.user?.id)),
-                  _kv('Dealer name', _str(l.user?.name)),
-                  const SizedBox(height: 20),
-                  _sectionTitle('Pricing & costs'),
-                  _kv('Ex-showroom / list price', _fmtMoney(l.price)),
-                  _kv('On-road price', _fmtMoney(l.onRoadPrice)),
-                  _kv('Maintenance cost', _str(l.maintenanceCost)),
-                  _kv('Insurance cost', _fmtMoney(l.insuranceCost)),
-                  _kv('Resale value', _fmtMoney(l.resaleValue)),
-                  _kv('Warranty', _str(l.warranty)),
-                  const SizedBox(height: 20),
-                  _sectionTitle('Specifications'),
-                  _kv('Transmission', _str(l.transmission)),
-                  _kv('Fuel type', _str(l.fuelType)),
-                  _kv('Engine (cc)', _str(l.engineCapacityCc)),
-                  _kv('Mileage / efficiency', _str(l.mileageFuelEfficiency)),
-                  _kv('Drivetrain', _str(l.drivetrain)),
-                  _kv('Body type', _str(l.bodyType)),
-                  _kv('Seating capacity', _str(l.seatingCapacity)),
-                  _kv('Boot space', _str(l.bootSpace)),
-                  _kv('Ground clearance', _str(l.groundClearance)),
-                  const SizedBox(height: 20),
-                  _sectionTitle('Safety & features'),
-                  _kv('Safety (NCAP)', _str(l.safetyRatingNcap)),
-                  _kv('Airbags', _str(l.airbagsCount)),
-                  _kv('ABS / ESC', _str(l.absEsc)),
-                  _kv('Infotainment', _str(l.infotainmentFeatures)),
+                  ),
+                ],
+              ),
+            ),
+
+            // --- DETAILED SECTIONS ---
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (l.description != null &&
+                      l.description!.trim().isNotEmpty) ...[
+                    _buildSectionCard(
+                      'Overview',
+                      [
+                        Text(
+                          l.description!.trim(),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            height: 1.5,
+                            color: CarSpyColors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  _buildSectionCard(
+                    'Listing Details',
+                    [
+                      _kv('Registration', l.registrationNumber),
+                      _kv('Dealer Name', l.user?.name),
+                      _kv('Warranty', l.warranty),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  _buildSectionCard(
+                    'Pricing & Costs',
+                    [
+                      _kv('Ex-showroom', _fmtMoney(l.price)),
+                      _kv('On-road price', _fmtMoney(l.onRoadPrice)),
+                      _kv('Maintenance', l.maintenanceCost),
+                      _kv('Insurance', _fmtMoney(l.insuranceCost)),
+                      _kv('Resale value', _fmtMoney(l.resaleValue)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  _buildSectionCard(
+                    'Technical Specifications',
+                    [
+                      _kv('Engine (cc)', l.engineCapacityCc),
+                      _kv('Efficiency', l.mileageFuelEfficiency),
+                      _kv('Drivetrain', l.drivetrain),
+                      _kv('Body type', l.bodyType),
+                      _kv('Seating', l.seatingCapacity),
+                      _kv('Boot space', l.bootSpace),
+                      _kv('Ground clearance', l.groundClearance),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  _buildSectionCard(
+                    'Safety & Features',
+                    [
+                      _kv('Safety (NCAP)', l.safetyRatingNcap),
+                      _kv('Airbags', l.airbagsCount),
+                      _kv('ABS / ESC', l.absEsc),
+                      _kv('Infotainment', l.infotainmentFeatures),
+                    ],
+                  ),
+
+                  const SizedBox(height: 32), // Bottom padding
                 ],
               ),
             ),
@@ -155,6 +213,114 @@ class _PublicCarListingDetailPageState
       ),
     );
   }
+
+  // --- WIDGET BUILDERS ---
+
+  Widget _buildGlanceChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.grey.shade700),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionCard(String title, List<Widget?> children) {
+    // Only keep valid, non-null rows
+    final validChildren = children.whereType<Widget>().toList();
+
+    // If entire section is empty, don't render the card at all
+    if (validChildren.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+              color: CarSpyColors.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...validChildren,
+        ],
+      ),
+    );
+  }
+
+  Widget? _kv(String label, Object? value) {
+    final s = (value?.toString() ?? '').trim();
+    // Silently drop empty values to keep UI clean
+    if (s.isEmpty || s == 'null') return null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade500,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: SelectableText(
+              s,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: CarSpyColors.onSurface,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- GALLERY LOGIC ---
 
   void _openEnlargedPhotos(PublicCarListing l, int initialIndex) {
     Navigator.of(context).push<void>(
@@ -178,12 +344,12 @@ class _PublicCarListingDetailPageState
     if (l.photos.isEmpty) {
       return Container(
         height: 240,
-        color: Colors.grey.shade200,
+        color: Colors.grey.shade100,
         child: Center(
           child: Icon(
             Icons.directions_car_filled_outlined,
             size: 64,
-            color: Colors.grey.shade400,
+            color: Colors.grey.shade300,
           ),
         ),
       );
@@ -200,14 +366,14 @@ class _PublicCarListingDetailPageState
             itemBuilder: (context, i) {
               final url = l.photos[i].url;
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(
                     onTap: () => _openEnlargedPhotos(l, i),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                     child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(16),
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
@@ -216,37 +382,52 @@ class _PublicCarListingDetailPageState
                             fit: BoxFit.cover,
                             width: double.infinity,
                             errorBuilder: (_, __, ___) => ColoredBox(
-                              color: Colors.grey.shade300,
+                              color: Colors.grey.shade200,
                               child: Icon(
                                 Icons.broken_image_outlined,
                                 size: 48,
-                                color: Colors.grey.shade500,
+                                color: Colors.grey.shade400,
                               ),
                             ),
                             loadingBuilder: (context, child, progress) {
                               if (progress == null) return child;
                               return ColoredBox(
-                                color: Colors.grey.shade200,
-                                child: const Center(
-                                  child: CircularProgressIndicator.adaptive(),
+                                color: Colors.grey.shade100,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.grey.shade400,
+                                  ),
                                 ),
                               );
                             },
                           ),
                           Positioned(
-                            right: 8,
-                            bottom: 8,
+                            right: 12,
+                            bottom: 12,
                             child: DecoratedBox(
                               decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.45),
+                                color: Colors.black.withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: const Padding(
-                                padding: EdgeInsets.all(6),
-                                child: Icon(
-                                  Icons.zoom_in_rounded,
-                                  color: Colors.white,
-                                  size: 20,
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.zoom_in_rounded,
+                                        color: Colors.white, size: 16),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Tap to zoom',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -261,36 +442,23 @@ class _PublicCarListingDetailPageState
           ),
         ),
         if (l.photos.length > 1) ...[
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              '${_photoIndex + 1} / ${l.photos.length}',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(
-                l.photos.length,
-                (i) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: i == _photoIndex ? 18 : 6,
-                    height: 6,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(3),
-                      color: i == _photoIndex
-                          ? CarSpyColors.primary
-                          : Colors.grey.shade400,
-                    ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              l.photos.length,
+              (i) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  width: i == _photoIndex ? 20 : 6,
+                  height: 6,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(4),
+                    color: i == _photoIndex
+                        ? CarSpyColors.primary
+                        : Colors.grey.shade300,
                   ),
                 ),
               ),
@@ -300,57 +468,9 @@ class _PublicCarListingDetailPageState
       ],
     );
   }
-
-  Widget _sectionTitle(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w800,
-          letterSpacing: 0.6,
-          color: CarSpyColors.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
-
-  Widget _kv(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 140,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey.shade600,
-                height: 1.35,
-              ),
-            ),
-          ),
-          Expanded(
-            child: SelectableText(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: CarSpyColors.onSurface,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
-/// Full-screen zoomable gallery (pinch / pan via [InteractiveViewer]).
+/// Full-screen zoomable gallery
 class _FullScreenPhotoViewer extends StatefulWidget {
   const _FullScreenPhotoViewer({
     required this.photos,
@@ -397,8 +517,8 @@ class _FullScreenPhotoViewerState extends State<_FullScreenPhotoViewer> {
               itemBuilder: (context, i) {
                 final url = photos[i].url;
                 return InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 5,
+                  minScale: 0.8,
+                  maxScale: 4,
                   clipBehavior: Clip.none,
                   child: Center(
                     child: Image.network(
@@ -407,14 +527,15 @@ class _FullScreenPhotoViewerState extends State<_FullScreenPhotoViewer> {
                       errorBuilder: (_, __, ___) => Icon(
                         Icons.broken_image_outlined,
                         size: 64,
-                        color: Colors.grey.shade600,
+                        color: Colors.grey.shade800,
                       ),
                       loadingBuilder: (context, child, progress) {
                         if (progress == null) return child;
                         return const Center(
-                          child: CircularProgressIndicator.adaptive(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
                             valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
+                                AlwaysStoppedAnimation<Color>(Colors.white54),
                           ),
                         );
                       },
@@ -423,30 +544,46 @@ class _FullScreenPhotoViewerState extends State<_FullScreenPhotoViewer> {
                 );
               },
             ),
+
+            // Top Bar Controls
             Positioned(
-              top: 4,
-              left: 4,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                tooltip: 'Close',
-                onPressed: () => Navigator.of(context).pop(),
+              top: 8,
+              left: 8,
+              right: 16,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.4),
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.close,
+                          color: Colors.white, size: 24),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ),
+                  if (photos.length > 1)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${_index + 1} / ${photos.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-            if (photos.length > 1)
-              Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
-                child: Text(
-                  '${_index + 1} / ${photos.length}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
           ],
         ),
       ),
