@@ -4,6 +4,8 @@ import 'package:intl/intl.dart';
 import '../../../models/public_cars_models.dart';
 import '../../../services/api_services.dart';
 import 'car_spy_data.dart';
+import 'widgets/public_car_listing_card.dart';
+import 'widgets/public_car_listing_detail_page.dart';
 
 class NewCarsListPage extends StatefulWidget {
   const NewCarsListPage({super.key});
@@ -116,6 +118,14 @@ class _NewCarsListPageState extends State<NewCarsListPage> {
     return _inr.format(v);
   }
 
+  void _openDetail(PublicCarListing car) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (context) => PublicCarListingDetailPage(listing: car),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -188,150 +198,13 @@ class _NewCarsListPageState extends State<NewCarsListPage> {
         final car = _cars[index];
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
-          child: _NewCarCard(
+          child: PublicCarListingCard(
             listing: car,
             priceLabel: _formatPrice(car.price),
+            onTap: () => _openDetail(car),
           ),
         );
       },
-    );
-  }
-}
-
-class _NewCarCard extends StatelessWidget {
-  const _NewCarCard({
-    required this.listing,
-    required this.priceLabel,
-  });
-
-  final PublicCarListing listing;
-  final String priceLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final imageUrl = listing.primaryImageUrl;
-    return Container(
-      decoration: BoxDecoration(
-        color: CarSpyColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: CarSpyColors.outlineVariant.withValues(alpha: 0.6),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          AspectRatio(
-            aspectRatio: 16 / 10,
-            child: imageUrl != null && imageUrl.isNotEmpty
-                ? Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _placeholder(),
-                    loadingBuilder: (context, child, progress) {
-                      if (progress == null) return child;
-                      return Container(
-                        color: Colors.grey.shade200,
-                        child: const Center(
-                          child: CircularProgressIndicator.adaptive(),
-                        ),
-                      );
-                    },
-                  )
-                : _placeholder(),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  listing.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: CarSpyColors.onSurface,
-                  ),
-                ),
-                if (listing.subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    listing.subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: CarSpyColors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Text(
-                      priceLabel,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: CarSpyColors.primary,
-                      ),
-                    ),
-                    if (listing.year != null) ...[
-                      const Spacer(),
-                      Text(
-                        '${listing.year}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                if (listing.transmission != null ||
-                    listing.fuelType != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    [
-                      if (listing.transmission != null)
-                        listing.transmission,
-                      if (listing.fuelType != null) listing.fuelType,
-                    ].whereType<String>().join(' · '),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _placeholder() {
-    return ColoredBox(
-      color: Colors.grey.shade200,
-      child: Center(
-        child: Icon(
-          Icons.directions_car_filled_outlined,
-          size: 48,
-          color: Colors.grey.shade400,
-        ),
-      ),
     );
   }
 }

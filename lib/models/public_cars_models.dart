@@ -1,27 +1,92 @@
 import 'pagination_data_model.dart';
 
+int? _parseInt(dynamic v) {
+  if (v == null) return null;
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return int.tryParse(v.toString());
+}
+
+String? _parseString(dynamic v) {
+  if (v == null) return null;
+  final s = v.toString();
+  return s.isEmpty ? null : s;
+}
+
 /// Public dealer listing (new / used) from `/api/cars/new` etc.
 class PublicCarListing {
   PublicCarListing({
     required this.id,
+    required this.userId,
+    required this.type,
+    this.vehicleModelId,
     required this.title,
     this.description,
     required this.price,
     this.year,
+    this.mileageKm,
+    this.registrationNumber,
+    this.chassisNumber,
+    required this.status,
     this.transmission,
     this.fuelType,
+    this.engineCapacityCc,
+    this.mileageFuelEfficiency,
+    this.drivetrain,
+    this.bodyType,
+    this.seatingCapacity,
+    this.bootSpace,
+    this.groundClearance,
+    this.safetyRatingNcap,
+    this.airbagsCount,
+    this.absEsc,
+    this.infotainmentFeatures,
+    this.onRoadPrice,
+    this.maintenanceCost,
+    this.insuranceCost,
+    this.resaleValue,
+    this.warranty,
+    this.createdAt,
+    this.updatedAt,
+    this.deletedAt,
     this.photos = const [],
     this.user,
     this.vehicleModel,
   });
 
   final int id;
+  final int userId;
+  final String type;
+  final int? vehicleModelId;
   final String title;
   final String? description;
   final String price;
   final int? year;
+  final int? mileageKm;
+  final String? registrationNumber;
+  final String? chassisNumber;
+  final String status;
   final String? transmission;
   final String? fuelType;
+  final int? engineCapacityCc;
+  final String? mileageFuelEfficiency;
+  final String? drivetrain;
+  final String? bodyType;
+  final int? seatingCapacity;
+  final String? bootSpace;
+  final String? groundClearance;
+  final String? safetyRatingNcap;
+  final int? airbagsCount;
+  final String? absEsc;
+  final String? infotainmentFeatures;
+  final String? onRoadPrice;
+  final String? maintenanceCost;
+  final String? insuranceCost;
+  final String? resaleValue;
+  final String? warranty;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? deletedAt;
   final List<PublicCarPhoto> photos;
   final PublicCarListingUser? user;
   final PublicCarVehicleModelNested? vehicleModel;
@@ -40,13 +105,39 @@ class PublicCarListing {
 
   factory PublicCarListing.fromJson(Map<String, dynamic> json) {
     return PublicCarListing(
-      id: json['id'] as int,
+      id: _parseInt(json['id']) ?? 0,
+      userId: _parseInt(json['user_id']) ?? 0,
+      type: json['type']?.toString() ?? 'new',
+      vehicleModelId: _parseInt(json['vehicle_model_id']),
       title: json['title']?.toString() ?? '',
-      description: json['description']?.toString(),
+      description: _parseString(json['description']),
       price: json['price']?.toString() ?? '0',
-      year: json['year'] as int?,
-      transmission: json['transmission']?.toString(),
-      fuelType: json['fuel_type']?.toString(),
+      year: _parseInt(json['year']),
+      mileageKm: _parseInt(json['mileage_km']),
+      registrationNumber: _parseString(json['registration_number']),
+      chassisNumber: _parseString(json['chassis_number']),
+      status: json['status']?.toString() ?? '',
+      transmission: _parseString(json['transmission']),
+      fuelType: _parseString(json['fuel_type']),
+      engineCapacityCc: _parseInt(json['engine_capacity_cc']),
+      mileageFuelEfficiency: _parseString(json['mileage_fuel_efficiency']),
+      drivetrain: _parseString(json['drivetrain']),
+      bodyType: _parseString(json['body_type']),
+      seatingCapacity: _parseInt(json['seating_capacity']),
+      bootSpace: _parseString(json['boot_space']),
+      groundClearance: _parseString(json['ground_clearance']),
+      safetyRatingNcap: _parseString(json['safety_rating_ncap']),
+      airbagsCount: _parseInt(json['airbags_count']),
+      absEsc: _parseString(json['abs_esc']),
+      infotainmentFeatures: _parseString(json['infotainment_features']),
+      onRoadPrice: _parseString(json['on_road_price']),
+      maintenanceCost: _parseString(json['maintenance_cost']),
+      insuranceCost: _parseString(json['insurance_cost']),
+      resaleValue: _parseString(json['resale_value']),
+      warranty: _parseString(json['warranty']),
+      createdAt: _parseString(json['created_at']),
+      updatedAt: _parseString(json['updated_at']),
+      deletedAt: _parseString(json['deleted_at']),
       photos: (json['photos'] as List<dynamic>? ?? [])
           .map((e) => PublicCarPhoto.fromJson(e as Map<String, dynamic>))
           .toList(),
@@ -65,12 +156,34 @@ class PublicCarListing {
 }
 
 class PublicCarPhoto {
-  PublicCarPhoto({required this.url});
+  PublicCarPhoto({
+    required this.id,
+    required this.dealerListingId,
+    this.path,
+    this.sortOrder = 0,
+    this.createdAt,
+    this.updatedAt,
+    required this.url,
+  });
 
+  final int id;
+  final int dealerListingId;
+  final String? path;
+  final int sortOrder;
+  final String? createdAt;
+  final String? updatedAt;
   final String url;
 
   factory PublicCarPhoto.fromJson(Map<String, dynamic> json) {
-    return PublicCarPhoto(url: json['url']?.toString() ?? '');
+    return PublicCarPhoto(
+      id: _parseInt(json['id']) ?? 0,
+      dealerListingId: _parseInt(json['dealer_listing_id']) ?? 0,
+      path: _parseString(json['path']),
+      sortOrder: _parseInt(json['sort_order']) ?? 0,
+      createdAt: _parseString(json['created_at']),
+      updatedAt: _parseString(json['updated_at']),
+      url: json['url']?.toString() ?? '',
+    );
   }
 }
 
@@ -91,20 +204,32 @@ class PublicCarListingUser {
 class PublicCarVehicleModelNested {
   PublicCarVehicleModelNested({
     required this.id,
+    this.brandId,
+    this.categoryId,
     required this.name,
+    this.createdAt,
+    this.updatedAt,
     this.brand,
     this.category,
   });
 
   final int id;
+  final int? brandId;
+  final int? categoryId;
   final String name;
+  final String? createdAt;
+  final String? updatedAt;
   final PublicCarBrandBrief? brand;
   final PublicCarCategoryBrief? category;
 
   factory PublicCarVehicleModelNested.fromJson(Map<String, dynamic> json) {
     return PublicCarVehicleModelNested(
-      id: json['id'] as int,
+      id: _parseInt(json['id']) ?? 0,
+      brandId: _parseInt(json['brand_id']),
+      categoryId: _parseInt(json['category_id']),
       name: json['name']?.toString() ?? '',
+      createdAt: _parseString(json['created_at']),
+      updatedAt: _parseString(json['updated_at']),
       brand: json['brand'] != null
           ? PublicCarBrandBrief.fromJson(json['brand'] as Map<String, dynamic>)
           : null,
@@ -118,29 +243,50 @@ class PublicCarVehicleModelNested {
 }
 
 class PublicCarBrandBrief {
-  PublicCarBrandBrief({required this.id, required this.name});
+  PublicCarBrandBrief({
+    required this.id,
+    required this.name,
+    this.createdAt,
+    this.updatedAt,
+  });
 
   final int id;
   final String name;
+  final String? createdAt;
+  final String? updatedAt;
 
   factory PublicCarBrandBrief.fromJson(Map<String, dynamic> json) {
     return PublicCarBrandBrief(
-      id: json['id'] as int,
+      id: _parseInt(json['id']) ?? 0,
       name: json['name']?.toString() ?? '',
+      createdAt: _parseString(json['created_at']),
+      updatedAt: _parseString(json['updated_at']),
     );
   }
 }
 
 class PublicCarCategoryBrief {
-  PublicCarCategoryBrief({required this.id, required this.name});
+  PublicCarCategoryBrief({
+    required this.id,
+    required this.name,
+    this.basePrice,
+    this.createdAt,
+    this.updatedAt,
+  });
 
   final int id;
   final String name;
+  final String? basePrice;
+  final String? createdAt;
+  final String? updatedAt;
 
   factory PublicCarCategoryBrief.fromJson(Map<String, dynamic> json) {
     return PublicCarCategoryBrief(
-      id: json['id'] as int,
+      id: _parseInt(json['id']) ?? 0,
       name: json['name']?.toString() ?? '',
+      basePrice: _parseString(json['base_price']),
+      createdAt: _parseString(json['created_at']),
+      updatedAt: _parseString(json['updated_at']),
     );
   }
 }
