@@ -40,7 +40,7 @@ class ApiService {
   static const String newCarsEndPoint = '/cars/new';
   static const String userCarsEndPoint = '/cars/old';
   static const String carFiltersEndpoint = '/cars/filters';
-  static const String vehicleDetailsEndPoint = '/api/ulip/vehicle-details';
+  static const String vehicleDetailsEndPoint = '/ulip/vehicle-details';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {

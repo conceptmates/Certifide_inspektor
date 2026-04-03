@@ -32,33 +32,33 @@ class BottomNavItemData {
 const List<ServiceItemData> carSpyServices = [
   ServiceItemData(
     icon: Icons.add,
-    title: 'New Car',
-    subtitle: 'EXPLORE INVENTORY',
+    title: 'New cars',
+    subtitle: 'Browse new inventory',
   ),
   ServiceItemData(
     icon: Icons.verified_outlined,
-    title: 'Used Car',
-    subtitle: 'VERIFIED LISTINGS',
+    title: 'Used cars',
+    subtitle: 'Verified listings you can trust',
   ),
   ServiceItemData(
     icon: Icons.fingerprint,
-    title: 'RC Details',
-    subtitle: 'OWNER & SPEC INFO',
+    title: 'RC details',
+    subtitle: 'Registration & owner information',
   ),
   ServiceItemData(
     icon: Icons.policy_outlined,
     title: 'Challan',
-    subtitle: 'PENDING DUES',
+    subtitle: 'Check unpaid traffic fines',
   ),
   ServiceItemData(
     icon: Icons.shield_outlined,
     title: 'Insurance',
-    subtitle: 'RENEW POLICY',
+    subtitle: 'View or renew your policy',
   ),
   ServiceItemData(
     icon: Icons.toll_outlined,
     title: 'FASTag',
-    subtitle: 'ACTION REQUIRED',
+    subtitle: 'Wallet balance may need attention',
     isWarning: true,
   ),
 ];

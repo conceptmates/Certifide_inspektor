@@ -70,6 +70,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
   bool _isSubmitting = false;
   bool _showSectionTitle = false;
   Set<String> _uploadingImages = {};
+  String? _verifyingRegNoUniqueId;
+  final Map<String, String> _regNoVerifyMessage = {};
+  final Map<String, bool> _regNoVerifyIsError = {};
 
   // Dynamic inspection template from API
   InspectionInitializationResponse? _inspectionTemplate;
@@ -754,6 +757,159 @@ class _InspectionScreenState extends State<InspectionScreen> {
     return '';
   }
 
+  bool _isRegNoField(dynamic item) {
+    final field = _getItemFieldId(item).toLowerCase();
+    final uid = _getItemUniqueId(item).toLowerCase();
+    return field == 'regno' || uid == 'regno';
+  }
+
+  bool _regNoResponseHasUsableData(dynamic data) {
+    if (data is Map && data.isEmpty) return false;
+    if (data is List && data.isEmpty) return false;
+    return true;
+  }
+
+  Future<void> _verifyRegNo(String uniqueId) async {
+    final raw = textFieldControllers[uniqueId]?.text.trim() ?? '';
+    if (raw.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Enter a registration number to verify'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _verifyingRegNoUniqueId = uniqueId);
+
+    final result = await ApiService.getVehicleDetails(vehicleNumber: raw);
+
+    if (!mounted) return;
+
+    final success = result['success'] == true;
+    final data = result['data'];
+    final message = (result['message'] ?? '').toString();
+
+    setState(() {
+      _verifyingRegNoUniqueId = null;
+      if (success && data != null && _regNoResponseHasUsableData(data)) {
+        final String display;
+        if (data is Map || data is List) {
+          display = const JsonEncoder.withIndent('  ').convert(data);
+        } else {
+          display = data.toString();
+        }
+        _regNoVerifyMessage[uniqueId] = display;
+        _regNoVerifyIsError[uniqueId] = false;
+      } else {
+        _regNoVerifyMessage[uniqueId] = message.isNotEmpty
+            ? message
+            : 'Could not verify registration number';
+        _regNoVerifyIsError[uniqueId] = true;
+      }
+    });
+  }
+
+  Widget _buildRegNoVerifyResultCard(String uniqueId) {
+    final text = _regNoVerifyMessage[uniqueId];
+    if (text == null || text.isEmpty) return const SizedBox.shrink();
+
+    final isError = _regNoVerifyIsError[uniqueId] ?? false;
+    final theme = Theme.of(context);
+    final Color accent =
+        isError ? theme.colorScheme.error : const Color(0xFF2E7D32);
+    final Color bg = isError
+        ? theme.colorScheme.errorContainer.withValues(alpha: 0.45)
+        : theme.brightness == Brightness.dark
+            ? accent.withValues(alpha: 0.14)
+            : accent.withValues(alpha: 0.08);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Material(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        clipBehavior: Clip.antiAlias,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: accent.withValues(alpha: 0.45),
+              width: 1,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      isError ? Icons.error_outline : Icons.verified_outlined,
+                      size: 20,
+                      color: accent,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        isError ? 'Verification failed' : 'Verified — RC details',
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: theme.textTheme.bodyLarge?.color,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        Icons.close,
+                        size: 20,
+                        color: theme.iconTheme.color?.withValues(alpha: 0.65),
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _regNoVerifyMessage.remove(uniqueId);
+                          _regNoVerifyIsError.remove(uniqueId);
+                        });
+                      },
+                      tooltip: 'Dismiss',
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 220),
+                  child: Scrollbar(
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      child: SelectableText(
+                        text,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          height: 1.4,
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   bool _isImageFieldType(dynamic item) {
     if (item is Map) {
       return (item['fieldType'] as String?)?.toLowerCase() == 'image';
@@ -1235,39 +1391,89 @@ class _InspectionScreenState extends State<InspectionScreen> {
     final title = _getItemTitle(item);
     final referenceMedia = _getItemReferenceMedia(item);
 
+    final inputDecoration = InputDecoration(
+      filled: true,
+      fillColor: Theme.of(context).brightness == Brightness.dark
+          ? Colors.grey[850]
+          : Colors.grey[50],
+      hintText: _getPlaceholderText(title, sectionTitle),
+      hintStyle: TextStyle(
+        color: Theme.of(context).hintColor.withAlpha(153),
+        fontSize: 14,
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Theme.of(context).dividerColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide:
+            BorderSide(color: Theme.of(context).dividerColor.withAlpha(128)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide:
+            BorderSide(color: Theme.of(context).primaryColor, width: 2),
+      ),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (useTextField)
+        if (useTextField && _isRegNoField(item))
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: textFieldControllers[uniqueId],
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: inputDecoration,
+                  keyboardType: TextInputType.text,
+                  maxLines: 1,
+                  onChanged: (value) {
+                    setState(() {
+                      itemValues[uniqueId] = value;
+                      _regNoVerifyMessage.remove(uniqueId);
+                      _regNoVerifyIsError.remove(uniqueId);
+                    });
+                    _autoSave();
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: _verifyingRegNoUniqueId == uniqueId
+                    ? SizedBox(
+                        width: 48,
+                        height: 48,
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Theme.of(context).primaryColor,
+                            ),
+                          ),
+                        ),
+                      )
+                    : OutlinedButton(
+                        onPressed: () => _verifyRegNo(uniqueId),
+                        child: const Text('Verify'),
+                      ),
+              ),
+            ],
+          ),
+        if (useTextField && _isRegNoField(item))
+          _buildRegNoVerifyResultCard(uniqueId),
+        if (useTextField && !_isRegNoField(item))
           TextField(
             controller: textFieldControllers[uniqueId],
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Theme.of(context).brightness == Brightness.dark
-                  ? Colors.grey[850]
-                  : Colors.grey[50],
-              hintText: _getPlaceholderText(title, sectionTitle),
-              hintStyle: TextStyle(
-                color: Theme.of(context).hintColor.withAlpha(153),
-                fontSize: 14,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Theme.of(context).dividerColor),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(
-                    color: Theme.of(context).dividerColor.withAlpha(128)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide:
-                    BorderSide(color: Theme.of(context).primaryColor, width: 2),
-              ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-            ),
+            decoration: inputDecoration,
             keyboardType: TextInputType.multiline,
             onChanged: (value) {
               setState(() {

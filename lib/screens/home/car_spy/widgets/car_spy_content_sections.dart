@@ -17,31 +17,26 @@ class CarSpyCoreServicesSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            const Text(
-              'Core Services',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-                color: CarSpyColors.onSurface,
-                letterSpacing: -0.5,
-              ),
-            ),
-            Text(
-              'SELECT TIER',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade500,
-                letterSpacing: 1.5,
-              ),
-            ),
-          ],
+        const Text(
+          'Quick actions',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w700,
+            color: CarSpyColors.onSurface,
+            letterSpacing: -0.5,
+          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 6),
+        Text(
+          'Tap a card to browse cars, look up RC details, check challans, and more.',
+          style: TextStyle(
+            fontSize: 14,
+            height: 1.35,
+            fontWeight: FontWeight.w400,
+            color: CarSpyColors.onSurfaceVariant.withOpacity(0.95),
+          ),
+        ),
+        const SizedBox(height: 18),
         GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -50,7 +45,7 @@ class CarSpyCoreServicesSection extends StatelessWidget {
             crossAxisCount: 2,
             crossAxisSpacing: 16,
             mainAxisSpacing: 16,
-            childAspectRatio: 1.15,
+            childAspectRatio: 1.08,
           ),
           itemBuilder: (context, index) {
             final service = carSpyServices[index];
@@ -76,77 +71,98 @@ class _ServiceItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: CarSpyColors.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: CarSpyColors.outlineVariant.withOpacity(0.6)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+    final hintColor = service.isWarning
+        ? const Color(0xFFF59E0B)
+        : CarSpyColors.onSurfaceVariant;
+
+    return Semantics(
+      button: true,
+      label: '${service.title}. ${service.subtitle}',
+      child: Container(
+        decoration: BoxDecoration(
+          color: CarSpyColors.surface,
           borderRadius: BorderRadius.circular(22),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: CarSpyColors.outlineVariant.withOpacity(0.35),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+          border:
+              Border.all(color: CarSpyColors.outlineVariant.withOpacity(0.6)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(22),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 52,
+                        height: 52,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: CarSpyColors.outlineVariant.withOpacity(0.35),
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          service.icon,
+                          color: service.isWarning
+                              ? const Color(0xFFF59E0B)
+                              : CarSpyColors.primary,
+                          size: 26,
+                        ),
+                      ),
+                      const Spacer(),
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 22,
+                        color: CarSpyColors.onSurfaceVariant.withOpacity(0.45),
                       ),
                     ],
                   ),
-                  child: Icon(
-                    service.icon,
-                    color: service.isWarning
-                        ? const Color(0xFFF59E0B)
-                        : CarSpyColors.primary,
-                    size: 28,
+                  const Spacer(),
+                  Text(
+                    service.title,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: CarSpyColors.onSurface,
+                      height: 1.2,
+                    ),
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  service.title,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: CarSpyColors.onSurface,
+                  const SizedBox(height: 6),
+                  Text(
+                    service.subtitle,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      height: 1.3,
+                      fontWeight: FontWeight.w500,
+                      color: hintColor,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  service.subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: service.isWarning
-                        ? const Color(0xFFF59E0B)
-                        : CarSpyColors.onSurfaceVariant,
-                    letterSpacing: 0.3,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
