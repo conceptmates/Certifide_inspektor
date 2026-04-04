@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import '../../../../models/public_cars_models.dart';
 import '../car_spy_data.dart';
 
-/// Full detail view for a [PublicCarListing] (new or used inventory).
-///
-/// Optional [appBarTitle] overrides the app bar label; body still shows [listing.title].
 class PublicCarListingDetailPage extends StatefulWidget {
   const PublicCarListingDetailPage({
     super.key,
@@ -15,8 +13,6 @@ class PublicCarListingDetailPage extends StatefulWidget {
   });
 
   final PublicCarListing listing;
-
-  /// Defaults to [listing.title] when null.
   final String? appBarTitle;
 
   @override
@@ -29,6 +25,8 @@ class _PublicCarListingDetailPageState
   late final PageController _photoController =
       PageController(viewportFraction: 0.88);
   int _photoIndex = 0;
+  bool _isFavorite = false;
+  bool _showSpecsExpanded = false;
 
   static final NumberFormat _inr = NumberFormat.currency(
     locale: 'en_IN',
@@ -49,14 +47,45 @@ class _PublicCarListingDetailPageState
     return _inr.format(v);
   }
 
+  void _toggleFavorite() {
+    HapticFeedback.mediumImpact();
+    setState(() => _isFavorite = !_isFavorite);
+  }
+
+  Future<void> _shareListing() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Sharing is not available'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _callDealer() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Contact information not available'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _whatsAppDealer() async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('WhatsApp contact not available'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = widget.listing;
     final barTitle = widget.appBarTitle ?? l.title;
 
     return Scaffold(
-      backgroundColor:
-          Colors.grey.shade50, // Softer background for contrast with cards
+      backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         backgroundColor: Colors.white,
         foregroundColor: CarSpyColors.onSurface,
@@ -68,6 +97,29 @@ class _PublicCarListingDetailPageState
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
+        actions: [
+          IconButton(
+            onPressed: _shareListing,
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'Share',
+          ),
+          IconButton(
+            onPressed: _toggleFavorite,
+            icon: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 300),
+              transitionBuilder: (child, animation) => ScaleTransition(
+                scale: animation,
+                child: child,
+              ),
+              child: Icon(
+                _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                key: ValueKey(_isFavorite),
+                color: _isFavorite ? Colors.red : null,
+              ),
+            ),
+            tooltip: 'Favorite',
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -108,24 +160,14 @@ class _PublicCarListingDetailPageState
                         const SizedBox(height: 16),
 
                         // --- QUICK GLANCE SPECS ---
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            if (l.year != null)
-                              _buildGlanceChip(
-                                  Icons.calendar_today_outlined, '${l.year}'),
-                            if (l.transmission != null &&
-                                l.transmission!.isNotEmpty)
-                              _buildGlanceChip(Icons.settings_suggest_outlined,
-                                  l.transmission!),
-                            if (l.fuelType != null && l.fuelType!.isNotEmpty)
-                              _buildGlanceChip(Icons.local_gas_station_outlined,
-                                  l.fuelType!),
-                            if (l.mileageKm != null)
-                              _buildGlanceChip(
-                                  Icons.speed_outlined, '${l.mileageKm} km'),
-                          ],
+                        _AnimatedExpandableSpecs(
+                          isExpanded: _showSpecsExpanded,
+                          onToggle: () => setState(
+                              () => _showSpecsExpanded = !_showSpecsExpanded),
+                          year: l.year,
+                          transmission: l.transmission,
+                          fuelType: l.fuelType,
+                          mileageKm: l.mileageKm,
                         ),
                       ],
                     ),
@@ -133,6 +175,17 @@ class _PublicCarListingDetailPageState
                 ],
               ),
             ),
+
+            // --- DEALER CARD ---
+            if (l.user != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: _DealerCard(
+                  dealer: l.user!,
+                  onCall: _callDealer,
+                  onWhatsApp: _whatsAppDealer,
+                ),
+              ),
 
             // --- DETAILED SECTIONS ---
             Padding(
@@ -204,49 +257,24 @@ class _PublicCarListingDetailPageState
                     ],
                   ),
 
-                  const SizedBox(height: 32), // Bottom padding
+                  const SizedBox(height: 120),
                 ],
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-
-  // --- WIDGET BUILDERS ---
-
-  Widget _buildGlanceChip(IconData icon, String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: Colors.grey.shade700),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade800,
-            ),
-          ),
-        ],
+      bottomNavigationBar: _BottomActionBar(
+        priceLabel: _fmtMoney(l.price) ?? 'Price on request',
+        onContact: _callDealer,
+        onWhatsApp: _whatsAppDealer,
+        onShare: _shareListing,
       ),
     );
   }
 
   Widget _buildSectionCard(String title, List<Widget?> children) {
-    // Only keep valid, non-null rows
     final validChildren = children.whereType<Widget>().toList();
-
-    // If entire section is empty, don't render the card at all
     if (validChildren.isEmpty) return const SizedBox.shrink();
 
     return Container(
@@ -284,7 +312,6 @@ class _PublicCarListingDetailPageState
 
   Widget? _kv(String label, Object? value) {
     final s = (value?.toString() ?? '').trim();
-    // Silently drop empty values to keep UI clean
     if (s.isEmpty || s == 'null') return null;
 
     return Padding(
@@ -319,8 +346,6 @@ class _PublicCarListingDetailPageState
       ),
     );
   }
-
-  // --- GALLERY LOGIC ---
 
   void _openEnlargedPhotos(PublicCarListing l, int initialIndex) {
     Navigator.of(context).push<void>(
@@ -432,6 +457,36 @@ class _PublicCarListingDetailPageState
                               ),
                             ),
                           ),
+                          // Photo counter badge
+                          if (l.photos.length > 1)
+                            Positioned(
+                              left: 12,
+                              top: 12,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withValues(alpha: 0.6),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.photo_library_outlined,
+                                        color: Colors.white, size: 14),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${i + 1}/${l.photos.length}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -447,13 +502,18 @@ class _PublicCarListingDetailPageState
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(
               l.photos.length,
-              (i) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
+              (i) => GestureDetector(
+                onTap: () => _photoController.animateToPage(
+                  i,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                ),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeOutCubic,
                   width: i == _photoIndex ? 20 : 6,
                   height: 6,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(4),
                     color: i == _photoIndex
@@ -470,7 +530,357 @@ class _PublicCarListingDetailPageState
   }
 }
 
-/// Full-screen zoomable gallery
+class _AnimatedExpandableSpecs extends StatelessWidget {
+  const _AnimatedExpandableSpecs({
+    required this.isExpanded,
+    required this.onToggle,
+    this.year,
+    this.transmission,
+    this.fuelType,
+    this.mileageKm,
+  });
+
+  final bool isExpanded;
+  final VoidCallback onToggle;
+  final int? year;
+  final String? transmission;
+  final String? fuelType;
+  final int? mileageKm;
+
+  @override
+  Widget build(BuildContext context) {
+    final allSpecs = <(IconData, String, String?)>[
+      (Icons.calendar_today_outlined, 'Year', year?.toString()),
+      (Icons.settings_suggest_outlined, 'Transmission', transmission),
+      (Icons.local_gas_station_outlined, 'Fuel', fuelType),
+      (Icons.speed_outlined, 'Mileage', mileageKm != null ? '$mileageKm km' : null),
+    ];
+
+    final visibleSpecs = isExpanded ? allSpecs : allSpecs.take(3).toList();
+    final hasMore = allSpecs.length > 3;
+
+    return Column(
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ...visibleSpecs.where((s) => s.$3 != null).map(
+                  (s) => _SpecChip(icon: s.$1, label: s.$3!),
+                ),
+            if (hasMore)
+              GestureDetector(
+                onTap: onToggle,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: CarSpyColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: CarSpyColors.primary.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isExpanded
+                            ? Icons.remove_circle_outline
+                            : Icons.add_circle_outline,
+                        size: 14,
+                        color: CarSpyColors.primary,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isExpanded ? 'Less' : '${allSpecs.length - 3} more',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: CarSpyColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _SpecChip extends StatelessWidget {
+  const _SpecChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.grey.shade700),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DealerCard extends StatelessWidget {
+  const _DealerCard({
+    required this.dealer,
+    required this.onCall,
+    required this.onWhatsApp,
+  });
+
+  final PublicCarListingUser dealer;
+  final VoidCallback onCall;
+  final VoidCallback onWhatsApp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [CarSpyColors.primary, Color(0xFF6366F1)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Center(
+              child: Text(
+                dealer.name.isNotEmpty
+                    ? dealer.name[0].toUpperCase()
+                    : 'D',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  dealer.name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: CarSpyColors.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Certified Dealer',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              _ActionIconButton(
+                icon: Icons.phone_outlined,
+                color: const Color(0xFF10B981),
+                onTap: onCall,
+                tooltip: 'Call',
+              ),
+              const SizedBox(width: 10),
+              _ActionIconButton(
+                icon: Icons.chat_bubble_outline,
+                color: const Color(0xFF25D366),
+                onTap: onWhatsApp,
+                tooltip: 'WhatsApp',
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionIconButton extends StatelessWidget {
+  const _ActionIconButton({
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    required this.tooltip,
+  });
+
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          onTap();
+        },
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.2)),
+          ),
+          child: Icon(icon, color: color, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+class _BottomActionBar extends StatelessWidget {
+  const _BottomActionBar({
+    required this.priceLabel,
+    required this.onContact,
+    required this.onWhatsApp,
+    required this.onShare,
+  });
+
+  final String priceLabel;
+  final VoidCallback onContact;
+  final VoidCallback onWhatsApp;
+  final VoidCallback onShare;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 16,
+        bottom: MediaQuery.of(context).padding.bottom + 16,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Price',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  priceLabel,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: CarSpyColors.primary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: IconButton(
+                  onPressed: onShare,
+                  icon: Icon(Icons.share_outlined,
+                      color: Colors.grey.shade700, size: 22),
+                  tooltip: 'Share',
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton.icon(
+                onPressed: onContact,
+                icon: const Icon(Icons.phone_outlined, size: 18),
+                label: const Text('Contact'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: CarSpyColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 2,
+                  shadowColor: CarSpyColors.primary.withValues(alpha: 0.3),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _FullScreenPhotoViewer extends StatefulWidget {
   const _FullScreenPhotoViewer({
     required this.photos,
@@ -545,7 +955,6 @@ class _FullScreenPhotoViewerState extends State<_FullScreenPhotoViewer> {
               },
             ),
 
-            // Top Bar Controls
             Positioned(
               top: 8,
               left: 8,
