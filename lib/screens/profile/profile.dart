@@ -17,7 +17,8 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> {
+class _ProfilePageState extends State<ProfilePage>
+    with TickerProviderStateMixin {
   final _storage = const FlutterSecureStorage();
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
