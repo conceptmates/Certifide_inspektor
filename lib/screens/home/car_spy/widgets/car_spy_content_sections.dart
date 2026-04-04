@@ -48,7 +48,15 @@ class _CarSpyCoreServicesSectionState extends State<CarSpyCoreServicesSection>
   void _onTapUp(int index) {
     setState(() => _pressedIndex = null);
     _controller.reverse();
-    widget.onServiceTap?.call(index);
+    final onServiceTap = widget.onServiceTap;
+    if (onServiceTap != null) {
+      // Defer navigation so it does not run while the framework is still
+      // processing this gesture / the subtree rebuild from setState above.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        onServiceTap(index);
+      });
+    }
   }
 
   void _onTapCancel() {

@@ -4,6 +4,9 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../../../constants/hive_constants.dart';
 import '../../../data/inspection_storage_model.dart';
 import '../../../routes/routes.dart';
+import '../../profile/profile.dart';
+import '../reports_page.dart';
+import 'car_spy_data.dart';
 import 'new_cars_list_page.dart';
 import 'rc_details_verify_page.dart';
 import 'used_cars_list_page.dart';
@@ -160,68 +163,267 @@ class _CarSpyHomeState extends State<CarSpyHome> {
     }
   }
 
+  Widget _buildHomeTab() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 16),
+          CarSpyHeroSection(
+            onInitializeScan: _handleInitializeScanTap,
+          ),
+          const SizedBox(height: 32),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                CarSpyCoreServicesSection(
+                  onServiceTap: (index) {
+                    if (index == 0) {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (context) => const NewCarsListPage(),
+                        ),
+                      );
+                    } else if (index == 1) {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (context) => const UsedCarsListPage(),
+                        ),
+                      );
+                    } else if (index == 2) {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (context) => const RcDetailsVerifyPage(),
+                        ),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 32),
+                const CarSpyPendingReportCard(),
+                const SizedBox(height: 24),
+                const CarSpyStatsRow(),
+                const SizedBox(height: 24),
+                const CarSpyHeritageVaultCard(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       extendBody: true,
-      appBar: const CarSpyTopAppBar(),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: EdgeInsets.only(bottom: 100),
+      appBar: _selectedIndex == 0 ? const CarSpyTopAppBar() : null,
+      body: Padding(
+        padding: const EdgeInsets.only(bottom: 100),
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: [
+            _buildHomeTab(),
+            const ReportsPage(key: ValueKey('car_spy_reports')),
+            const _CarSpyGaragePlaceholder(),
+            const ProfilePage(key: ValueKey('car_spy_profile')),
+          ],
+        ),
+      ),
+      bottomNavigationBar: CarSpyBottomNavBar(
+        selectedIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+      ),
+    );
+  }
+}
+
+class _CarSpyGaragePlaceholder extends StatelessWidget {
+  const _CarSpyGaragePlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.white,
+      child: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SizedBox(height: 16),
-              CarSpyHeroSection(
-                onInitializeScan: _handleInitializeScanTap,
-              ),
-              SizedBox(height: 32),
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    CarSpyCoreServicesSection(
-                      onServiceTap: (index) {
-                        if (index == 0) {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (context) => const NewCarsListPage(),
-                            ),
-                          );
-                        } else if (index == 1) {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (context) => const UsedCarsListPage(),
-                            ),
-                          );
-                        } else if (index == 2) {
-                          Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (context) =>
-                                  const RcDetailsVerifyPage(),
-                            ),
-                          );
-                        }
-                      },
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Garage',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: CarSpyColors.onSurface,
+                      letterSpacing: -0.5,
                     ),
-                    SizedBox(height: 32),
-                    CarSpyPendingReportCard(),
-                    SizedBox(height: 24),
-                    CarSpyStatsRow(),
-                    SizedBox(height: 24),
-                    CarSpyHeritageVaultCard(),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: CarSpyColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.construction_rounded,
+                          size: 14,
+                          color: CarSpyColors.primary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'In progress',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: CarSpyColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Save and manage vehicles you follow.',
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.35,
+                  fontWeight: FontWeight.w400,
+                  color: CarSpyColors.onSurfaceVariant.withValues(alpha: 0.95),
+                ),
+              ),
+              const SizedBox(height: 28),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: CarSpyColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: CarSpyColors.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.03),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -16,
+                      bottom: -16,
+                      child: Icon(
+                        Icons.garage_outlined,
+                        size: 120,
+                        color: CarSpyColors.primary.withValues(alpha: 0.06),
+                      ),
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: const BoxDecoration(
+                                color: CarSpyColors.primary,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'COMING SOON',
+                              style: TextStyle(
+                                color: CarSpyColors.primary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 2,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Your garage is on the way',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: CarSpyColors.onSurface,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Soon you will be able to bookmark vehicles, track listings, and pick up where you left off — all in one place.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.5,
+                            color: CarSpyColors.onSurfaceVariant,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: CarSpyColors.outlineVariant
+                                  .withValues(alpha: 0.45),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.notifications_active_outlined,
+                                size: 20,
+                                color: CarSpyColors.primary.withValues(
+                                  alpha: 0.85,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'We will notify you when it is ready.',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: CarSpyColors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
             ],
           ),
         ),
-      ),
-      bottomNavigationBar: CarSpyBottomNavBar(
-        selectedIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
       ),
     );
   }

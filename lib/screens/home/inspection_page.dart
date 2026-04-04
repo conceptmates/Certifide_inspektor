@@ -856,7 +856,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        isError ? 'Verification failed' : 'Verified — RC details',
+                        isError
+                            ? 'Verification failed'
+                            : 'Verified — RC details',
                         style: theme.textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: theme.textTheme.bodyLarge?.color,
@@ -1089,7 +1091,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if ((allowImage && !_isImageFieldType(item)) || allowMultiImage)
+                    if ((allowImage && !_isImageFieldType(item)) ||
+                        allowMultiImage)
                       IconButton(
                         icon: const Icon(Icons.camera_alt, size: 22),
                         color: Colors.blue,
@@ -1128,10 +1131,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         ),
                         onPressed: () => _pickFile(item),
                       ),
-                    if ((item is Map
-                            ? (item['fieldType'] as String?)
-                            : null)
-                        ?.toLowerCase() ==
+                    if ((item is Map ? (item['fieldType'] as String?) : null)
+                            ?.toLowerCase() ==
                         'audio')
                       IconButton(
                         icon: const Icon(Icons.audio_file, size: 22),
@@ -1215,7 +1216,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         _getItemFieldId(item),
                       ),
                       icon: const Icon(Icons.photo_library, size: 18),
-                      label: const Text('Gallery', style: TextStyle(fontSize: 13)),
+                      label:
+                          const Text('Gallery', style: TextStyle(fontSize: 13)),
                       style: TextButton.styleFrom(
                         foregroundColor: Colors.blue,
                         padding: const EdgeInsets.symmetric(
@@ -1412,11 +1414,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide:
-            BorderSide(color: Theme.of(context).primaryColor, width: 2),
+        borderSide: BorderSide(color: Theme.of(context).primaryColor, width: 2),
       ),
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
     );
 
     return Column(
@@ -1511,7 +1511,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
             items: ((item['options'] as List?) ?? [])
                 .map((opt) => DropdownMenuItem<String>(
                       value: (opt['value'] ?? '').toString(),
-                      child: Text((opt['label'] ?? opt['value'] ?? '').toString()),
+                      child:
+                          Text((opt['label'] ?? opt['value'] ?? '').toString()),
                     ))
                 .toList(),
             onChanged: (value) {
@@ -1791,7 +1792,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.video_library, color: Colors.deepPurple),
+                leading:
+                    const Icon(Icons.video_library, color: Colors.deepPurple),
                 title: const Text('Choose Video'),
                 onTap: () {
                   Navigator.pop(context);
