@@ -1160,6 +1160,8 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   SectionCameraCard(
                     height: 220,
                     borderRadius: BorderRadius.circular(12),
+                    instructionText:
+                        'Take a clear photo of: $title',
                     onCapture: (XFile file) async {
                       final fieldId = _getItemFieldId(item);
                       final String sectionTitle =
@@ -1206,22 +1208,23 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       }
                     },
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
+                    alignment: Alignment.center,
+                    child: OutlinedButton.icon(
                       onPressed: () => _pickImage(
                         ImageSource.gallery,
                         uniqueId,
                         _getItemFieldId(item),
                       ),
-                      icon: const Icon(Icons.photo_library, size: 18),
-                      label:
-                          const Text('Gallery', style: TextStyle(fontSize: 13)),
-                      style: TextButton.styleFrom(
+                      icon: const Icon(Icons.photo_library_outlined, size: 20),
+                      label: const Text('Pick from gallery instead'),
+                      style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.blue,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 4),
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                       ),
                     ),
                   ),

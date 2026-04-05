@@ -26,7 +26,6 @@ class _MainContentState extends State<MainContent>
   late AnimationController rippleController;
   late AnimationController scaleController;
   late Animation<double> rippleAnimation;
-  Box<InspectionStorageModel>? _inspectionBox;
   late Animation<double> scaleAnimation;
 
   // Design tokens
@@ -117,11 +116,7 @@ class _MainContentState extends State<MainContent>
           Hive.registerAdapter(InspectionStorageModelAdapter());
         }
 
-        _inspectionBox = await Hive.openBox<InspectionStorageModel>(
-          HiveConstants.INSPECTION_BOX,
-        );
-      } else {
-        _inspectionBox = Hive.box<InspectionStorageModel>(
+        await Hive.openBox<InspectionStorageModel>(
           HiveConstants.INSPECTION_BOX,
         );
       }
@@ -129,12 +124,14 @@ class _MainContentState extends State<MainContent>
       print('Error initializing Hive: $e');
       await Hive.deleteBoxFromDisk(HiveConstants.INSPECTION_BOX);
       await Hive.initFlutter();
-      _inspectionBox = await Hive.openBox<InspectionStorageModel>(
+      await Hive.openBox<InspectionStorageModel>(
         HiveConstants.INSPECTION_BOX,
       );
     }
   }
 
+  // Kept for restoring the "continue previous inspection" flow.
+  /*
   Future<bool> hasExistingInspection() async {
     try {
       if (!Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)) {
@@ -170,11 +167,17 @@ class _MainContentState extends State<MainContent>
       return false;
     }
   }
+  */
 
   Future<void> _handleInspectionTap() async {
     try {
       scaleController.forward();
 
+      if (!mounted) return;
+
+      // Continue-previous dialog disabled — always start a new inspection from home.
+      _navigateToInspection(true);
+      /*
       final hasExisting = await hasExistingInspection();
       print('Has existing inspection: $hasExisting');
 
@@ -215,6 +218,7 @@ class _MainContentState extends State<MainContent>
       } else {
         _navigateToInspection(true);
       }
+      */
     } catch (e) {
       print('Error handling inspection tap: $e');
       if (mounted) {

@@ -8,11 +8,15 @@ class SectionCameraCard extends StatefulWidget {
   final BorderRadius borderRadius;
   final void Function(XFile file)? onCapture;
 
+  /// Shown above the preview so users know what this photo is for (e.g. field title).
+  final String? instructionText;
+
   const SectionCameraCard({
     super.key,
     this.height = 220,
     this.borderRadius = const BorderRadius.all(Radius.circular(12)),
     this.onCapture,
+    this.instructionText,
   });
 
   @override
@@ -214,92 +218,152 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       );
     }
 
-    return GestureDetector(
-      onTap: _openFullscreenPreview,
-      child: Container(
-        height: widget.height,
-        decoration: BoxDecoration(
-          borderRadius: widget.borderRadius,
-          border: Border.all(color: Colors.blue.withAlpha(100), width: 1.5),
-        ),
-        child: ClipRRect(
-          borderRadius: widget.borderRadius,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              CameraPreview(_controller!),
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withAlpha(180),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.circle, color: Colors.red, size: 10),
-                          SizedBox(width: 6),
-                          Text(
-                            'LIVE',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          if (_cameras != null && _cameras!.length > 1)
-                            _CameraActionButton(
-                              icon: Icons.flip_camera_ios,
-                              onTap: _switchCamera,
-                              size: 32,
-                            ),
-                          const SizedBox(width: 8),
-                          _CameraActionButton(
-                            icon: Icons.camera,
-                            onTap: _isCapturing ? null : _captureImage,
-                            size: 38,
-                            isPrimary: true,
-                          ),
-                          const SizedBox(width: 8),
-                          _CameraActionButton(
-                            icon: Icons.fullscreen,
-                            onTap: _openFullscreenPreview,
-                            size: 32,
-                          ),
-                        ],
-                      ),
+    return Container(
+      height: widget.height,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: widget.borderRadius,
+        border: Border.all(color: Colors.blue.withAlpha(100), width: 1.5),
+      ),
+      child: ClipRRect(
+        borderRadius: widget.borderRadius,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(
+              child: CameraPreview(_controller!),
+            ),
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withAlpha(200),
+                      Colors.transparent,
                     ],
                   ),
                 ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.photo_camera_outlined,
+                      color: Colors.white.withAlpha(230),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        widget.instructionText ??
+                            'Center the subject in the frame, then tap Take photo',
+                        style: TextStyle(
+                          color: Colors.white.withAlpha(242),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          height: 1.25,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              if (_isCapturing)
-                Container(
-                  color: Colors.white.withAlpha(100),
-                  child: const Center(
-                    child: CircularProgressIndicator(
-                        color: Colors.white, strokeWidth: 2),
+            ),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding:
+                    const EdgeInsets.fromLTRB(10, 12, 10, 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.bottomCenter,
+                    end: Alignment.topCenter,
+                    colors: [
+                      Colors.black.withAlpha(200),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
-            ],
-          ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6, right: 6),
+                          child: _cameras != null && _cameras!.length > 1
+                              ? Tooltip(
+                                  message: 'Switch front / back camera',
+                                  child: Semantics(
+                                    button: true,
+                                    label: 'Switch camera',
+                                    child: _CameraActionButton(
+                                      icon: Icons.flip_camera_ios_outlined,
+                                      onTap: _switchCamera,
+                                      size: 44,
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox(width: 44, height: 44),
+                        ),
+                      ),
+                    ),
+                    Tooltip(
+                      message: 'Save this photo for the inspection',
+                      child: Semantics(
+                        button: true,
+                        label: 'Take photo',
+                        child: _CameraActionButton(
+                          icon: Icons.camera_alt,
+                          onTap: _isCapturing ? null : _captureImage,
+                          size: 56,
+                          isPrimary: true,
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 6, left: 6),
+                          child: Tooltip(
+                            message: 'Open a larger view (same camera)',
+                            child: Semantics(
+                              button: true,
+                              label: 'Larger preview',
+                              child: _CameraActionButton(
+                                icon: Icons.open_in_full,
+                                onTap: _openFullscreenPreview,
+                                size: 44,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_isCapturing)
+              Container(
+                color: Colors.white.withAlpha(100),
+                child: const Center(
+                  child: CircularProgressIndicator(
+                      color: Colors.white, strokeWidth: 2),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -404,82 +468,141 @@ class _FullscreenCameraViewState extends State<_FullscreenCameraView> {
             child: CameraPreview(widget.controller),
           ),
           SafeArea(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Material(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(20),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => Navigator.of(context).pop(),
-                    child: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Icon(Icons.close, color: Colors.white, size: 24),
-                    ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Material(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: () => Navigator.of(context).pop(),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Tap the white button below to take the photo',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                ],
               ),
             ),
           ),
           Positioned(
-            bottom: 40,
+            bottom: 36,
             left: 0,
             right: 0,
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                const SizedBox(width: 56),
-                GestureDetector(
-                  onTap: _isCapturing ? null : _capture,
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 4),
-                    ),
-                    child: Container(
-                      margin: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: _isCapturing ? Colors.grey : Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: _isCapturing
-                          ? const Center(
-                              child: SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.black54,
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(right: 8, bottom: 8),
+                      child: widget.onSwitchCamera != null
+                          ? Tooltip(
+                              message: 'Switch camera',
+                              child: GestureDetector(
+                                onTap: widget.onSwitchCamera,
+                                child: Container(
+                                  width: 56,
+                                  height: 56,
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withAlpha(150),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.flip_camera_ios_outlined,
+                                    color: Colors.white,
+                                    size: 28,
+                                  ),
                                 ),
                               ),
                             )
-                          : null,
+                          : const SizedBox(width: 56, height: 56),
                     ),
                   ),
                 ),
-                if (widget.onSwitchCamera != null)
-                  GestureDetector(
-                    onTap: widget.onSwitchCamera,
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withAlpha(150),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.flip_camera_ios,
-                        color: Colors.white,
-                        size: 28,
+                Tooltip(
+                  message: 'Take photo',
+                  child: Semantics(
+                    button: true,
+                    label: 'Take photo',
+                    child: GestureDetector(
+                      onTap: _isCapturing ? null : _capture,
+                      child: Container(
+                        width: 76,
+                        height: 76,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 4),
+                        ),
+                        child: Container(
+                          margin: const EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: _isCapturing ? Colors.grey : Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: _isCapturing
+                              ? const Center(
+                                  child: SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                )
+                              : null,
+                        ),
                       ),
                     ),
-                  )
-                else
-                  const SizedBox(width: 56),
+                  ),
+                ),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8, bottom: 8),
+                      child: SizedBox(
+                        width: 56,
+                        height: 56,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),

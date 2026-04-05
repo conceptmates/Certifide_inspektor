@@ -111,9 +111,8 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
       _modelController.clear();
 
       if (newMake != null) {
-        _filteredModels = _allModels
-            .where((model) => model.brand.id == newMake.id)
-            .toList();
+        _filteredModels =
+            _allModels.where((model) => model.brand.id == newMake.id).toList();
         // Sort models alphabetically
         _filteredModels.sort((a, b) => a.name.compareTo(b.name));
       } else {
@@ -187,7 +186,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
 
       if (result['success']) {
         // Show interstitial ad before proceeding to inspection
-        _interstitialAdManager.showAdIfReady();
+        // _interstitialAdManager.showAdIfReady();
 
         // Navigate after a short delay to allow ad to show
         if (mounted) {
@@ -360,7 +359,8 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
             dropdownColor: const Color(0xFF2C2C2C),
             decoration: InputDecoration(
               labelText: 'Make',
-              prefixIcon: Icon(Icons.business, color: Colors.blueAccent.shade200),
+              prefixIcon:
+                  Icon(Icons.business, color: Colors.blueAccent.shade200),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide(color: Colors.grey[700]!),
@@ -371,7 +371,8 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.blueAccent.shade200, width: 2),
+                borderSide:
+                    BorderSide(color: Colors.blueAccent.shade200, width: 2),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -464,7 +465,9 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
             child: Text(model.name),
           );
         }).toList(),
-        onChanged: (_selectedMake == null || _isLoadingModels) ? null : _onModelChanged,
+        onChanged: (_selectedMake == null || _isLoadingModels)
+            ? null
+            : _onModelChanged,
         validator: (value) {
           if (value == null) {
             return 'Please select a model';

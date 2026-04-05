@@ -153,7 +153,9 @@ class _NewCarsListPageState extends State<NewCarsListPage> {
     }
     if (_error != null && _cars.isEmpty) {
       return ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: ClampingScrollPhysics(),
+        ),
         itemCount: 1,
         itemBuilder: (context, index) {
           return Column(
@@ -191,7 +193,9 @@ class _NewCarsListPageState extends State<NewCarsListPage> {
 
     return ListView.builder(
       controller: _scrollController,
-      physics: const AlwaysScrollableScrollPhysics(),
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: ClampingScrollPhysics(),
+      ),
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       itemCount: _cars.length + (_loadingMore ? 1 : 0),
       itemBuilder: (context, index) {

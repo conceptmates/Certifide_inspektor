@@ -31,7 +31,7 @@ class BottomNavItemData {
 
 const List<ServiceItemData> carSpyServices = [
   ServiceItemData(
-    icon: Icons.add,
+    icon: Icons.car_rental_outlined,
     title: 'New cars',
     subtitle: 'Browse new inventory',
   ),

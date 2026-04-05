@@ -24,7 +24,6 @@ class CarSpyHome extends StatefulWidget {
 
 class _CarSpyHomeState extends State<CarSpyHome> {
   int _selectedIndex = 0;
-  Box<InspectionStorageModel>? _inspectionBox;
 
   @override
   void initState() {
@@ -41,11 +40,7 @@ class _CarSpyHomeState extends State<CarSpyHome> {
           Hive.registerAdapter(InspectionStorageModelAdapter());
         }
 
-        _inspectionBox = await Hive.openBox<InspectionStorageModel>(
-          HiveConstants.INSPECTION_BOX,
-        );
-      } else {
-        _inspectionBox = Hive.box<InspectionStorageModel>(
+        await Hive.openBox<InspectionStorageModel>(
           HiveConstants.INSPECTION_BOX,
         );
       }
@@ -57,6 +52,8 @@ class _CarSpyHomeState extends State<CarSpyHome> {
     }
   }
 
+  // Kept for restoring the "continue previous inspection" flow.
+  /*
   Future<bool> _hasExistingInspection() async {
     try {
       if (!Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)) {
@@ -92,9 +89,15 @@ class _CarSpyHomeState extends State<CarSpyHome> {
       return false;
     }
   }
+  */
 
   Future<void> _handleInitializeScanTap() async {
     try {
+      if (!mounted) return;
+
+      // Continue-previous dialog disabled — always start a new inspection.
+      _navigateToInspection(true);
+      /*
       final hasExisting = await _hasExistingInspection();
       if (!mounted) return;
 
@@ -133,6 +136,7 @@ class _CarSpyHomeState extends State<CarSpyHome> {
       } else {
         _navigateToInspection(true);
       }
+      */
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -201,9 +205,9 @@ class _CarSpyHomeState extends State<CarSpyHome> {
                     }
                   },
                 ),
-                const SizedBox(height: 32),
-                const CarSpyPendingReportCard(),
-                const SizedBox(height: 24),
+                // const SizedBox(height: 32),
+                // const CarSpyPendingReportCard(),
+                // const SizedBox(height: 24),
                 const CarSpyStatsRow(),
                 const SizedBox(height: 24),
                 const CarSpyHeritageVaultCard(),
