@@ -97,7 +97,7 @@ class ApiService {
     String templateType = 'default',
   }) async {
     try {
-      log('Initializing inspection for brand_id: $vehicleBrandId, model_id: $vehicleModelId, template_type: $templateType');
+      log('Initializing inspection for brand_id: $vehicleBrandId, model_id: $vehicleModelId, template_type: $templateType, for_user: true');
 
       final response = await http.post(
         Uri.parse('$baseUrl$initializeDynamicInspectionEndPoint'),
@@ -106,6 +106,7 @@ class ApiService {
           'template_type': templateType,
           'vehicle_brand_id': vehicleBrandId,
           'vehicle_model_id': vehicleModelId,
+          'for_user': true,
         }),
       );
 

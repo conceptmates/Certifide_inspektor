@@ -56,7 +56,6 @@ class InspectionFieldInfoSheet {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-
               Container(
                 padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
                 child: Row(
@@ -86,7 +85,8 @@ class InspectionFieldInfoSheet {
                             'Field Information',
                             style: TextStyle(
                               fontSize: 14,
-                              color: Theme.of(context).textTheme.bodySmall?.color,
+                              color:
+                                  Theme.of(context).textTheme.bodySmall?.color,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -96,7 +96,8 @@ class InspectionFieldInfoSheet {
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
-                              color: Theme.of(context).textTheme.titleLarge?.color,
+                              color:
+                                  Theme.of(context).textTheme.titleLarge?.color,
                             ),
                           ),
                         ],
@@ -120,13 +121,11 @@ class InspectionFieldInfoSheet {
                   ],
                 ),
               ),
-
               Divider(
                 color: Theme.of(context).dividerColor.withAlpha(128),
                 thickness: 1,
                 height: 1,
               ),
-
               Flexible(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
@@ -137,7 +136,6 @@ class InspectionFieldInfoSheet {
                         ReferenceMediaSection(mediaList: referenceMedia),
                         const SizedBox(height: 24),
                       ],
-
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -177,15 +175,16 @@ class InspectionFieldInfoSheet {
                               style: TextStyle(
                                 fontSize: 15,
                                 height: 1.5,
-                                color: Theme.of(context).textTheme.bodyLarge?.color,
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.color,
                               ),
                             ),
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 24),
-
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
@@ -225,14 +224,17 @@ class InspectionFieldInfoSheet {
                               style: TextStyle(
                                 fontSize: 15,
                                 height: 1.5,
-                                color: Theme.of(context).textTheme.bodyLarge?.color,
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
+                                    ?.color,
                               ),
                             ),
                           ],
                         ),
                       ),
-
-                      SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
+                      SizedBox(
+                          height: MediaQuery.of(context).padding.bottom + 16),
                     ],
                   ),
                 ),
@@ -422,12 +424,12 @@ class ReferenceMediaSection extends StatelessWidget {
                     Image.network(
                       url,
                       width: double.infinity,
-                      height: 200,
+                      height: 300,
                       fit: BoxFit.cover,
                       loadingBuilder: (context, child, progress) {
                         if (progress == null) return child;
                         return SizedBox(
-                          height: 200,
+                          height: 300,
                           child: Center(
                             child: CircularProgressIndicator(
                               value: progress.expectedTotalBytes != null
@@ -440,7 +442,7 @@ class ReferenceMediaSection extends StatelessWidget {
                       },
                       errorBuilder: (context, error, stackTrace) {
                         return Container(
-                          height: 100,
+                          height: 120,
                           color: Colors.grey[200],
                           child: const Center(
                             child: Icon(Icons.broken_image,
@@ -494,8 +496,7 @@ class ReferenceMediaSection extends StatelessWidget {
                         description,
                         style: TextStyle(
                           fontSize: 13,
-                          color:
-                              Theme.of(context).textTheme.bodyMedium?.color,
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
                         ),
                       ),
                     ),
@@ -571,7 +572,8 @@ class _InlineVideoPlayer extends StatelessWidget {
 class _YouTubeWebViewPlayer extends StatefulWidget {
   final String videoId;
   final String originalUrl;
-  const _YouTubeWebViewPlayer({required this.videoId, required this.originalUrl});
+  const _YouTubeWebViewPlayer(
+      {required this.videoId, required this.originalUrl});
 
   @override
   State<_YouTubeWebViewPlayer> createState() => _YouTubeWebViewPlayerState();
@@ -581,8 +583,7 @@ class _YouTubeWebViewPlayerState extends State<_YouTubeWebViewPlayer> {
   late final WebViewController _controller;
   bool _isLoading = true;
 
-  String get _watchUrl =>
-      'https://m.youtube.com/watch?v=${widget.videoId}';
+  String get _watchUrl => 'https://m.youtube.com/watch?v=${widget.videoId}';
 
   @override
   void initState() {
@@ -658,7 +659,8 @@ class _YouTubeWebViewPlayerState extends State<_YouTubeWebViewPlayer> {
                   onTap: _openFullscreen,
                   child: const Padding(
                     padding: EdgeInsets.all(6),
-                    child: Icon(Icons.fullscreen, color: Colors.white, size: 20),
+                    child:
+                        Icon(Icons.fullscreen, color: Colors.white, size: 20),
                   ),
                 ),
               ),
@@ -685,8 +687,7 @@ class _FullscreenYouTubePlayer extends StatefulWidget {
 class _FullscreenYouTubePlayerState extends State<_FullscreenYouTubePlayer> {
   late final WebViewController _controller;
 
-  String get _watchUrl =>
-      'https://m.youtube.com/watch?v=${widget.videoId}';
+  String get _watchUrl => 'https://m.youtube.com/watch?v=${widget.videoId}';
 
   @override
   void initState() {
@@ -757,7 +758,8 @@ class _FullscreenYouTubePlayerState extends State<_FullscreenYouTubePlayer> {
                 onTap: _exit,
                 child: const Padding(
                   padding: EdgeInsets.all(8),
-                  child: Icon(Icons.fullscreen_exit, color: Colors.white, size: 24),
+                  child: Icon(Icons.fullscreen_exit,
+                      color: Colors.white, size: 24),
                 ),
               ),
             ),
@@ -792,8 +794,7 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
   }
 
   Future<void> _initializePlayer() async {
-    _videoController =
-        VideoPlayerController.networkUrl(Uri.parse(widget.url));
+    _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.url));
     try {
       await _videoController.initialize();
       if (!mounted) return;
@@ -1116,13 +1117,17 @@ class _InlineAudioPlayerState extends State<_InlineAudioPlayer> {
                           ),
                           child: Slider(
                             min: 0,
-                            max: _totalDuration.inMilliseconds.toDouble().clamp(1, double.infinity),
-                            value: position.inMilliseconds
+                            max: _totalDuration.inMilliseconds
                                 .toDouble()
-                                .clamp(0, _totalDuration.inMilliseconds.toDouble().clamp(1, double.infinity)),
+                                .clamp(1, double.infinity),
+                            value: position.inMilliseconds.toDouble().clamp(
+                                0,
+                                _totalDuration.inMilliseconds
+                                    .toDouble()
+                                    .clamp(1, double.infinity)),
                             onChanged: (value) {
-                              _audioPlayer.seek(
-                                  Duration(milliseconds: value.round()));
+                              _audioPlayer
+                                  .seek(Duration(milliseconds: value.round()));
                             },
                           ),
                         );
@@ -1135,8 +1140,7 @@ class _InlineAudioPlayerState extends State<_InlineAudioPlayer> {
                         builder: (context, snapshot) {
                           final position = snapshot.data ?? Duration.zero;
                           return Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
                                 _formatDuration(position),

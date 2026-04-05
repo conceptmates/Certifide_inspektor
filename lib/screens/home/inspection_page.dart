@@ -68,7 +68,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
   bool _showButton = true;
   bool _isScrollable = false;
   bool _isSubmitting = false;
-  bool _showSectionTitle = false;
   Set<String> _uploadingImages = {};
   String? _verifyingRegNoUniqueId;
   final Map<String, String> _regNoVerifyMessage = {};
@@ -541,14 +540,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
   void _onScroll() {
     if (!_isScrollable) return;
 
-    bool shouldShowSectionTitle = _scrollController.position.pixels > 100;
-
-    if (shouldShowSectionTitle != _showSectionTitle) {
-      setState(() {
-        _showSectionTitle = shouldShowSectionTitle;
-      });
-    }
-
     if (_scrollController.position.pixels >=
         _scrollController.position.maxScrollExtent - 50) {
       if (!_showButton) {
@@ -929,102 +920,40 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
     final item = items[_currentItemIndex];
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF667eea), Color(0xFF764ba2)],
+    return _buildSingleItemContainer(item, title);
+  }
+
+  Widget _buildItemNavigationBar(List<dynamic> items) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          ElevatedButton.icon(
+            onPressed: _currentItemIndex > 0 ? _previousItem : null,
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Previous'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 12,
+              ),
             ),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF667eea).withAlpha(76),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
           ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withAlpha(51),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  _getSectionIcon(title),
-                  color: Colors.white,
-                  size: 24,
-                ),
+          ElevatedButton.icon(
+            onPressed:
+                _currentItemIndex < items.length - 1 ? _nextItem : null,
+            icon: const Icon(Icons.arrow_forward),
+            label: const Text('Next'),
+            style: ElevatedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 12,
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    Text(
-                      'Item ${_currentItemIndex + 1} of ${items.length}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white.withAlpha(204),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-        _buildSingleItemContainer(item, title),
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              ElevatedButton.icon(
-                onPressed: _currentItemIndex > 0 ? _previousItem : null,
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('Previous'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-              ElevatedButton.icon(
-                onPressed:
-                    _currentItemIndex < items.length - 1 ? _nextItem : null,
-                icon: const Icon(Icons.arrow_forward),
-                label: const Text('Next'),
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 12,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1160,8 +1089,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                   SectionCameraCard(
                     height: 220,
                     borderRadius: BorderRadius.circular(12),
-                    instructionText:
-                        'Take a clear photo of: $title',
+                    instructionText: 'Take a clear photo of: $title',
                     onCapture: (XFile file) async {
                       final fieldId = _getItemFieldId(item);
                       final String sectionTitle =
@@ -1223,7 +1151,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                         foregroundColor: Colors.blue,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
-                          vertical: 10,
+                          vertical: 8,
                         ),
                       ),
                     ),
@@ -2264,21 +2192,32 @@ class _InspectionScreenState extends State<InspectionScreen> {
   }
 
   void _previousSection() async {
-    await _saveDataLocally();
-    if (_currentSection > 0) {
-      setState(() {
-        _currentSection--;
-        _currentItemIndex = 0;
-        _showButton = false;
-        _isScrollable = false;
-      });
+    if (_currentSection <= 0) return;
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollController.hasClients) {
-          _scrollController.jumpTo(0);
-        }
-      });
-    }
+    setState(() {
+      _currentSection--;
+      _currentItemIndex = 0;
+      _showButton = false;
+      _isScrollable = false;
+    });
+
+    await _saveDataLocally();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    });
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        setState(() {
+          _isScrollable = _scrollController.hasClients &&
+              _scrollController.position.maxScrollExtent > 0;
+          _showButton = !_isScrollable;
+        });
+      }
+    });
   }
 
   void _openDrawer() {
@@ -2381,13 +2320,23 @@ class _InspectionScreenState extends State<InspectionScreen> {
       child: Scaffold(
         key: _scaffoldKey,
         appBar: AppBar(
-          toolbarHeight: 70,
-          title: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            child: _showSectionTitle
-                ? Row(
-                    key: const ValueKey('sectionTitle'),
-                    mainAxisSize: MainAxisSize.min,
+          toolbarHeight: 72,
+          title: Builder(
+            builder: (context) {
+              final sectionTitle =
+                  _sections[_currentSection]['title'] as String;
+              final items =
+                  _sections[_currentSection]['items'] as List<dynamic>;
+              final itemCount = items.length;
+              final subtitleColor =
+                  Theme.of(context).brightness == Brightness.dark
+                      ? Colors.white70
+                      : Colors.white.withAlpha(204);
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.all(6),
@@ -2396,32 +2345,40 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
-                          _getSectionIcon(_sections[_currentSection]['title']),
+                          _getSectionIcon(sectionTitle),
                           size: 20,
                           color: Colors.white,
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Flexible(
+                      Expanded(
                         child: Text(
-                          _sections[_currentSection]['title'],
+                          sectionTitle,
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 20,
+                            fontSize: 18,
                           ),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
-                  )
-                : const Text(
-                    'Certifide',
-                    key: ValueKey('appTitle'),
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 24,
-                    ),
                   ),
+                  if (itemCount > 0)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 40, top: 2),
+                      child: Text(
+                        'Item ${_currentItemIndex + 1} of $itemCount',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: subtitleColor,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
           ),
           actions: [
             IconButton(
@@ -2529,8 +2486,48 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     currentSection['title'],
                     currentSection['items'] as List<dynamic>,
                   ),
+                ],
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildItemNavigationBar(
+                    currentSection['items'] as List<dynamic>,
+                  ),
+                  if (_currentSection > 0)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: OutlinedButton.icon(
+                          onPressed: _isSubmitting ? null : _previousSection,
+                          icon: const Icon(Icons.arrow_back, size: 20),
+                          label: const Text('Previous section'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Theme.of(context).brightness ==
+                                    Brightness.dark
+                                ? Colors.white70
+                                : const Color(0xFF667eea),
+                            side: BorderSide(
+                              color: Theme.of(context).brightness ==
+                                      Brightness.dark
+                                  ? Colors.white24
+                                  : const Color(0xFF667eea).withAlpha(128),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     child: SizedBox(
                       width: double.infinity,
                       height: 56,
