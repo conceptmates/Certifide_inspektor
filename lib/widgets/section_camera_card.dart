@@ -7,6 +7,7 @@ class SectionCameraCard extends StatefulWidget {
   final double height;
   final BorderRadius borderRadius;
   final void Function(XFile file)? onCapture;
+  final VoidCallback? onPickFromGallery;
 
   /// Shown above the preview so users know what this photo is for (e.g. field title).
   final String? instructionText;
@@ -16,6 +17,7 @@ class SectionCameraCard extends StatefulWidget {
     this.height = 220,
     this.borderRadius = const BorderRadius.all(Radius.circular(12)),
     this.onCapture,
+    this.onPickFromGallery,
     this.instructionText,
   });
 
@@ -62,7 +64,10 @@ class _SectionCameraCardState extends State<SectionCameraCard>
         return;
       }
 
-      _currentCameraIndex = 0;
+      final backCameraIndex = _cameras!.indexWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.back,
+      );
+      _currentCameraIndex = backCameraIndex >= 0 ? backCameraIndex : 0;
       await _startCamera(_cameras![_currentCameraIndex]);
     } on CameraException catch (e) {
       setState(() {
@@ -107,13 +112,6 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     }
   }
 
-  Future<void> _switchCamera() async {
-    if (_cameras == null || _cameras!.length < 2) return;
-
-    _currentCameraIndex = (_currentCameraIndex + 1) % _cameras!.length;
-    await _startCamera(_cameras![_currentCameraIndex]);
-  }
-
   Future<void> _captureImage() async {
     if (_controller == null ||
         !_controller!.value.isInitialized ||
@@ -148,8 +146,6 @@ class _SectionCameraCardState extends State<SectionCameraCard>
             widget.onCapture?.call(file);
             Navigator.of(context).pop();
           },
-          onSwitchCamera:
-              (_cameras != null && _cameras!.length > 1) ? _switchCamera : null,
         ),
       ),
     );
@@ -301,15 +297,15 @@ class _SectionCameraCardState extends State<SectionCameraCard>
                         alignment: Alignment.centerRight,
                         child: Padding(
                           padding: const EdgeInsets.only(bottom: 6, right: 6),
-                          child: _cameras != null && _cameras!.length > 1
+                          child: widget.onPickFromGallery != null
                               ? Tooltip(
-                                  message: 'Switch front / back camera',
+                                  message: 'Pick photo from gallery',
                                   child: Semantics(
                                     button: true,
-                                    label: 'Switch camera',
+                                    label: 'Pick from gallery',
                                     child: _CameraActionButton(
-                                      icon: Icons.flip_camera_ios_outlined,
-                                      onTap: _switchCamera,
+                                      icon: Icons.photo_library_outlined,
+                                      onTap: widget.onPickFromGallery,
                                       size: 44,
                                     ),
                                   ),
@@ -336,17 +332,22 @@ class _SectionCameraCardState extends State<SectionCameraCard>
                         alignment: Alignment.centerLeft,
                         child: Padding(
                           padding: const EdgeInsets.only(bottom: 6, left: 6),
-                          child: Tooltip(
-                            message: 'Open a larger view (same camera)',
-                            child: Semantics(
-                              button: true,
-                              label: 'Larger preview',
-                              child: _CameraActionButton(
-                                icon: Icons.open_in_full,
-                                onTap: _openFullscreenPreview,
-                                size: 44,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Tooltip(
+                                message: 'Open a larger view (same camera)',
+                                child: Semantics(
+                                  button: true,
+                                  label: 'Larger preview',
+                                  child: _CameraActionButton(
+                                    icon: Icons.open_in_full,
+                                    onTap: _openFullscreenPreview,
+                                    size: 44,
+                                  ),
+                                ),
                               ),
-                            ),
+                            ],
                           ),
                         ),
                       ),
@@ -412,12 +413,10 @@ class _CameraActionButton extends StatelessWidget {
 class _FullscreenCameraView extends StatefulWidget {
   final CameraController controller;
   final void Function(XFile file) onCapture;
-  final VoidCallback? onSwitchCamera;
 
   const _FullscreenCameraView({
     required this.controller,
     required this.onCapture,
-    this.onSwitchCamera,
   });
 
   @override
@@ -530,27 +529,7 @@ class _FullscreenCameraViewState extends State<_FullscreenCameraView> {
                     alignment: Alignment.centerRight,
                     child: Padding(
                       padding: const EdgeInsets.only(right: 8, bottom: 8),
-                      child: widget.onSwitchCamera != null
-                          ? Tooltip(
-                              message: 'Switch camera',
-                              child: GestureDetector(
-                                onTap: widget.onSwitchCamera,
-                                child: Container(
-                                  width: 56,
-                                  height: 56,
-                                  decoration: BoxDecoration(
-                                    color: Colors.black.withAlpha(150),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.flip_camera_ios_outlined,
-                                    color: Colors.white,
-                                    size: 28,
-                                  ),
-                                ),
-                              ),
-                            )
-                          : const SizedBox(width: 56, height: 56),
+                      child: const SizedBox(width: 56, height: 56),
                     ),
                   ),
                 ),

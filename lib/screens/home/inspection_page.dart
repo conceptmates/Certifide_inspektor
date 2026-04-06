@@ -941,8 +941,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
             ),
           ),
           ElevatedButton.icon(
-            onPressed:
-                _currentItemIndex < items.length - 1 ? _nextItem : null,
+            onPressed: _currentItemIndex < items.length - 1 ? _nextItem : null,
             icon: const Icon(Icons.arrow_forward),
             label: const Text('Next'),
             style: ElevatedButton.styleFrom(
@@ -1080,6 +1079,14 @@ class _InspectionScreenState extends State<InspectionScreen> {
             const SizedBox(height: 8),
             if (referenceMedia.isNotEmpty) ...[
               ReferenceMediaSection(mediaList: referenceMedia),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: InspectionInfoButton(
+                  fieldId: uniqueId,
+                  referenceMedia: referenceMedia,
+                ),
+              ),
               const SizedBox(height: 10),
             ],
             if (_isImageFieldType(item) && itemImages[uniqueId] == null)
@@ -1090,6 +1097,11 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     height: 220,
                     borderRadius: BorderRadius.circular(12),
                     instructionText: 'Take a clear photo of: $title',
+                    onPickFromGallery: () => _pickImage(
+                      ImageSource.gallery,
+                      uniqueId,
+                      _getItemFieldId(item),
+                    ),
                     onCapture: (XFile file) async {
                       final fieldId = _getItemFieldId(item);
                       final String sectionTitle =
@@ -1137,26 +1149,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
                     },
                   ),
                   const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.center,
-                    child: OutlinedButton.icon(
-                      onPressed: () => _pickImage(
-                        ImageSource.gallery,
-                        uniqueId,
-                        _getItemFieldId(item),
-                      ),
-                      icon: const Icon(Icons.photo_library_outlined, size: 20),
-                      label: const Text('Pick from gallery instead'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.blue,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                 ],
               ),
             if (allowImage && itemImages[uniqueId] != null)
@@ -1195,6 +1187,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       width: double.infinity,
                       height: 200,
                       decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
                         borderRadius: BorderRadius.circular(12),
                         border:
                             Border.all(color: Colors.grey.shade300, width: 1),
@@ -1238,6 +1231,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           margin: const EdgeInsets.only(right: 8),
                           width: 150,
                           decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                                 color: Colors.grey.shade300, width: 1),
@@ -1322,7 +1316,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
     final uniqueId = _getItemUniqueId(item);
     final useTextField = _itemUsesTextField(item);
     final title = _getItemTitle(item);
-    final referenceMedia = _getItemReferenceMedia(item);
 
     final inputDecoration = InputDecoration(
       filled: true,
@@ -1454,11 +1447,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
               _autoSave();
             },
           ),
-        const SizedBox(height: 12),
-        InspectionInfoButton(
-          fieldId: uniqueId,
-          referenceMedia: referenceMedia,
-        ),
       ],
     );
   }
@@ -1771,7 +1759,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     if (imagePath.startsWith('http')) {
       return Image.network(
         imagePath,
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Center(
@@ -1792,7 +1780,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
     } else {
       return Image.file(
         File(imagePath),
-        fit: BoxFit.cover,
+        fit: BoxFit.contain,
       );
     }
   }
@@ -1813,10 +1801,6 @@ class _InspectionScreenState extends State<InspectionScreen> {
                 AppBar(
                   backgroundColor: Colors.transparent,
                   elevation: 0,
-                  leading: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
                   actions: [
                     IconButton(
                       icon: const Icon(Icons.delete),
@@ -2320,7 +2304,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
       child: Scaffold(
         key: _scaffoldKey,
         appBar: AppBar(
-          toolbarHeight: 72,
+          toolbarHeight: 60,
           title: Builder(
             builder: (context) {
               final sectionTitle =
@@ -2358,7 +2342,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
                           ),
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -2509,10 +2493,10 @@ class _InspectionScreenState extends State<InspectionScreen> {
                           icon: const Icon(Icons.arrow_back, size: 20),
                           label: const Text('Previous section'),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Theme.of(context).brightness ==
-                                    Brightness.dark
-                                ? Colors.white70
-                                : const Color(0xFF667eea),
+                            foregroundColor:
+                                Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.white70
+                                    : const Color(0xFF667eea),
                             side: BorderSide(
                               color: Theme.of(context).brightness ==
                                       Brightness.dark
