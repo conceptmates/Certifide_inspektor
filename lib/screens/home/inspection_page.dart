@@ -239,11 +239,17 @@ class _InspectionScreenState extends State<InspectionScreen> {
       // Set vehicle details from widget
       vehicleDetails = widget.vehicleDetails;
 
+      // If continuing a previous inspection, load template from storage first
+      if (!widget.isNewInspection) {
+        await _loadTemplateFromStorage();
+      }
+
       // Check if we have a dynamic inspection template from API
       if (widget.inspectionTemplate != null) {
         _inspectionTemplate = widget.inspectionTemplate;
         _useDynamicTemplate = true;
-      } else if (vehicleDetails != null &&
+      } else if (_inspectionTemplate == null &&
+          vehicleDetails != null &&
           vehicleDetails!.containsKey('inspectionTemplate')) {
         final templateData = vehicleDetails!['inspectionTemplate'];
         if (templateData != null) {
@@ -342,6 +348,9 @@ class _InspectionScreenState extends State<InspectionScreen> {
           ),
         ),
         multiImages: currentMultiImages,
+        vehicleDetails: vehicleDetails,
+        inspectionTemplate: _inspectionTemplate?.toJson(),
+        inspectionId: widget.inspectionId,
       );
 
       await _inspectionBox?.put(
@@ -374,6 +383,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
           currentSection: currentData.currentSection,
           textFieldValues:
               Map<String, String>.from(currentData.textFieldValues),
+          multiImages: currentData.typedMultiImages,
           isCompleted: true,
           timestamp: DateTime.now(),
           status: 'submitted',
@@ -487,6 +497,36 @@ class _InspectionScreenState extends State<InspectionScreen> {
     }
 
     return 'Enter details...';
+  }
+
+  // Load template and vehicle details from storage before building sections
+  Future<void> _loadTemplateFromStorage() async {
+    try {
+      final storedData =
+          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+
+      if (storedData != null) {
+        // Load vehicle details if not already set
+        if (vehicleDetails == null && storedData.typedVehicleDetails != null) {
+          vehicleDetails = storedData.typedVehicleDetails;
+        }
+
+        // Load inspection template if not already set
+        if (_inspectionTemplate == null &&
+            storedData.typedInspectionTemplate != null) {
+          try {
+            _inspectionTemplate = InspectionInitializationResponse.fromJson(
+              storedData.typedInspectionTemplate!,
+            );
+            _useDynamicTemplate = true;
+          } catch (e) {
+            print('Error parsing stored inspection template: $e');
+          }
+        }
+      }
+    } catch (e) {
+      print('Error loading template from storage: $e');
+    }
   }
 
   Future<void> _loadDataFromStorage() async {
@@ -2073,12 +2113,26 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
       if (!hasInternet) {
         Map<String, String?> finalItemImages = Map.from(itemImages);
+        Map<String, String?> finalItemVideos = Map.from(itemVideos);
+        Map<String, String?> finalItemAudios = Map.from(itemAudios);
+        Map<String, String?> finalItemFiles = Map.from(itemFiles);
+        // Filter out null values from multiImages
+        Map<String, List<String>> finalMultiImages = {};
+        itemMultiImages.forEach((key, value) {
+          if (value != null && value.isNotEmpty) {
+            finalMultiImages[key] = value;
+          }
+        });
         final body = _buildSubmissionBody();
 
         await LocalStorageService.saveInspection(
           data: body,
           images: finalItemImages,
           status: 'pending',
+          videos: finalItemVideos,
+          audios: finalItemAudios,
+          files: finalItemFiles,
+          multiImages: finalMultiImages,
         );
 
         await _completeInspection();
@@ -2128,10 +2182,24 @@ class _InspectionScreenState extends State<InspectionScreen> {
           }
         } else {
           Map<String, String?> finalItemImages = Map.from(itemImages);
+          Map<String, String?> finalItemVideos = Map.from(itemVideos);
+          Map<String, String?> finalItemAudios = Map.from(itemAudios);
+          Map<String, String?> finalItemFiles = Map.from(itemFiles);
+          // Filter out null values from multiImages
+          Map<String, List<String>> finalMultiImages = {};
+          itemMultiImages.forEach((key, value) {
+            if (value != null && value.isNotEmpty) {
+              finalMultiImages[key] = value;
+            }
+          });
           await LocalStorageService.saveInspection(
             data: _buildSubmissionBody(),
             images: finalItemImages,
             status: 'pending',
+            videos: finalItemVideos,
+            audios: finalItemAudios,
+            files: finalItemFiles,
+            multiImages: finalMultiImages,
           );
 
           if (mounted) {

@@ -27,6 +27,7 @@ class _MainContentState extends State<MainContent>
   late AnimationController scaleController;
   late Animation<double> rippleAnimation;
   late Animation<double> scaleAnimation;
+  Box<InspectionStorageModel>? _inspectionBox;
 
   // Design tokens
   static const _primary = Color(0xFF0F172A);
@@ -130,31 +131,39 @@ class _MainContentState extends State<MainContent>
     }
   }
 
-  // Kept for restoring the "continue previous inspection" flow.
-  /*
+  // Check if there's an existing unfinished inspection
   Future<bool> hasExistingInspection() async {
     try {
       if (!Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)) {
         _inspectionBox = await Hive.openBox<InspectionStorageModel>(
           HiveConstants.INSPECTION_BOX,
         );
+      } else {
+        _inspectionBox = Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
       }
 
       final existingData =
           _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
 
       if (existingData != null) {
+        // Skip if already completed or submitted
         if (existingData.isCompleted ||
             existingData.status == 'submitted' ||
             existingData.status == 'offline') {
           return false;
         }
 
+        // Check if there's any meaningful data saved
         bool hasValidData = existingData.itemValues.isNotEmpty ||
             existingData.itemImages.isNotEmpty ||
-            existingData.itemRemarks.isNotEmpty;
+            existingData.itemRemarks.isNotEmpty ||
+            existingData.itemVideos.isNotEmpty ||
+            existingData.itemAudios.isNotEmpty ||
+            existingData.itemFiles.isNotEmpty ||
+            (existingData.multiImages?.isNotEmpty ?? false);
 
         if (hasValidData) {
+          // Check if the inspection is less than 24 hours old
           final inspectionTime = existingData.timestamp;
           final currentTime = DateTime.now();
           final timeDifference = currentTime.difference(inspectionTime);
@@ -167,7 +176,6 @@ class _MainContentState extends State<MainContent>
       return false;
     }
   }
-  */
 
   Future<void> _handleInspectionTap() async {
     try {
@@ -175,11 +183,7 @@ class _MainContentState extends State<MainContent>
 
       if (!mounted) return;
 
-      // Continue-previous dialog disabled — always start a new inspection from home.
-      _navigateToInspection(true);
-      /*
       final hasExisting = await hasExistingInspection();
-      print('Has existing inspection: $hasExisting');
 
       if (!mounted) return;
 
@@ -187,29 +191,38 @@ class _MainContentState extends State<MainContent>
         showDialog(
           context: context,
           barrierDismissible: false,
-          builder: (BuildContext context) {
+          builder: (BuildContext dialogContext) {
             return AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
-              title: const Text('Continue Previous Inspection?'),
+              title: const Text(
+                'Continue Previous Inspection?',
+                style: TextStyle(color: Colors.white),
+              ),
               content: const Text(
-                'Would you like to continue your previous inspection or start a new one?',
+                'You have an unfinished inspection saved. Would you like to continue where you left off or start a new one?',
+                style: TextStyle(color: Colors.white70),
               ),
               actions: [
                 TextButton(
                   onPressed: () {
-                    Navigator.pop(context);
-                    _navigateToInspection(true);
+                    Navigator.pop(dialogContext);
+                    _clearAndStartNew();
                   },
                   child: const Text('Start New'),
                 ),
                 ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A73E8),
+                    foregroundColor: Colors.white,
+                  ),
                   onPressed: () {
-                    Navigator.pop(context);
+                    Navigator.pop(dialogContext);
                     _navigateToInspection(false);
                   },
-                  child: const Text('Continue Previous'),
+                  child: const Text('Continue'),
                 ),
               ],
             );
@@ -218,7 +231,6 @@ class _MainContentState extends State<MainContent>
       } else {
         _navigateToInspection(true);
       }
-      */
     } catch (e) {
       print('Error handling inspection tap: $e');
       if (mounted) {
@@ -228,6 +240,19 @@ class _MainContentState extends State<MainContent>
           ),
         );
       }
+    }
+  }
+
+  Future<void> _clearAndStartNew() async {
+    try {
+      // Clear the existing inspection data
+      if (_inspectionBox?.isOpen ?? false) {
+        await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
+      }
+      _navigateToInspection(true);
+    } catch (e) {
+      print('Error clearing inspection: $e');
+      _navigateToInspection(true);
     }
   }
 

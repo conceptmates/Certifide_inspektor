@@ -24,19 +24,27 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       isSubmitted: fields[4] as bool,
       status: fields[5] as String,
       pendingImages: (fields[6] as Map?)
-          ?.map((key, value) => MapEntry(
+              ?.map((key, value) => MapEntry(
+                    key as String,
+                    value as PendingImage,
+                  ))
+              .cast<String, PendingImage>() ??
+          {},
+      videos: (fields[7] as Map?)?.cast<String, String>() ?? {},
+      audios: (fields[8] as Map?)?.cast<String, String>() ?? {},
+      files: (fields[9] as Map?)?.cast<String, String>() ?? {},
+      multiImages: (fields[10] as Map?)?.map((key, value) => MapEntry(
                 key as String,
-                value as PendingImage,
-              ))
-          .cast<String, PendingImage>() ??
-      {},
+                (value as List).cast<String>(),
+              )) ??
+          {},
     );
   }
 
   @override
   void write(BinaryWriter writer, LocalInspection obj) {
     writer
-      ..writeByte(7)
+      ..writeByte(11)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -50,7 +58,15 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       ..writeByte(5)
       ..write(obj.status)
       ..writeByte(6)
-      ..write(obj.pendingImages);
+      ..write(obj.pendingImages)
+      ..writeByte(7)
+      ..write(obj.videos)
+      ..writeByte(8)
+      ..write(obj.audios)
+      ..writeByte(9)
+      ..write(obj.files)
+      ..writeByte(10)
+      ..write(obj.multiImages);
   }
 
   @override

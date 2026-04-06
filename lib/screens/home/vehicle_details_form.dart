@@ -145,6 +145,14 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
   }
 
   bool _isLoading = false;
+  final TextInputFormatter _uppercaseFormatter =
+      TextInputFormatter.withFunction((oldValue, newValue) {
+    final upperCaseText = newValue.text.toUpperCase();
+    return newValue.copyWith(
+      text: upperCaseText,
+      selection: TextSelection.collapsed(offset: upperCaseText.length),
+    );
+  });
 
   void _proceedToInspection() async {
     if (_formKey.currentState!.validate()) {
@@ -163,8 +171,8 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         'make': _selectedMake!.name,
         'model': _selectedModel!.name,
         'year': _yearController.text.trim(),
-        'variant': _variantController.text.trim(),
-        'colour': _colourController.text.trim(),
+        'variant': _variantController.text.trim().toUpperCase(),
+        'colour': _colourController.text.trim().toUpperCase(),
         'transmission': _selectedTransmission,
         'brand_id': _selectedMake!.id,
         'model_id': _selectedModel!.id,
@@ -620,12 +628,14 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                             label: 'Variant',
                             hint: 'e.g., LX, EX, SE (Optional)',
                             icon: Icons.tune,
+                            inputFormatters: [_uppercaseFormatter],
                           ),
                           _buildTextField(
                             controller: _colourController,
                             label: 'Colour',
                             hint: 'e.g., White, Black, Silver',
                             icon: Icons.color_lens,
+                            inputFormatters: [_uppercaseFormatter],
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Please enter vehicle colour';

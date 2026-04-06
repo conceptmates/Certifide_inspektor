@@ -55,6 +55,10 @@ class LocalStorageService {
     required Map<String, String?> images,
     String status = 'pending',
     Map<String, dynamic>? imageMetadata,
+    Map<String, String?>? videos,
+    Map<String, String?>? audios,
+    Map<String, String?>? files,
+    Map<String, List<String>>? multiImages,
   }) async {
     try {
       final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
@@ -126,6 +130,72 @@ class LocalStorageService {
         }
       }
 
+      // Save videos to local storage
+      Map<String, String> savedVideos = {};
+      if (videos != null) {
+        for (var entry in videos.entries) {
+          if (entry.value != null && entry.value!.isNotEmpty) {
+            final savedPath = await _saveMediaFile(entry.value!, 'videos');
+            if (savedPath != null) {
+              savedVideos[entry.key] = savedPath;
+            }
+          }
+        }
+      }
+
+      // Save audios to local storage
+      Map<String, String> savedAudios = {};
+      if (audios != null) {
+        for (var entry in audios.entries) {
+          if (entry.value != null && entry.value!.isNotEmpty) {
+            final savedPath = await _saveMediaFile(entry.value!, 'audios');
+            if (savedPath != null) {
+              savedAudios[entry.key] = savedPath;
+            }
+          }
+        }
+      }
+
+      // Save files to local storage
+      Map<String, String> savedFiles = {};
+      if (files != null) {
+        for (var entry in files.entries) {
+          if (entry.value != null && entry.value!.isNotEmpty) {
+            final savedPath = await _saveMediaFile(entry.value!, 'files');
+            if (savedPath != null) {
+              savedFiles[entry.key] = savedPath;
+            }
+          }
+        }
+      }
+
+      // Save multi-images to local storage
+      Map<String, List<String>> savedMultiImages = {};
+      if (multiImages != null) {
+        for (var entry in multiImages.entries) {
+          if (entry.value.isNotEmpty) {
+            List<String> savedPaths = [];
+            for (var imagePath in entry.value) {
+              if (imagePath.isNotEmpty) {
+                if (imagePath.startsWith('/') || imagePath.startsWith('var/')) {
+                  try {
+                    final savedPath = await saveImage(imagePath);
+                    savedPaths.add(savedPath);
+                  } catch (e) {
+                    print('Error saving multi-image $imagePath: $e');
+                  }
+                } else {
+                  savedPaths.add(imagePath);
+                }
+              }
+            }
+            if (savedPaths.isNotEmpty) {
+              savedMultiImages[entry.key] = savedPaths;
+            }
+          }
+        }
+      }
+
       // Create new inspection with a unique ID
       final String inspectionId = const Uuid().v4();
       final inspection = LocalInspection(
@@ -136,6 +206,10 @@ class LocalStorageService {
         pendingImages: pendingImages,
         status: status,
         isSubmitted: false,
+        videos: savedVideos,
+        audios: savedAudios,
+        files: savedFiles,
+        multiImages: savedMultiImages,
       );
 
       await box.put(inspectionId, inspection);
@@ -149,6 +223,51 @@ class LocalStorageService {
       }
 
       rethrow;
+    }
+  }
+
+  // Helper method to save media files (videos, audios, files)
+  static Future<String?> _saveMediaFile(String filePath, String subDir) async {
+    try {
+      // Handle JSON encoded file paths
+      String actualPath = filePath;
+      if (filePath.contains('{')) {
+        try {
+          final Map<String, dynamic> fileInfo = json.decode(filePath);
+          actualPath = fileInfo['filePath'] ?? filePath;
+        } catch (_) {
+          // Use original path if JSON parsing fails
+        }
+      }
+
+      // Check if it's a local path or URL
+      if (actualPath.startsWith('http')) {
+        return actualPath; // Already a URL
+      }
+
+      if (!actualPath.startsWith('/') && !actualPath.startsWith('var/')) {
+        return actualPath; // Other format, save as is
+      }
+
+      final File mediaFile = File(actualPath);
+      if (!mediaFile.existsSync()) {
+        print('Media file does not exist: $actualPath');
+        return null;
+      }
+
+      final Directory appDir = await getApplicationDocumentsDirectory();
+      final String mediaDir = '${appDir.path}/inspection_$subDir';
+      await Directory(mediaDir).create(recursive: true);
+
+      final String extension = actualPath.split('.').last;
+      final String fileName = '${const Uuid().v4()}.$extension';
+      final String destinationPath = '$mediaDir/$fileName';
+
+      await mediaFile.copy(destinationPath);
+      return destinationPath;
+    } catch (e) {
+      print('Error saving media file: $e');
+      return null;
     }
   }
 
@@ -196,19 +315,47 @@ class LocalStorageService {
     }
   }
 
-  // Helper method to delete inspection images
+  // Helper method to delete inspection media files
   static Future<void> _deleteInspectionImages(
     LocalInspection inspection,
   ) async {
+    // Delete images
     for (String imagePath in inspection.images.values) {
-      try {
-        final file = File(imagePath);
-        if (await file.exists()) {
-          await file.delete();
-        }
-      } catch (e) {
-        print('Error deleting image: $e');
+      await _deleteFile(imagePath);
+    }
+
+    // Delete videos
+    for (String videoPath in inspection.videos.values) {
+      await _deleteFile(videoPath);
+    }
+
+    // Delete audios
+    for (String audioPath in inspection.audios.values) {
+      await _deleteFile(audioPath);
+    }
+
+    // Delete files
+    for (String filePath in inspection.files.values) {
+      await _deleteFile(filePath);
+    }
+
+    // Delete multi-images
+    for (List<String> imagePaths in inspection.multiImages.values) {
+      for (String imagePath in imagePaths) {
+        await _deleteFile(imagePath);
       }
+    }
+  }
+
+  static Future<void> _deleteFile(String filePath) async {
+    try {
+      if (filePath.startsWith('http')) return; // Skip URLs
+      final file = File(filePath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (e) {
+      print('Error deleting file: $e');
     }
   }
 
@@ -347,101 +494,22 @@ class LocalStorageService {
     required Map<String, String?> images,
     String status = 'offline',
     Map<String, dynamic>? imageMetadata,
+    Map<String, String?>? videos,
+    Map<String, String?>? audios,
+    Map<String, String?>? files,
+    Map<String, List<String>>? multiImages,
   }) async {
-    try {
-      final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
-
-      // Save images to local storage
-      Map<String, String> savedImages = {};
-      Map<String, PendingImage> pendingImages = {};
-
-      for (var entry in images.entries) {
-        if (entry.value != null) {
-          String filePath;
-          String section = '';
-          String itemId = entry.key;
-
-          // Get section and itemId from metadata if available
-          if (imageMetadata != null &&
-              imageMetadata.containsKey(entry.key)) {
-            final meta = imageMetadata[entry.key];
-            section = meta['section'] ?? '';
-            itemId = meta['itemId'] ?? entry.key;
-          }
-
-          try {
-            // Try parsing as JSON first
-            if (entry.value!.contains('{')) {
-              try {
-                final Map<String, dynamic> fileInfo = json.decode(entry.value!);
-                filePath = fileInfo['filePath'] ?? entry.value!;
-              } catch (jsonError) {
-                // If JSON parsing fails, use the original value
-                filePath = entry.value!;
-              }
-            } else {
-              filePath = entry.value!;
-            }
-          } catch (e) {
-            // Fallback to original value
-            filePath = entry.value!;
-          }
-
-          // Check if it's a local path (needs upload) or already a URL
-          if (filePath.startsWith('/') || filePath.startsWith('var/')) {
-            // Local file path - needs to be uploaded
-            final File imageFile = File(filePath);
-            if (!imageFile.existsSync()) {
-              print('Image file does not exist: $filePath');
-              continue;
-            }
-
-            try {
-              final savedPath = await saveImage(filePath);
-              savedImages[entry.key] = savedPath;
-              // Mark as pending upload with section and itemId
-              pendingImages[entry.key] = PendingImage(
-                imagePath: savedPath,
-                section: section,
-                itemId: itemId,
-              );
-            } catch (e) {
-              print('Error saving image $filePath: $e');
-            }
-          } else if (filePath.startsWith('http')) {
-            // Already uploaded - URL
-            savedImages[entry.key] = filePath;
-          } else {
-            // Other format - save as is
-            savedImages[entry.key] = filePath;
-          }
-        }
-      }
-
-      // Create new offline inspection
-      final String inspectionId = const Uuid().v4();
-      final inspection = LocalInspection(
-        id: inspectionId,
-        createdAt: DateTime.now(),
-        data: data,
-        images: savedImages,
-        pendingImages: pendingImages,
-        status: status,
-        isSubmitted: false,
-      );
-
-      await box.put(inspectionId, inspection);
-      return inspectionId;
-    } catch (e) {
-      print('Error saving offline inspection: $e');
-
-      // Log the full error details
-      if (e is Error) {
-        print('Stacktrace: ${e.stackTrace}');
-      }
-
-      rethrow;
-    }
+    // Use saveInspection with offline status
+    return saveInspection(
+      data: data,
+      images: images,
+      status: status,
+      imageMetadata: imageMetadata,
+      videos: videos,
+      audios: audios,
+      files: files,
+      multiImages: multiImages,
+    );
   }
 
   static Future<void> updateInspectionImages({
