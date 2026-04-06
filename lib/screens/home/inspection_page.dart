@@ -47,7 +47,8 @@ class InspectionScreen extends StatefulWidget {
   State<InspectionScreen> createState() => _InspectionScreenState();
 }
 
-class _InspectionScreenState extends State<InspectionScreen> {
+class _InspectionScreenState extends State<InspectionScreen>
+    with WidgetsBindingObserver {
   Timer? _saveDebouncer;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -77,6 +78,12 @@ class _InspectionScreenState extends State<InspectionScreen> {
   InspectionInitializationResponse? _inspectionTemplate;
   bool _useDynamicTemplate = false;
   bool _isLoadingTemplate = true; // Track if template is still loading
+
+  /// Server inspection id: from route, Hive snapshot, or refetch when resuming.
+  int? _sessionInspectionId;
+
+  int? get _effectiveInspectionId =>
+      _sessionInspectionId ?? widget.inspectionId;
 
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
@@ -229,6 +236,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _isScrollable = false;
     _showButton = false;
     _scrollController.addListener(_onScroll);
@@ -236,12 +244,19 @@ class _InspectionScreenState extends State<InspectionScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initHive();
 
+      _sessionInspectionId = widget.inspectionId;
+
       // Set vehicle details from widget
       vehicleDetails = widget.vehicleDetails;
 
       // If continuing a previous inspection, load template from storage first
       if (!widget.isNewInspection) {
         await _loadTemplateFromStorage();
+        if (_sessionInspectionId == null) {
+          _sessionInspectionId = _inspectionBox
+              ?.get(HiveConstants.CURRENT_INSPECTION_KEY)
+              ?.inspectionId;
+        }
       }
 
       // Check if we have a dynamic inspection template from API
@@ -270,12 +285,21 @@ class _InspectionScreenState extends State<InspectionScreen> {
         }
       }
 
+      // Hive may lack template JSON (older saves / failed serialization). Refetch.
+      if (!widget.isNewInspection) {
+        await _fetchInspectionTemplateIfMissing();
+      }
+
       if (widget.isNewInspection) {
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
         _initializeValues();
         _initializeControllers();
       } else {
         await _loadDataFromStorage();
+        // Persist refetched template + restored answers together for next offline resume.
+        if (_inspectionTemplate != null && mounted) {
+          await _saveDataLocally();
+        }
       }
 
       // Load rewarded interstitial ad
@@ -350,7 +374,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
         multiImages: currentMultiImages,
         vehicleDetails: vehicleDetails,
         inspectionTemplate: _inspectionTemplate?.toJson(),
-        inspectionId: widget.inspectionId,
+        inspectionId: _effectiveInspectionId,
       );
 
       await _inspectionBox?.put(
@@ -414,6 +438,28 @@ class _InspectionScreenState extends State<InspectionScreen> {
         }
       }
     });
+  }
+
+  Future<void> _flushPendingAutoSave() async {
+    if (_saveDebouncer?.isActive ?? false) {
+      _saveDebouncer?.cancel();
+    }
+
+    try {
+      await _saveDataLocally();
+    } catch (e) {
+      print('Error flushing auto save: $e');
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _flushPendingAutoSave();
+    }
   }
 
   IconData _getSectionIcon(String sectionTitle) {
@@ -526,6 +572,80 @@ class _InspectionScreenState extends State<InspectionScreen> {
       }
     } catch (e) {
       print('Error loading template from storage: $e');
+    }
+  }
+
+  /// When continuing an inspection, [Hive] may not contain serialized template
+  /// (legacy data or first save before template was in memory). Re-initialize
+  /// from API using stored [vehicleDetails] brand/model.
+  Future<void> _fetchInspectionTemplateIfMissing() async {
+    if (_inspectionTemplate != null) {
+      _useDynamicTemplate = true;
+      return;
+    }
+
+    final vd = vehicleDetails;
+    if (vd == null) {
+      log('Resume: no vehicle details — cannot refetch inspection template');
+      return;
+    }
+
+    final brandRaw = vd['brand_id'];
+    final modelRaw = vd['model_id'];
+    final brandId = brandRaw is int
+        ? brandRaw
+        : int.tryParse(brandRaw?.toString() ?? '');
+    final modelId = modelRaw is int
+        ? modelRaw
+        : int.tryParse(modelRaw?.toString() ?? '');
+
+    if (brandId == null || modelId == null) {
+      log('Resume: missing brand_id/model_id — cannot refetch template');
+      return;
+    }
+
+    final online = await ConnectivityChecker.hasInternetConnection();
+    if (!online) {
+      log('Resume: offline — cannot refetch inspection template');
+      return;
+    }
+
+    try {
+      final result = await ApiService.initializeInspection(
+        vehicleBrandId: brandId,
+        vehicleModelId: modelId,
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true) {
+        final data = result['data'];
+        InspectionInitializationResponse? parsed;
+        if (data is InspectionInitializationResponse) {
+          parsed = data;
+        } else if (data is Map<String, dynamic>) {
+          try {
+            parsed = InspectionInitializationResponse.fromJson(data);
+          } catch (e) {
+            log('Error parsing refetched inspection template: $e');
+          }
+        }
+
+        if (parsed != null) {
+          _inspectionTemplate = parsed;
+          _useDynamicTemplate = true;
+        }
+
+        final apiId = result['inspection_id'];
+        if (_sessionInspectionId == null && apiId != null) {
+          _sessionInspectionId =
+              apiId is int ? apiId : int.tryParse(apiId.toString());
+        }
+      } else {
+        log('initializeInspection on resume failed: ${result['message']}');
+      }
+    } catch (e, st) {
+      log('initializeInspection exception on resume: $e', stackTrace: st);
     }
   }
 
@@ -1162,7 +1282,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
                       if (hasInternet) {
                         final result = await ApiService.uploadImage(
                           savedPath,
-                          inspectionId: widget.inspectionId,
+                          inspectionId: _effectiveInspectionId,
                           section: sectionTitle,
                           itemId: fieldId,
                         );
@@ -1553,7 +1673,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
         if (hasInternet) {
           final result = await ApiService.uploadImage(
             savedPath,
-            inspectionId: widget.inspectionId,
+            inspectionId: _effectiveInspectionId,
             section: sectionTitle,
             itemId: fieldId,
           );
@@ -1644,7 +1764,7 @@ class _InspectionScreenState extends State<InspectionScreen> {
             if (!path.startsWith('http')) {
               final result = await ApiService.uploadImage(
                 path,
-                inspectionId: widget.inspectionId,
+                inspectionId: _effectiveInspectionId,
                 section: sectionTitle,
                 itemId: fieldId,
               );
@@ -2297,37 +2417,54 @@ class _InspectionScreenState extends State<InspectionScreen> {
     // Handle empty sections case
     if (_sections.isEmpty) {
       return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.orange),
-              const SizedBox(height: 16),
-              const Text(
-                'No inspection template loaded',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline, size: 64, color: Colors.orange),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Could not load inspection form',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Connect to the internet and try again, or go back and start a new inspection. '
+                    'If you were resuming a saved inspection, your answers stay on this device once the form loads.',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  FilledButton.icon(
+                    onPressed: () async {
+                      setState(() => _isLoadingTemplate = true);
+                      await _fetchInspectionTemplateIfMissing();
+                      if (!mounted) return;
+                      if (_inspectionTemplate != null) {
+                        await _loadDataFromStorage();
+                        await _saveDataLocally();
+                      }
+                      setState(() => _isLoadingTemplate = false);
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Go back'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Debug: _useDynamicTemplate = $_useDynamicTemplate',
-                style: const TextStyle(fontSize: 14, color: Colors.grey),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Debug: _inspectionTemplate = ${_inspectionTemplate != null ? "loaded" : "null"}',
-                style: const TextStyle(fontSize: 14, color: Colors.grey),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Debug: widget.inspectionTemplate = ${widget.inspectionTemplate != null ? "loaded" : "null"}',
-                style: const TextStyle(fontSize: 14, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Go Back'),
-              ),
-            ],
+            ),
           ),
         ),
       );
@@ -2894,15 +3031,13 @@ class _InspectionScreenState extends State<InspectionScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _saveDebouncer?.cancel();
+    _flushPendingAutoSave();
     _scrollController.dispose();
     _cleanupControllers();
     _isSubmitting = false;
     _rewardedAdManager.dispose();
-
-    if (_inspectionBox?.isOpen ?? false) {
-      _inspectionBox?.close();
-    }
     super.dispose();
   }
 

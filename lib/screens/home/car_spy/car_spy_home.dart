@@ -24,6 +24,7 @@ class CarSpyHome extends StatefulWidget {
 
 class _CarSpyHomeState extends State<CarSpyHome> {
   int _selectedIndex = 0;
+  Box<InspectionStorageModel>? _inspectionBox;
 
   @override
   void initState() {
@@ -40,9 +41,12 @@ class _CarSpyHomeState extends State<CarSpyHome> {
           Hive.registerAdapter(InspectionStorageModelAdapter());
         }
 
-        await Hive.openBox<InspectionStorageModel>(
+        _inspectionBox = await Hive.openBox<InspectionStorageModel>(
           HiveConstants.INSPECTION_BOX,
         );
+      } else {
+        _inspectionBox =
+            Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
       }
     } catch (e) {
       if (!mounted) return;
@@ -52,14 +56,16 @@ class _CarSpyHomeState extends State<CarSpyHome> {
     }
   }
 
-  // Kept for restoring the "continue previous inspection" flow.
-  /*
+  /// Matches [MainContent.hasExistingInspection]: draft with data, &lt; 24h.
   Future<bool> _hasExistingInspection() async {
     try {
       if (!Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)) {
         _inspectionBox = await Hive.openBox<InspectionStorageModel>(
           HiveConstants.INSPECTION_BOX,
         );
+      } else {
+        _inspectionBox =
+            Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
       }
 
       final existingData =
@@ -74,7 +80,11 @@ class _CarSpyHomeState extends State<CarSpyHome> {
 
         final hasValidData = existingData.itemValues.isNotEmpty ||
             existingData.itemImages.isNotEmpty ||
-            existingData.itemRemarks.isNotEmpty;
+            existingData.itemRemarks.isNotEmpty ||
+            existingData.itemVideos.isNotEmpty ||
+            existingData.itemAudios.isNotEmpty ||
+            existingData.itemFiles.isNotEmpty ||
+            (existingData.multiImages?.isNotEmpty ?? false);
 
         if (hasValidData) {
           final inspectionTime = existingData.timestamp;
@@ -83,51 +93,78 @@ class _CarSpyHomeState extends State<CarSpyHome> {
           return timeDifference.inHours < 24;
         }
       }
-
       return false;
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Error checking existing inspection: $e');
       return false;
     }
   }
-  */
+
+  Future<void> _clearSavedInspectionAndStartNew() async {
+    try {
+      if (_inspectionBox?.isOpen ?? false) {
+        await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
+      } else if (Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)) {
+        await Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX)
+            .delete(HiveConstants.CURRENT_INSPECTION_KEY);
+      }
+      _navigateToInspection(true);
+    } catch (e) {
+      debugPrint('Error clearing inspection: $e');
+      _navigateToInspection(true);
+    }
+  }
 
   Future<void> _handleInitializeScanTap() async {
     try {
       if (!mounted) return;
 
-      // Continue-previous dialog disabled — always start a new inspection.
-      _navigateToInspection(true);
-      /*
       final hasExisting = await _hasExistingInspection();
       if (!mounted) return;
 
       if (hasExisting) {
-        showDialog(
+        showDialog<void>(
           context: context,
           barrierDismissible: false,
           builder: (dialogContext) {
             return AlertDialog(
+              backgroundColor: CarSpyColors.surface,
+              surfaceTintColor: Colors.transparent,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
-              title: const Text('Continue Previous Inspection?'),
+              title: const Text(
+                'Continue saved inspection?',
+                style: TextStyle(
+                  color: CarSpyColors.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               content: const Text(
-                'Would you like to continue your previous inspection or start a new one?',
+                'You have an unfinished inspection. Continue where you left off, or start a new scan.',
+                style: TextStyle(
+                  color: CarSpyColors.onSurfaceVariant,
+                  height: 1.35,
+                ),
               ),
               actions: [
                 TextButton(
                   onPressed: () {
                     Navigator.pop(dialogContext);
-                    _navigateToInspection(true);
+                    _clearSavedInspectionAndStartNew();
                   },
-                  child: const Text('Start New'),
+                  child: const Text('Start new'),
                 ),
-                ElevatedButton(
+                FilledButton(
                   onPressed: () {
                     Navigator.pop(dialogContext);
                     _navigateToInspection(false);
                   },
-                  child: const Text('Continue Previous'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: CarSpyColors.primary,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Continue'),
                 ),
               ],
             );
@@ -136,7 +173,6 @@ class _CarSpyHomeState extends State<CarSpyHome> {
       } else {
         _navigateToInspection(true);
       }
-      */
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
