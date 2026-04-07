@@ -5,7 +5,6 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
-import 'package:camera/camera.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +25,10 @@ import '../../utils/connectivity_checker.dart';
 import '../../widgets/inspection_field_info_sheet.dart';
 import '../../widgets/section_camera_card.dart';
 import '../main_screen.dart';
+import 'inspection_page/components/inspection_app_bar_title.dart';
+import 'inspection_page/components/inspection_bottom_actions.dart';
+import 'inspection_page/components/inspection_progress_header.dart';
+import 'inspection_page/components/inspection_sections_drawer.dart';
 import 'inspection_success_page.dart';
 import '../../utils/ads manager/rewarded_interstitial_ad.dart';
 
@@ -90,78 +93,6 @@ class _InspectionScreenState extends State<InspectionScreen>
 
   final RewardedInterstitialAdManager _rewardedAdManager =
       RewardedInterstitialAdManager();
-
-  // // Fallback sections for when API template is not available
-  // final List<Map<String, dynamic>> _defaultSections = [
-  //   {
-  //     'title': 'Documents',
-  //     'items': documents as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Body Panel',
-  //     'items': bodyPanel as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Flood Affected Signs',
-  //     'items': floodAffectedSigns as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Data Set - I',
-  //     'items': dataSet1 as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Data Set - II',
-  //     'items': dataSet2 as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Battery',
-  //     'items': battery as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Coolant',
-  //     'items': coolant as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Under Hood',
-  //     'items': underHood as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Brake Fluid',
-  //     'items': brakeFluid as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Tire',
-  //     'items': tire as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Exterior',
-  //     'items': exterior as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'A/C',
-  //     'items': ac as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Interior',
-  //     'items': interior as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Dicky',
-  //     'items': dicky as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Test Drive',
-  //     'items': testDrive as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'After WarmUp',
-  //     'items': afterWarmUp as List<InspectionItem>,
-  //   },
-  //   {
-  //     'title': 'Summary / Remarks',
-  //     'items': summary as List<InspectionItem>,
-  //   }
-  // ];
 
   // Get sections - either from dynamic template or default
   List<Map<String, dynamic>> get _sections {
@@ -252,11 +183,9 @@ class _InspectionScreenState extends State<InspectionScreen>
       // If continuing a previous inspection, load template from storage first
       if (!widget.isNewInspection) {
         await _loadTemplateFromStorage();
-        if (_sessionInspectionId == null) {
-          _sessionInspectionId = _inspectionBox
-              ?.get(HiveConstants.CURRENT_INSPECTION_KEY)
-              ?.inspectionId;
-        }
+        _sessionInspectionId ??= _inspectionBox
+            ?.get(HiveConstants.CURRENT_INSPECTION_KEY)
+            ?.inspectionId;
       }
 
       // Check if we have a dynamic inspection template from API
@@ -592,12 +521,10 @@ class _InspectionScreenState extends State<InspectionScreen>
 
     final brandRaw = vd['brand_id'];
     final modelRaw = vd['model_id'];
-    final brandId = brandRaw is int
-        ? brandRaw
-        : int.tryParse(brandRaw?.toString() ?? '');
-    final modelId = modelRaw is int
-        ? modelRaw
-        : int.tryParse(modelRaw?.toString() ?? '');
+    final brandId =
+        brandRaw is int ? brandRaw : int.tryParse(brandRaw?.toString() ?? '');
+    final modelId =
+        modelRaw is int ? modelRaw : int.tryParse(modelRaw?.toString() ?? '');
 
     if (brandId == null || modelId == null) {
       log('Resume: missing brand_id/model_id — cannot refetch template');
@@ -1238,7 +1165,7 @@ class _InspectionScreenState extends State<InspectionScreen>
             ),
             const SizedBox(height: 8),
             if (referenceMedia.isNotEmpty) ...[
-              ReferenceMediaSection(
+              ReferenceMediaSectionView(
                 mediaList: referenceMedia,
                 imageHeight: 110,
               ),
@@ -2427,7 +2354,8 @@ class _InspectionScreenState extends State<InspectionScreen>
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.orange),
+                  const Icon(Icons.error_outline,
+                      size: 64, color: Colors.orange),
                   const SizedBox(height: 16),
                   Text(
                     'Could not load inspection form',
@@ -2513,64 +2441,13 @@ class _InspectionScreenState extends State<InspectionScreen>
         key: _scaffoldKey,
         appBar: AppBar(
           toolbarHeight: 60,
-          title: Builder(
-            builder: (context) {
-              final sectionTitle =
-                  _sections[_currentSection]['title'] as String;
-              final items =
-                  _sections[_currentSection]['items'] as List<dynamic>;
-              final itemCount = items.length;
-              final subtitleColor =
-                  Theme.of(context).brightness == Brightness.dark
-                      ? Colors.white70
-                      : Colors.white.withAlpha(204);
-              return Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).primaryColor.withAlpha(51),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          _getSectionIcon(sectionTitle),
-                          size: 20,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          sectionTitle,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (itemCount > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 40, top: 2),
-                      child: Text(
-                        'Item ${_currentItemIndex + 1} of $itemCount',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: subtitleColor,
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            },
+          title: InspectionAppBarTitle(
+            sectionTitle: _sections[_currentSection]['title'] as String,
+            itemCount:
+                (_sections[_currentSection]['items'] as List<dynamic>).length,
+            currentItemIndex: _currentItemIndex,
+            sectionIcon:
+                _getSectionIcon(_sections[_currentSection]['title'] as String),
           ),
           actions: [
             IconButton(
@@ -2615,59 +2492,9 @@ class _InspectionScreenState extends State<InspectionScreen>
         endDrawer: _buildDrawer(),
         body: Column(
           children: [
-            Container(
-              height: 8,
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Stack(
-                children: [
-                  Container(
-                    width: double.infinity,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      color: Theme.of(context).brightness == Brightness.dark
-                          ? Colors.grey[800]
-                          : Colors.grey[200],
-                    ),
-                  ),
-                  Container(
-                    width: MediaQuery.of(context).size.width *
-                        ((_currentSection + 1) / _sections.length) *
-                        0.87,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(4),
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Section ${_currentSection + 1} of ${_sections.length}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    '${((_currentSection + 1) / _sections.length * 100).round()}% Complete',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+            InspectionProgressHeader(
+              currentSection: _currentSection,
+              totalSections: _sections.length,
             ),
             Expanded(
               child: ListView(
@@ -2681,119 +2508,14 @@ class _InspectionScreenState extends State<InspectionScreen>
                 ],
               ),
             ),
-            SafeArea(
-              top: false,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildItemNavigationBar(
-                    currentSection['items'] as List<dynamic>,
-                  ),
-                  if (_currentSection > 0)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: OutlinedButton.icon(
-                          onPressed: _isSubmitting ? null : _previousSection,
-                          icon: const Icon(Icons.arrow_back, size: 20),
-                          label: const Text('Previous section'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor:
-                                Theme.of(context).brightness == Brightness.dark
-                                    ? Colors.white70
-                                    : const Color(0xFF667eea),
-                            side: BorderSide(
-                              color: Theme.of(context).brightness ==
-                                      Brightness.dark
-                                  ? Colors.white24
-                                  : const Color(0xFF667eea).withAlpha(128),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: 56,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: _currentSection == _sections.length - 1
-                              ? const LinearGradient(colors: [
-                                  Color(0xFF11998e),
-                                  Color(0xFF38ef7d)
-                                ])
-                              : const LinearGradient(colors: [
-                                  Color(0xFF667eea),
-                                  Color(0xFF764ba2)
-                                ]),
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (_currentSection == _sections.length - 1
-                                      ? const Color(0xFF11998e)
-                                      : const Color(0xFF667eea))
-                                  .withAlpha(102),
-                              blurRadius: 12,
-                              offset: const Offset(0, 6),
-                            ),
-                          ],
-                        ),
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.transparent,
-                            shadowColor: Colors.transparent,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          onPressed: _isSubmitting ? null : _nextSection,
-                          child: _isSubmitting &&
-                                  _currentSection == _sections.length - 1
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white),
-                                  ),
-                                )
-                              : Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      _currentSection == _sections.length - 1
-                                          ? 'FINISH INSPECTION'
-                                          : 'NEXT SECTION',
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Icon(
-                                      _currentSection == _sections.length - 1
-                                          ? Icons.check_circle_outline
-                                          : Icons.arrow_forward,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ],
-                                ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+            InspectionBottomActions(
+              showPreviousSection: _currentSection > 0,
+              isSubmitting: _isSubmitting,
+              isLastSection: _currentSection == _sections.length - 1,
+              onPreviousSection: _previousSection,
+              onNextSection: _nextSection,
+              itemNavigationBar: _buildItemNavigationBar(
+                currentSection['items'] as List<dynamic>,
               ),
             ),
           ],
@@ -2836,188 +2558,36 @@ class _InspectionScreenState extends State<InspectionScreen>
   }
 
   Widget _buildDrawer() {
-    return Drawer(
-      elevation: 0,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      child: SafeArea(
-        child: Column(
-          children: [
-            SizedBox(
-              height: 140,
-              width: double.infinity,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withAlpha(51),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(
-                      Icons.checklist_rtl,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Inspection Sections',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    '${_sections.length} sections available',
-                    style: TextStyle(
-                      color: Colors.white.withAlpha(204),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                child: ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: _sections.length,
-                  itemBuilder: (context, index) {
-                    final section = _sections[index];
-                    final isSelected = _currentSection == index;
-                    final isCompleted = _isSectionComplete(index);
+    return InspectionSectionsDrawer(
+      sections: _sections,
+      currentSection: _currentSection,
+      isSectionComplete: _isSectionComplete,
+      getSectionIcon: _getSectionIcon,
+      onSelectSection: (index) {
+        setState(() {
+          _currentSection = index;
+          _currentItemIndex = 0;
+          _isScrollable = false;
+          _showButton = true;
+        });
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        gradient: isSelected
-                            ? const LinearGradient(
-                                begin: Alignment.centerLeft,
-                                end: Alignment.centerRight,
-                                colors: [Color(0xFF667eea), Color(0xFF764ba2)],
-                              )
-                            : null,
-                        color: isSelected ? null : Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isSelected
-                              ? Colors.transparent
-                              : Theme.of(context).dividerColor.withAlpha(51),
-                          width: 1,
-                        ),
-                        boxShadow: isSelected
-                            ? [
-                                BoxShadow(
-                                  color: const Color(0xFF667eea).withAlpha(76),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ]
-                            : null,
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 4),
-                        leading: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: isCompleted
-                                ? Colors.green.withAlpha(25)
-                                : isSelected
-                                    ? Colors.white.withAlpha(51)
-                                    : Theme.of(context)
-                                        .dividerColor
-                                        .withAlpha(25),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(
-                            isCompleted
-                                ? Icons.check_circle
-                                : _getSectionIcon(section['title']),
-                            size: 20,
-                            color: isCompleted
-                                ? Colors.green
-                                : isSelected
-                                    ? Colors.white
-                                    : Theme.of(context)
-                                        .iconTheme
-                                        .color
-                                        ?.withAlpha(153),
-                          ),
-                        ),
-                        trailing: isCompleted
-                            ? const Icon(Icons.check_circle,
-                                color: Colors.green, size: 20)
-                            : isSelected
-                                ? Icon(Icons.arrow_forward_ios,
-                                    size: 14, color: Colors.white)
-                                : null,
-                        title: Text(
-                          section['title'],
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight:
-                                isSelected ? FontWeight.w600 : FontWeight.w500,
-                            color: isSelected
-                                ? Colors.white
-                                : Theme.of(context).textTheme.bodyLarge?.color,
-                          ),
-                        ),
-                        subtitle: Text(
-                          '${(section['items'] as List).length} items',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isSelected
-                                ? Colors.white.withAlpha(204)
-                                : Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.color
-                                    ?.withAlpha(153),
-                          ),
-                        ),
-                        onTap: () {
-                          setState(() {
-                            _currentSection = index;
-                            _currentItemIndex = 0;
-                            _isScrollable = false;
-                            _showButton = true;
-                          });
+        Future.delayed(const Duration(milliseconds: 100), () {
+          setState(() {
+            _isScrollable = _scrollController.position.maxScrollExtent > 0;
+            _showButton = !_isScrollable;
+          });
 
-                          Future.delayed(const Duration(milliseconds: 100), () {
-                            setState(() {
-                              _isScrollable =
-                                  _scrollController.position.maxScrollExtent >
-                                      0;
-                              _showButton = !_isScrollable;
-                            });
+          if (_scrollController.hasClients) {
+            _scrollController.animateTo(
+              0,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+            );
+          }
+        });
 
-                            if (_scrollController.hasClients) {
-                              _scrollController.animateTo(
-                                0,
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeOut,
-                              );
-                            }
-                          });
-
-                          Navigator.pop(context);
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+        Navigator.pop(context);
+      },
     );
   }
 

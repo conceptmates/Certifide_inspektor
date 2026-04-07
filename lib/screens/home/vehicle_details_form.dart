@@ -5,6 +5,9 @@ import '../../routes/routes.dart';
 import '../../services/api_services.dart';
 import '../../widgets/fade_animation.dart';
 import '../../utils/ads manager/interstitial_ad.dart';
+import 'vehicle_details_form/components/vehicle_form_continue_button.dart';
+import 'vehicle_details_form/components/vehicle_form_header_card.dart';
+import 'vehicle_details_form/components/vehicle_form_text_field.dart';
 
 class VehicleDetailsForm extends StatefulWidget {
   final bool isNewInspection;
@@ -251,49 +254,14 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
     List<TextInputFormatter>? inputFormatters,
     String? Function(String?)? validator,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        inputFormatters: inputFormatters,
-        validator: validator,
-        style: const TextStyle(
-          fontSize: 16,
-          color: Colors.white,
-        ),
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          prefixIcon: Icon(icon, color: Colors.blueAccent.shade200),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey[700]!),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey[700]!),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.blueAccent.shade200, width: 2),
-          ),
-          errorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.red, width: 2),
-          ),
-          focusedErrorBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Colors.red, width: 2),
-          ),
-          filled: true,
-          fillColor: const Color(0xFF2C2C2C),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 16,
-          ),
-        ),
-      ),
+    return VehicleFormTextField(
+      controller: controller,
+      label: label,
+      hint: hint,
+      icon: icon,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      validator: validator,
     );
   }
 
@@ -525,54 +493,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                   // Header Section
                   FadeAnimation(
                     1.0,
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(24),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF1A73E8), Color(0xFF1557B0)],
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                const Color(0xFF1A73E8).withValues(alpha: 0.3),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.directions_car,
-                            size: 48,
-                            color: Colors.white,
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Enter Vehicle Information',
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Please provide the vehicle details to begin inspection',
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: Colors.white.withValues(alpha: 0.9),
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ],
-                      ),
-                    ),
+                    const VehicleFormHeaderCard(),
                   ),
 
                   const SizedBox(height: 32),
@@ -654,57 +575,9 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                   // Continue Button
                   FadeAnimation(
                     1.4,
-                    Container(
-                      width: double.infinity,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFF4CAF50), Color(0xFF45A049)],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color:
-                                const Color(0xFF4CAF50).withValues(alpha: 0.3),
-                            blurRadius: 15,
-                            offset: const Offset(0, 6),
-                          ),
-                        ],
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: _isLoading ? null : _proceedToInspection,
-                          child: Center(
-                            child: _isLoading
-                                ? const CircularProgressIndicator(
-                                    color: Colors.white,
-                                  )
-                                : const Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.play_arrow_rounded,
-                                        color: Colors.white,
-                                        size: 24,
-                                      ),
-                                      SizedBox(width: 8),
-                                      Text(
-                                        'Start Inspection',
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                      ),
+                    VehicleFormContinueButton(
+                      isLoading: _isLoading,
+                      onTap: _proceedToInspection,
                     ),
                   ),
 
