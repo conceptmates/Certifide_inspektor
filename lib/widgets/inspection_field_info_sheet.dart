@@ -362,8 +362,13 @@ class InspectionFieldInfoSheet {
 /// Used inline on inspection item cards and in the field info bottom sheet.
 class ReferenceMediaSection extends StatelessWidget {
   final List<Map<String, dynamic>> mediaList;
+  final double imageHeight;
 
-  const ReferenceMediaSection({super.key, required this.mediaList});
+  const ReferenceMediaSection({
+    super.key,
+    required this.mediaList,
+    this.imageHeight = 300,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -421,35 +426,38 @@ class ReferenceMediaSection extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   if (mediaType == 'image' && url.isNotEmpty)
-                    Image.network(
-                      url,
-                      width: double.infinity,
-                      height: 300,
-                      fit: BoxFit.cover,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return SizedBox(
-                          height: 300,
-                          child: Center(
-                            child: CircularProgressIndicator(
-                              value: progress.expectedTotalBytes != null
-                                  ? progress.cumulativeBytesLoaded /
-                                      progress.expectedTotalBytes!
-                                  : null,
+                    InkWell(
+                      onTap: () => _showFullscreenImage(context, url),
+                      child: Image.network(
+                        url,
+                        width: double.infinity,
+                        height: imageHeight,
+                        fit: BoxFit.cover,
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
+                          return SizedBox(
+                            height: imageHeight,
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                value: progress.expectedTotalBytes != null
+                                    ? progress.cumulativeBytesLoaded /
+                                        progress.expectedTotalBytes!
+                                    : null,
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return Container(
-                          height: 120,
-                          color: Colors.grey[200],
-                          child: const Center(
-                            child: Icon(Icons.broken_image,
-                                size: 40, color: Colors.grey),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                        errorBuilder: (context, error, stackTrace) {
+                          return Container(
+                            height: 120,
+                            color: Colors.grey[200],
+                            child: const Center(
+                              child: Icon(Icons.broken_image,
+                                  size: 40, color: Colors.grey),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   if (mediaType == 'video' && url.isNotEmpty)
                     _InlineVideoPlayer(url: url),
@@ -489,21 +497,10 @@ class ReferenceMediaSection extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (description != null && description.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                      child: Text(
-                        description,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Theme.of(context).textTheme.bodyMedium?.color,
-                        ),
-                      ),
-                    ),
                   Padding(
                     padding: EdgeInsets.fromLTRB(
                       12,
-                      description != null && description.isNotEmpty ? 0 : 8,
+                      8,
                       12,
                       8,
                     ),
@@ -530,6 +527,15 @@ class ReferenceMediaSection extends StatelessWidget {
                             letterSpacing: 0.5,
                           ),
                         ),
+                        Spacer(),
+                        Text(
+                          'Tap the media expand',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5),
+                        ),
                       ],
                     ),
                   ),
@@ -539,6 +545,60 @@ class ReferenceMediaSection extends StatelessWidget {
           }),
         ],
       ),
+    );
+  }
+
+  void _showFullscreenImage(BuildContext context, String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog.fullscreen(
+          child: Stack(
+            children: [
+              Container(
+                color: Colors.black,
+                width: double.infinity,
+                height: double.infinity,
+                child: InteractiveViewer(
+                  minScale: 0.8,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
+                        return const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Center(
+                          child: Icon(
+                            Icons.broken_image,
+                            size: 56,
+                            color: Colors.white70,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 16,
+                right: 16,
+                child: SafeArea(
+                  child: IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

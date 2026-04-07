@@ -1238,7 +1238,10 @@ class _InspectionScreenState extends State<InspectionScreen>
             ),
             const SizedBox(height: 8),
             if (referenceMedia.isNotEmpty) ...[
-              ReferenceMediaSection(mediaList: referenceMedia),
+              ReferenceMediaSection(
+                mediaList: referenceMedia,
+                imageHeight: 110,
+              ),
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerLeft,
