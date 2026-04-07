@@ -27,7 +27,7 @@ class InspectionFieldInfoSheet {
       builder: (BuildContext context) {
         return Container(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.85,
+            maxHeight: MediaQuery.of(context).size.height * 0.95,
           ),
           decoration: BoxDecoration(
             color: Theme.of(context).scaffoldBackgroundColor,
@@ -72,7 +72,7 @@ class InspectionFieldInfoSheet {
                     children: [
                       if (referenceMedia.isNotEmpty) ...[
                         ReferenceMediaSectionView(mediaList: referenceMedia),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 12),
                       ],
                       FieldInfoContentCard(
                         icon: Icons.search_outlined,

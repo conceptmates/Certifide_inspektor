@@ -13,13 +13,13 @@ class ReferenceMediaSectionView extends StatelessWidget {
   const ReferenceMediaSectionView({
     super.key,
     required this.mediaList,
-    this.imageHeight = 300,
+    this.imageHeight = 340,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Theme.of(context).brightness == Brightness.dark
             ? Colors.red.withAlpha(20)
@@ -44,7 +44,7 @@ class ReferenceMediaSectionView extends StatelessWidget {
               Text(
                 'Reference Media',
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 14,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFFFF6B6B),
                 ),
@@ -53,11 +53,12 @@ class ReferenceMediaSectionView extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           ...mediaList.map((media) {
-            final mediaType = (media['mediaType'] as String? ?? '').toLowerCase();
+            final mediaType =
+                (media['mediaType'] as String? ?? '').toLowerCase();
             final url = media['url'] as String? ?? '';
 
             return Container(
-              margin: const EdgeInsets.only(bottom: 12),
+              margin: const EdgeInsets.only(bottom: 8),
               decoration: BoxDecoration(
                 color: Theme.of(context).cardColor,
                 borderRadius: BorderRadius.circular(12),
@@ -82,7 +83,7 @@ class ReferenceMediaSectionView extends StatelessWidget {
                           return SizedBox(
                             height: imageHeight,
                             child: Center(
-                              child: CircularProgressIndicator(
+                              child: CircularProgressIndicator.adaptive(
                                 value: progress.expectedTotalBytes != null
                                     ? progress.cumulativeBytesLoaded /
                                         progress.expectedTotalBytes!
@@ -120,7 +121,8 @@ class ReferenceMediaSectionView extends StatelessWidget {
                         padding: const EdgeInsets.all(12),
                         child: Row(
                           children: [
-                            const Icon(Icons.link, color: Colors.blue, size: 24),
+                            const Icon(Icons.link,
+                                color: Colors.blue, size: 24),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -440,7 +442,8 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
 
   Future<void> _init() async {
     try {
-      _videoController = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      _videoController =
+          VideoPlayerController.networkUrl(Uri.parse(widget.url));
       await _videoController!.initialize();
       _chewieController = ChewieController(
         videoPlayerController: _videoController!,
@@ -595,8 +598,8 @@ class _InlineAudioPlayerState extends State<_InlineAudioPlayer> {
                                         ? _duration.inMilliseconds
                                         : 1)
                                 .toDouble(),
-                            onChanged: (v) => _player
-                                .seek(Duration(milliseconds: v.toInt())),
+                            onChanged: (v) =>
+                                _player.seek(Duration(milliseconds: v.toInt())),
                           ),
                         ),
                       ],
