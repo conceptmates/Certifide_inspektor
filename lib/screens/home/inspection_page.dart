@@ -6,11 +6,11 @@ import 'dart:developer';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/hive_constants.dart';
@@ -1011,15 +1011,34 @@ class _InspectionScreenState extends State<InspectionScreen>
   }
 
   Widget _buildItemNavigationBar(List<dynamic> items) {
+    final canGoPrevious =
+        !_isSubmitting && (_currentItemIndex > 0 || _currentSection > 0);
+    final canGoNext = !_isSubmitting && items.isNotEmpty;
+
+    final previousLabel = _currentItemIndex == 0 && _currentSection > 0
+        ? 'Previous section'
+        : 'Previous';
+
+    final String nextLabel;
+    if (items.isEmpty) {
+      nextLabel = 'Next';
+    } else if (_currentItemIndex < items.length - 1) {
+      nextLabel = 'Next';
+    } else if (_currentSection < _sections.length - 1) {
+      nextLabel = 'Next section';
+    } else {
+      nextLabel = 'Finish';
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           ElevatedButton.icon(
-            onPressed: _currentItemIndex > 0 ? _previousItem : null,
+            onPressed: canGoPrevious ? _previousItem : null,
             icon: const Icon(Icons.arrow_back),
-            label: const Text('Previous'),
+            label: Text(previousLabel),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: 24,
@@ -1028,9 +1047,9 @@ class _InspectionScreenState extends State<InspectionScreen>
             ),
           ),
           ElevatedButton.icon(
-            onPressed: _currentItemIndex < items.length - 1 ? _nextItem : null,
+            onPressed: canGoNext ? _nextItem : null,
             icon: const Icon(Icons.arrow_forward),
-            label: const Text('Next'),
+            label: Text(nextLabel),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(
                 horizontal: 24,
@@ -1575,9 +1594,67 @@ class _InspectionScreenState extends State<InspectionScreen>
     );
   }
 
+  Future<bool> _ensureMediaPermission(
+    Permission permission, {
+    required String permissionName,
+  }) async {
+    if (!Platform.isIOS) return true;
+
+    var status = await permission.status;
+    if (status.isGranted || status.isLimited) return true;
+
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      _showPermissionDeniedSnackBar(permissionName, openSettings: true);
+      return false;
+    }
+
+    status = await permission.request();
+    if (status.isGranted || status.isLimited) return true;
+
+    _showPermissionDeniedSnackBar(
+      permissionName,
+      openSettings: status.isPermanentlyDenied || status.isRestricted,
+    );
+    return false;
+  }
+
+  void _showPermissionDeniedSnackBar(
+    String permissionName, {
+    bool openSettings = false,
+  }) {
+    if (!mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('$permissionName permission is required to continue.'),
+        action: openSettings
+            ? SnackBarAction(
+                label: 'Settings',
+                onPressed: () {
+                  openAppSettings();
+                },
+              )
+            : null,
+      ),
+    );
+  }
+
   Future<void> _pickImage(
       ImageSource source, String uniqueId, String fieldId) async {
     try {
+      final hasPermission = source == ImageSource.camera
+          ? await _ensureMediaPermission(
+              Permission.camera,
+              permissionName: 'Camera',
+            )
+          : await _ensureMediaPermission(
+              Permission.photos,
+              permissionName: 'Gallery',
+            );
+      if (!hasPermission) return;
+
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: source,
@@ -1656,6 +1733,12 @@ class _InspectionScreenState extends State<InspectionScreen>
     final fieldId = _getItemFieldId(item);
 
     try {
+      final hasGalleryPermission = await _ensureMediaPermission(
+        Permission.photos,
+        permissionName: 'Gallery',
+      );
+      if (!hasGalleryPermission) return;
+
       final ImagePicker picker = ImagePicker();
       final List<XFile> images = await picker.pickMultiImage(
         maxWidth: 1024,
@@ -1739,6 +1822,12 @@ class _InspectionScreenState extends State<InspectionScreen>
   Future<void> _pickFile(dynamic item) async {
     final uniqueId = _getItemUniqueId(item);
     try {
+      final hasPhotosPermission = await _ensureMediaPermission(
+        Permission.photos,
+        permissionName: 'File upload',
+      );
+      if (!hasPhotosPermission) return;
+
       final result = await FilePicker.platform.pickFiles(allowMultiple: false);
       if (result != null && result.files.single.path != null && mounted) {
         final file = result.files.single;
@@ -1764,6 +1853,18 @@ class _InspectionScreenState extends State<InspectionScreen>
   Future<void> _pickAudio(dynamic item) async {
     final uniqueId = _getItemUniqueId(item);
     try {
+      final hasMicrophonePermission = await _ensureMediaPermission(
+        Permission.microphone,
+        permissionName: 'Microphone',
+      );
+      if (!hasMicrophonePermission) return;
+
+      final hasMediaLibraryPermission = await _ensureMediaPermission(
+        Permission.mediaLibrary,
+        permissionName: 'Media library',
+      );
+      if (!hasMediaLibraryPermission) return;
+
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['mp3', 'wav', 'm4a', 'aac'],
@@ -1819,6 +1920,25 @@ class _InspectionScreenState extends State<InspectionScreen>
   Future<void> _pickVideo(dynamic item, ImageSource source) async {
     final uniqueId = _getItemUniqueId(item);
     try {
+      final hasVideoPermission = source == ImageSource.camera
+          ? await _ensureMediaPermission(
+              Permission.camera,
+              permissionName: 'Camera',
+            )
+          : await _ensureMediaPermission(
+              Permission.photos,
+              permissionName: 'Gallery',
+            );
+      if (!hasVideoPermission) return;
+
+      if (source == ImageSource.camera) {
+        final hasMicrophonePermission = await _ensureMediaPermission(
+          Permission.microphone,
+          permissionName: 'Microphone',
+        );
+        if (!hasMicrophonePermission) return;
+      }
+
       final picker = ImagePicker();
       final video = await picker.pickVideo(source: source);
       if (video != null && mounted) {
@@ -1930,11 +2050,14 @@ class _InspectionScreenState extends State<InspectionScreen>
   void _nextItem() {
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
+    if (items.isEmpty) return;
     if (_currentItemIndex < items.length - 1) {
       setState(() {
         _currentItemIndex++;
       });
       _autoSave();
+    } else {
+      _nextSection();
     }
   }
 
@@ -1944,7 +2067,35 @@ class _InspectionScreenState extends State<InspectionScreen>
         _currentItemIndex--;
       });
       _autoSave();
+      return;
     }
+    if (_currentSection <= 0) return;
+
+    final prevItems = _sections[_currentSection - 1]['items'] as List<dynamic>;
+    final lastIdx = prevItems.isEmpty ? 0 : prevItems.length - 1;
+
+    setState(() {
+      _currentSection--;
+      _currentItemIndex = lastIdx;
+      _showButton = false;
+      _isScrollable = false;
+    });
+
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        _autoSave();
+        setState(() {
+          if (_scrollController.hasClients) {
+            _isScrollable = _scrollController.position.maxScrollExtent > 0;
+            _showButton = !_isScrollable;
+          }
+        });
+      }
+    });
   }
 
   List<String> _getRequiredFieldErrors() {
@@ -2293,35 +2444,6 @@ class _InspectionScreenState extends State<InspectionScreen>
     );
   }
 
-  void _previousSection() async {
-    if (_currentSection <= 0) return;
-
-    setState(() {
-      _currentSection--;
-      _currentItemIndex = 0;
-      _showButton = false;
-      _isScrollable = false;
-    });
-
-    await _saveDataLocally();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.jumpTo(0);
-      }
-    });
-
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (mounted) {
-        setState(() {
-          _isScrollable = _scrollController.hasClients &&
-              _scrollController.position.maxScrollExtent > 0;
-          _showButton = !_isScrollable;
-        });
-      }
-    });
-  }
-
   void _openDrawer() {
     _scaffoldKey.currentState?.openEndDrawer();
   }
@@ -2481,12 +2603,6 @@ class _InspectionScreenState extends State<InspectionScreen>
               onPressed: _openDrawer,
             ),
           ],
-          leading: _currentSection > 0
-              ? IconButton(
-                  icon: const Icon(CupertinoIcons.back),
-                  onPressed: _previousSection,
-                )
-              : null,
           automaticallyImplyLeading: false,
         ),
         endDrawer: _buildDrawer(),
@@ -2509,11 +2625,9 @@ class _InspectionScreenState extends State<InspectionScreen>
               ),
             ),
             InspectionBottomActions(
-              showPreviousSection: _currentSection > 0,
               isSubmitting: _isSubmitting,
               isLastSection: _currentSection == _sections.length - 1,
-              onPreviousSection: _previousSection,
-              onNextSection: _nextSection,
+              onSubmitInspection: _nextSection,
               itemNavigationBar: _buildItemNavigationBar(
                 currentSection['items'] as List<dynamic>,
               ),

@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class SectionCameraCard extends StatefulWidget {
   final double height;
@@ -30,6 +32,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
   CameraController? _controller;
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
+  bool _isInitializing = false;
   bool _hasError = false;
   String _errorMessage = '';
   bool _isCapturing = false;
@@ -44,17 +47,47 @@ class _SectionCameraCardState extends State<SectionCameraCard>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-
-    if (state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
       _controller?.dispose();
-    } else if (state == AppLifecycleState.resumed) {
+      _controller = null;
+      if (mounted) {
+        setState(() {
+          _isInitialized = false;
+        });
+      }
+    } else if (state == AppLifecycleState.resumed && mounted) {
       _initCamera();
     }
   }
 
   Future<void> _initCamera() async {
+    if (_isInitializing) return;
+    _isInitializing = true;
+
+    if (mounted) {
+      setState(() {
+        _hasError = false;
+        _errorMessage = '';
+        _isInitialized = false;
+      });
+    }
+
     try {
+      final hasPermission = await _ensureCameraPermission();
+      if (!hasPermission) {
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+            _isInitialized = false;
+            _errorMessage =
+                'Camera permission is required to capture inspection photos';
+          });
+        }
+        return;
+      }
+
       _cameras = await availableCameras();
       if (_cameras == null || _cameras!.isEmpty) {
         setState(() {
@@ -70,20 +103,41 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       _currentCameraIndex = backCameraIndex >= 0 ? backCameraIndex : 0;
       await _startCamera(_cameras![_currentCameraIndex]);
     } on CameraException catch (e) {
-      setState(() {
-        _hasError = true;
-        _errorMessage = e.description ?? 'Camera error';
-      });
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = e.description ?? 'Camera error';
+        });
+      }
     } catch (e) {
-      setState(() {
-        _hasError = true;
-        _errorMessage = 'Failed to initialize camera';
-      });
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _errorMessage = 'Failed to initialize camera';
+        });
+      }
+    } finally {
+      _isInitializing = false;
     }
+  }
+
+  Future<bool> _ensureCameraPermission() async {
+    if (!(Platform.isIOS || Platform.isAndroid)) return true;
+
+    var status = await Permission.camera.status;
+    if (status.isGranted) return true;
+
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      return false;
+    }
+
+    status = await Permission.camera.request();
+    return status.isGranted;
   }
 
   Future<void> _startCamera(CameraDescription camera) async {
     _controller?.dispose();
+    _controller = null;
 
     final controller = CameraController(
       camera,
@@ -105,8 +159,17 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     } on CameraException catch (e) {
       if (mounted) {
         setState(() {
+          _isInitialized = false;
           _hasError = true;
           _errorMessage = e.description ?? 'Camera initialization failed';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isInitialized = false;
+          _hasError = true;
+          _errorMessage = 'Unable to start live camera preview';
         });
       }
     }
@@ -180,9 +243,16 @@ class _SectionCameraCardState extends State<SectionCameraCard>
               ),
               const SizedBox(height: 12),
               TextButton.icon(
-                onPressed: _initCamera,
+                onPressed: () async {
+                  final status = await Permission.camera.status;
+                  if (status.isPermanentlyDenied || status.isRestricted) {
+                    await openAppSettings();
+                    return;
+                  }
+                  _initCamera();
+                },
                 icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Retry'),
+                label: const Text('Grant permission'),
                 style: TextButton.styleFrom(foregroundColor: Colors.white70),
               ),
             ],
@@ -277,8 +347,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
               left: 0,
               right: 0,
               child: Container(
-                padding:
-                    const EdgeInsets.fromLTRB(10, 12, 10, 10),
+                padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.bottomCenter,
@@ -396,9 +465,7 @@ class _CameraActionButton extends StatelessWidget {
               ? Colors.white.withAlpha(230)
               : Colors.black.withAlpha(120),
           shape: BoxShape.circle,
-          border: isPrimary
-              ? Border.all(color: Colors.white, width: 2)
-              : null,
+          border: isPrimary ? Border.all(color: Colors.white, width: 2) : null,
         ),
         child: Icon(
           icon,

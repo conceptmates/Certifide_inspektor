@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:open_file/open_file.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../models/drop_down.dart';
 import 'inspection_field_info_sheet.dart';
@@ -115,6 +116,12 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
     if (!widget.allowImage || widget.onImageChanged == null) return;
 
     try {
+      final hasPermission = await _ensureMediaPermission(
+        source == ImageSource.camera ? Permission.camera : Permission.photos,
+        source == ImageSource.camera ? 'Camera' : 'Gallery',
+      );
+      if (!hasPermission) return;
+
       // Set flag to prevent multiple calls
       _isImagePickerActive = true;
 
@@ -157,6 +164,12 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
     if (!widget.allowFileAttachment || widget.onImageChanged == null) return;
 
     try {
+      final hasPermission = await _ensureMediaPermission(
+        Permission.photos,
+        'File upload',
+      );
+      if (!hasPermission) return;
+
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: [
@@ -190,6 +203,46 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
     } catch (e) {
       print('Error picking file: $e');
     }
+  }
+
+  Future<bool> _ensureMediaPermission(
+    Permission permission,
+    String permissionName,
+  ) async {
+    if (!Platform.isIOS) return true;
+
+    var status = await permission.status;
+    if (status.isGranted || status.isLimited) return true;
+
+    if (status.isPermanentlyDenied || status.isRestricted) {
+      _showPermissionSnackBar(permissionName, openSettings: true);
+      return false;
+    }
+
+    status = await permission.request();
+    if (status.isGranted || status.isLimited) return true;
+
+    _showPermissionSnackBar(
+      permissionName,
+      openSettings: status.isPermanentlyDenied || status.isRestricted,
+    );
+    return false;
+  }
+
+  void _showPermissionSnackBar(String permissionName,
+      {bool openSettings = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$permissionName permission is required to continue.'),
+        action: openSettings
+            ? SnackBarAction(
+                label: 'Settings',
+                onPressed: () => openAppSettings(),
+              )
+            : null,
+      ),
+    );
   }
 
   void _showImagePickerOptions(BuildContext context) {
