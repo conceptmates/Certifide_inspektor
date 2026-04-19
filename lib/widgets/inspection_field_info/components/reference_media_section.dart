@@ -447,11 +447,11 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
       await _videoController!.initialize();
       _chewieController = ChewieController(
         videoPlayerController: _videoController!,
-        autoPlay: false,
+        autoPlay: true,
         looping: false,
         allowFullScreen: true,
         allowMuting: true,
-        showControlsOnInitialize: false,
+        showControlsOnInitialize: true,
       );
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {

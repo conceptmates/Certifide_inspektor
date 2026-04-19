@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
@@ -42,7 +43,21 @@ class LocalStorageService {
       final String fileName = '${const Uuid().v4()}.jpg';
       final String destinationPath = '$imagesDir/$fileName';
 
-      await imageFile.copy(destinationPath);
+      // Compress and auto-rotate based on EXIF orientation so the image is
+      // saved with the correct pixel orientation regardless of the capture angle.
+      final result = await FlutterImageCompress.compressAndGetFile(
+        filePath,
+        destinationPath,
+        quality: 92,
+        autoCorrectionAngle: true,
+        keepExif: false,
+      );
+
+      if (result == null) {
+        // Fallback to plain copy if compression fails
+        await imageFile.copy(destinationPath);
+      }
+
       return destinationPath;
     } catch (e) {
       print('Error saving image: $e');

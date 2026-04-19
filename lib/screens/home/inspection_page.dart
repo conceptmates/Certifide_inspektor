@@ -24,6 +24,7 @@ import '../../services/reports_cache_service.dart';
 import '../../utils/connectivity_checker.dart';
 import '../../widgets/inspection_field_info_sheet.dart';
 import '../../widgets/section_camera_card.dart';
+import '../../widgets/section_video_camera_card.dart';
 import '../main_screen.dart';
 import 'inspection_page/components/inspection_app_bar_title.dart';
 import 'inspection_page/components/inspection_bottom_actions.dart';
@@ -1292,18 +1293,23 @@ class _InspectionScreenState extends State<InspectionScreen>
                   const SizedBox(height: 6),
                   GestureDetector(
                     onTap: () => _showImagePreview(itemImages[uniqueId]!),
-                    child: Container(
-                      width: double.infinity,
-                      height: 200,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(12),
-                        border:
-                            Border.all(color: Colors.grey.shade300, width: 1),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: _buildImageWidget(itemImages[uniqueId]!),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minHeight: 120,
+                          maxHeight: 400,
+                        ),
+                        child: Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: Colors.grey.shade300, width: 1),
+                          ),
+                          child: _buildImageWidget(itemImages[uniqueId]!),
+                        ),
                       ),
                     ),
                   ),
@@ -1352,7 +1358,8 @@ class _InspectionScreenState extends State<InspectionScreen>
                                 child: SizedBox(
                                   width: 150,
                                   height: 150,
-                                  child: _buildImageWidget(imagePath),
+                                  child: _buildImageWidget(imagePath,
+                                      fit: BoxFit.cover),
                                 ),
                               ),
                               Positioned(
@@ -1388,6 +1395,25 @@ class _InspectionScreenState extends State<InspectionScreen>
                     ),
                   ),
                   const SizedBox(height: 16),
+                ],
+              ),
+            if (_itemHasVideo(item) && itemVideos[uniqueId] == null)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SectionVideoCameraCard(
+                    height: 220,
+                    borderRadius: BorderRadius.circular(12),
+                    instructionText: 'Record a video of: $title',
+                    onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
+                    onCapture: (XFile file) {
+                      setState(() {
+                        itemVideos[uniqueId] = file.path;
+                      });
+                      _autoSave();
+                    },
+                  ),
+                  const SizedBox(height: 8),
                 ],
               ),
             if (itemVideos[uniqueId] != null)
@@ -1965,11 +1991,13 @@ class _InspectionScreenState extends State<InspectionScreen>
     }
   }
 
-  Widget _buildImageWidget(String imagePath) {
+  Widget _buildImageWidget(String imagePath,
+      {BoxFit fit = BoxFit.fitWidth}) {
     if (imagePath.startsWith('http')) {
       return Image.network(
         imagePath,
-        fit: BoxFit.contain,
+        fit: fit,
+        width: double.infinity,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Center(
@@ -1990,7 +2018,8 @@ class _InspectionScreenState extends State<InspectionScreen>
     } else {
       return Image.file(
         File(imagePath),
-        fit: BoxFit.contain,
+        fit: fit,
+        width: double.infinity,
       );
     }
   }
