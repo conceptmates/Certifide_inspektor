@@ -7,18 +7,28 @@ class InspectionAppBarTitle extends StatelessWidget {
     required this.itemCount,
     required this.currentItemIndex,
     required this.sectionIcon,
+    this.currentSection,
+    this.totalSections,
   });
 
   final String sectionTitle;
   final int itemCount;
   final int currentItemIndex;
   final IconData sectionIcon;
+  final int? currentSection;
+  final int? totalSections;
 
   @override
   Widget build(BuildContext context) {
-    final subtitleColor = Theme.of(context).brightness == Brightness.dark
-        ? Colors.white70
-        : Colors.white.withAlpha(204);
+    final String subtitle;
+    if (itemCount > 0 && currentSection != null && totalSections != null) {
+      subtitle =
+          'Field ${currentItemIndex + 1} of $itemCount · Section ${currentSection! + 1}/$totalSections';
+    } else if (itemCount > 0) {
+      subtitle = 'Field ${currentItemIndex + 1} of $itemCount';
+    } else {
+      subtitle = '';
+    }
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -26,43 +36,29 @@ class InspectionAppBarTitle extends StatelessWidget {
       children: [
         Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withAlpha(51),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                sectionIcon,
-                size: 20,
-                color: Colors.white,
-              ),
+            Icon(
+              sectionIcon,
+              color: const Color(0xFF448AFF),
+              size: 16,
             ),
-            const SizedBox(width: 8),
-            Expanded(
+            const SizedBox(width: 6),
+            Flexible(
               child: Text(
                 sectionTitle,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                ),
-                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF111827),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
               ),
             ),
           ],
         ),
-        if (itemCount > 0)
-          Padding(
-            padding: const EdgeInsets.only(left: 40, top: 2),
-            child: Text(
-              'Item ${currentItemIndex + 1} of $itemCount',
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: subtitleColor,
-              ),
-            ),
+        if (subtitle.isNotEmpty)
+          Text(
+            subtitle,
+            style: TextStyle(color: Colors.grey[500], fontSize: 11),
           ),
       ],
     );

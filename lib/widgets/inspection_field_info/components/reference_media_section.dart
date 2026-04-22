@@ -10,14 +10,26 @@ class ReferenceMediaSectionView extends StatelessWidget {
   final List<Map<String, dynamic>> mediaList;
   final double imageHeight;
 
+  /// When set, only this many items are shown inline. Remaining are in the sheet.
+  final int? maxItems;
+
+  /// Optional widget placed at the far right of the "Reference Media" header row.
+  final Widget? trailing;
+
   const ReferenceMediaSectionView({
     super.key,
     required this.mediaList,
     this.imageHeight = 340,
+    this.maxItems,
+    this.trailing,
   });
 
   @override
   Widget build(BuildContext context) {
+    final visibleItems = maxItems != null
+        ? mediaList.take(maxItems!).toList()
+        : mediaList;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -33,15 +45,15 @@ class ReferenceMediaSectionView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(
+              const Icon(
                 Icons.perm_media_outlined,
                 color: Color(0xFFFF6B6B),
                 size: 20,
               ),
-              SizedBox(width: 8),
-              Text(
+              const SizedBox(width: 8),
+              const Text(
                 'Reference Media',
                 style: TextStyle(
                   fontSize: 14,
@@ -49,10 +61,12 @@ class ReferenceMediaSectionView extends StatelessWidget {
                   color: Color(0xFFFF6B6B),
                 ),
               ),
+              const Spacer(),
+              if (trailing != null) trailing!,
             ],
           ),
           const SizedBox(height: 16),
-          ...mediaList.map((media) {
+          ...visibleItems.map((media) {
             final mediaType =
                 (media['mediaType'] as String? ?? '').toLowerCase();
             final url = media['url'] as String? ?? '';

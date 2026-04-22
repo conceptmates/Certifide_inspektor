@@ -29,6 +29,10 @@ class SectionCameraCard extends StatefulWidget {
 
 class _SectionCameraCardState extends State<SectionCameraCard>
     with WidgetsBindingObserver {
+  // Shared across all instances so the next card always waits for the
+  // previous controller's async disposal to complete before initialising.
+  static Future<void>? _pendingDisposal;
+
   CameraController? _controller;
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
@@ -50,8 +54,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      _controller?.dispose();
-      _controller = null;
+      _disposeController();
       if (mounted) {
         setState(() {
           _isInitialized = false;
@@ -62,19 +65,46 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     }
   }
 
+  void _disposeController() {
+    final controller = _controller;
+    _controller = null;
+    if (controller != null) {
+      // Store the async disposal future so the next card can await it.
+      _pendingDisposal = controller.dispose();
+    }
+  }
+
   Future<void> _initCamera() async {
     if (_isInitializing) return;
     _isInitializing = true;
 
-    if (mounted) {
-      setState(() {
-        _hasError = false;
-        _errorMessage = '';
-        _isInitialized = false;
-      });
-    }
-
     try {
+      // Flutter calls initState() on the NEW widget BEFORE dispose() on the
+      // widget it replaced.  Yielding one event-loop tick lets Flutter finish
+      // reconciliation – including the old card's dispose() that sets
+      // _pendingDisposal – before we touch the camera hardware.
+      await Future.delayed(Duration.zero);
+      if (!mounted) return;
+
+      // Wait for the previous card's camera controller to fully release.
+      final disposal = _pendingDisposal;
+      if (disposal != null) {
+        _pendingDisposal = null;
+        await disposal.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
+      }
+      if (!mounted) return;
+
+      if (mounted) {
+        setState(() {
+          _hasError = false;
+          _errorMessage = '';
+          _isInitialized = false;
+        });
+      }
+
       final hasPermission = await _ensureCameraPermission();
       if (!hasPermission) {
         if (mounted) {
@@ -90,23 +120,50 @@ class _SectionCameraCardState extends State<SectionCameraCard>
 
       _cameras = await availableCameras();
       if (_cameras == null || _cameras!.isEmpty) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = 'No cameras available';
-        });
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+            _errorMessage = 'No cameras available';
+          });
+        }
         return;
       }
 
       final backCameraIndex = _cameras!.indexWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.back,
+        (c) => c.lensDirection == CameraLensDirection.back,
       );
       _currentCameraIndex = backCameraIndex >= 0 ? backCameraIndex : 0;
-      await _startCamera(_cameras![_currentCameraIndex]);
-    } on CameraException catch (e) {
+
+      // Try up to 3 times.  Hardware may need extra time to release even after
+      // the disposal future completes, especially on Android.
+      for (int attempt = 0; attempt < 3; attempt++) {
+        if (!mounted) return;
+
+        if (attempt > 0) {
+          // Wait for the previous (failed) controller to release, then delay.
+          final prev = _pendingDisposal;
+          _pendingDisposal = null;
+          if (prev != null) {
+            await prev.timeout(
+              const Duration(seconds: 1),
+              onTimeout: () {},
+            );
+          } else {
+            await Future.delayed(const Duration(milliseconds: 600));
+          }
+          if (!mounted) return;
+        }
+
+        final ok = await _tryStartCamera(_cameras![_currentCameraIndex]);
+        if (ok) return; // success – exit the loop
+        // failure – _pendingDisposal was set by _tryStartCamera; loop retries
+      }
+
+      // All attempts failed.
       if (mounted) {
         setState(() {
           _hasError = true;
-          _errorMessage = e.description ?? 'Camera error';
+          _errorMessage = 'Camera unavailable. Tap to retry.';
         });
       }
     } catch (e) {
@@ -118,6 +175,51 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       }
     } finally {
       _isInitializing = false;
+    }
+  }
+
+  /// Attempts to open [camera].  Disposes any existing [_controller] first,
+  /// waits for that disposal, then initialises a fresh controller.
+  /// Returns [true] on success, [false] on failure.
+  Future<bool> _tryStartCamera(CameraDescription camera) async {
+    // Release the current (possibly-failed) controller and wait.
+    final old = _controller;
+    _controller = null;
+    if (old != null) {
+      final f = old.dispose();
+      _pendingDisposal = f;
+      await f.timeout(const Duration(seconds: 1), onTimeout: () {});
+      _pendingDisposal = null;
+    }
+
+    if (!mounted) return false;
+
+    final controller = CameraController(
+      camera,
+      ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.jpeg,
+    );
+    _controller = controller;
+
+    try {
+      await controller.initialize();
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+          _hasError = false;
+        });
+      }
+      return true;
+    } on CameraException {
+      // Keep _controller set so the retry loop's disposal path picks it up.
+      _pendingDisposal = _controller?.dispose();
+      _controller = null;
+      return false;
+    } catch (_) {
+      _pendingDisposal = _controller?.dispose();
+      _controller = null;
+      return false;
     }
   }
 
@@ -133,46 +235,6 @@ class _SectionCameraCardState extends State<SectionCameraCard>
 
     status = await Permission.camera.request();
     return status.isGranted;
-  }
-
-  Future<void> _startCamera(CameraDescription camera) async {
-    _controller?.dispose();
-    _controller = null;
-
-    final controller = CameraController(
-      camera,
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.jpeg,
-    );
-
-    _controller = controller;
-
-    try {
-      await controller.initialize();
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-          _hasError = false;
-        });
-      }
-    } on CameraException catch (e) {
-      if (mounted) {
-        setState(() {
-          _isInitialized = false;
-          _hasError = true;
-          _errorMessage = e.description ?? 'Camera initialization failed';
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _isInitialized = false;
-          _hasError = true;
-          _errorMessage = 'Unable to start live camera preview';
-        });
-      }
-    }
   }
 
   Future<void> _captureImage() async {
@@ -217,7 +279,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _controller?.dispose();
+    _disposeController();
     super.dispose();
   }
 

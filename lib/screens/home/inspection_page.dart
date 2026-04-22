@@ -998,6 +998,53 @@ class _InspectionScreenState extends State<InspectionScreen>
     return false;
   }
 
+  String _getItemFieldType(dynamic item) {
+    if (item is Map) {
+      return (item['fieldType'] as String?)?.toLowerCase() ?? 'text';
+    }
+    return 'text';
+  }
+
+  static IconData _fieldTypeIcon(dynamic item) {
+    final type = item is Map
+        ? (item['fieldType'] as String?)?.toLowerCase() ?? 'text'
+        : 'text';
+    switch (type) {
+      case 'image':
+        return Icons.image_outlined;
+      case 'video':
+        return Icons.videocam_outlined;
+      case 'dropdown':
+        return Icons.arrow_drop_down_circle_outlined;
+      case 'file':
+        return Icons.attach_file_outlined;
+      case 'audio':
+        return Icons.audiotrack_outlined;
+      default:
+        return Icons.text_fields_outlined;
+    }
+  }
+
+  static Color _fieldTypeColor(dynamic item) {
+    final type = item is Map
+        ? (item['fieldType'] as String?)?.toLowerCase() ?? 'text'
+        : 'text';
+    switch (type) {
+      case 'image':
+        return const Color(0xFF4D9EFF);
+      case 'video':
+        return const Color(0xFFA855F7);
+      case 'dropdown':
+        return const Color(0xFFF97316);
+      case 'file':
+        return const Color(0xFF22C55E);
+      case 'audio':
+        return const Color(0xFFEC4899);
+      default:
+        return Colors.grey;
+    }
+  }
+
   Widget _buildInspectionSection(String title, List<dynamic> items) {
     if (_currentItemIndex >= items.length) {
       _currentItemIndex = 0;
@@ -1038,22 +1085,24 @@ class _InspectionScreenState extends State<InspectionScreen>
         children: [
           ElevatedButton.icon(
             onPressed: canGoPrevious ? _previousItem : null,
-            icon: const Icon(Icons.arrow_back),
+            icon: const Icon(Icons.arrow_back, size: 18),
             label: Text(previousLabel),
             style: ElevatedButton.styleFrom(
               padding: const EdgeInsets.symmetric(
-                horizontal: 24,
+                horizontal: 20,
                 vertical: 12,
               ),
             ),
           ),
           ElevatedButton.icon(
             onPressed: canGoNext ? _nextItem : null,
-            icon: const Icon(Icons.arrow_forward),
+            icon: const Icon(Icons.arrow_forward, size: 18),
             label: Text(nextLabel),
             style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF448AFF),
+              foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(
-                horizontal: 24,
+                horizontal: 20,
                 vertical: 12,
               ),
             ),
@@ -1073,19 +1122,19 @@ class _InspectionScreenState extends State<InspectionScreen>
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).shadowColor.withAlpha(25),
+            color: Colors.black.withValues(alpha: 0.07),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
         border: Border.all(
           color: isRequired
-              ? Colors.orange.withAlpha(128)
-              : Theme.of(context).dividerColor.withAlpha(51),
+              ? Colors.orange.withValues(alpha: 0.5)
+              : const Color(0xFFE4E7EB),
           width: isRequired ? 2 : 1,
         ),
       ),
@@ -1095,31 +1144,57 @@ class _InspectionScreenState extends State<InspectionScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: _fieldTypeColor(item).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    _fieldTypeIcon(item),
+                    color: _fieldTypeColor(item),
+                    size: 15,
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        child: Text(
-                          title,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color:
-                                Theme.of(context).textTheme.titleLarge?.color,
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
                           ),
+                          if (isRequired)
+                            const Text(
+                              ' *',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.red,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        _getItemFieldType(item),
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 11,
                         ),
                       ),
-                      if (isRequired)
-                        const Text(
-                          ' *',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red,
-                          ),
-                        ),
                     ],
                   ),
                 ),
@@ -1130,7 +1205,7 @@ class _InspectionScreenState extends State<InspectionScreen>
                         allowMultiImage)
                       IconButton(
                         icon: const Icon(Icons.camera_alt, size: 22),
-                        color: Colors.blue,
+                        color: const Color(0xFF4D9EFF),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
                           minWidth: 36,
@@ -1147,7 +1222,7 @@ class _InspectionScreenState extends State<InspectionScreen>
                     if (_itemHasVideo(item))
                       IconButton(
                         icon: const Icon(Icons.videocam, size: 22),
-                        color: Colors.deepPurple,
+                        color: const Color(0xFFA855F7),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
                           minWidth: 36,
@@ -1158,7 +1233,7 @@ class _InspectionScreenState extends State<InspectionScreen>
                     if (_itemHasFile(item))
                       IconButton(
                         icon: const Icon(Icons.attach_file, size: 22),
-                        color: Colors.teal,
+                        color: const Color(0xFF22C55E),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
                           minWidth: 36,
@@ -1171,7 +1246,7 @@ class _InspectionScreenState extends State<InspectionScreen>
                         'audio')
                       IconButton(
                         icon: const Icon(Icons.audio_file, size: 22),
-                        color: Colors.orange,
+                        color: const Color(0xFFF97316),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(
                           minWidth: 36,
@@ -1188,11 +1263,8 @@ class _InspectionScreenState extends State<InspectionScreen>
               ReferenceMediaSectionView(
                 mediaList: referenceMedia,
                 imageHeight: 110,
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: InspectionInfoButton(
+                maxItems: 1,
+                trailing: InspectionInfoButton(
                   fieldId: uniqueId,
                   referenceMedia: referenceMedia,
                 ),
@@ -1204,6 +1276,7 @@ class _InspectionScreenState extends State<InspectionScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SectionCameraCard(
+                    key: ValueKey('camera_$uniqueId'),
                     height: 220,
                     borderRadius: BorderRadius.circular(12),
                     instructionText: 'Take a clear photo of: $title',
@@ -1402,6 +1475,7 @@ class _InspectionScreenState extends State<InspectionScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SectionVideoCameraCard(
+                    key: ValueKey('video_$uniqueId'),
                     height: 220,
                     borderRadius: BorderRadius.circular(12),
                     instructionText: 'Record a video of: $title',
@@ -2590,7 +2664,10 @@ class _InspectionScreenState extends State<InspectionScreen>
       },
       child: Scaffold(
         key: _scaffoldKey,
+        backgroundColor: const Color(0xFFF7F8FA),
         appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
           toolbarHeight: 60,
           title: InspectionAppBarTitle(
             sectionTitle: _sections[_currentSection]['title'] as String,
@@ -2599,6 +2676,8 @@ class _InspectionScreenState extends State<InspectionScreen>
             currentItemIndex: _currentItemIndex,
             sectionIcon:
                 _getSectionIcon(_sections[_currentSection]['title'] as String),
+            currentSection: _currentSection,
+            totalSections: _sections.length,
           ),
           actions: [
             IconButton(
@@ -2625,10 +2704,10 @@ class _InspectionScreenState extends State<InspectionScreen>
                   },
                 );
               },
-              icon: const Icon(Icons.close),
+              icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
             ),
             IconButton(
-              icon: const Icon(Icons.menu),
+              icon: const Icon(Icons.menu, color: Color(0xFF6B7280)),
               onPressed: _openDrawer,
             ),
           ],
