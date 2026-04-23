@@ -156,6 +156,7 @@ class ReferenceMediaSectionView extends StatelessWidget {
                         ),
                       ),
                     ),
+                  _DescriptionBox(description: media['description'] as String?),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                     child: Row(
@@ -507,6 +508,82 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: Chewie(controller: _chewieController!),
+    );
+  }
+}
+
+class _DescriptionBox extends StatelessWidget {
+  final String? description;
+  const _DescriptionBox({this.description});
+
+  static final _urlRegex = RegExp(
+    r'https?://[^\s]+',
+    caseSensitive: false,
+  );
+
+  bool get _isUrl =>
+      description != null && _urlRegex.hasMatch(description!.trim());
+
+  String get _firstUrl {
+    final match = _urlRegex.firstMatch(description!.trim());
+    return match?.group(0) ?? description!.trim();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (description == null || description!.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final isUrl = _isUrl;
+
+    Future<void> launch() async {
+      final uri = Uri.parse(_firstUrl);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      padding: const EdgeInsets.only(left: 12),
+      decoration: BoxDecoration(
+        color: isUrl
+            ? Colors.blue.withAlpha(15)
+            : Theme.of(context).colorScheme.surfaceContainerHighest.withAlpha(80),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isUrl
+              ? Colors.blue.withAlpha(60)
+              : Theme.of(context).dividerColor.withAlpha(40),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              description!.trim(),
+              style: TextStyle(
+                fontSize: 13,
+                color: isUrl ? Colors.blue : Theme.of(context).textTheme.bodyMedium?.color,
+                decoration: isUrl ? TextDecoration.underline : null,
+                decorationColor: Colors.blue,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          if (isUrl)
+            IconButton(
+              onPressed: launch,
+              icon: const Icon(Icons.open_in_new, size: 18, color: Colors.blue),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.all(8),
+              tooltip: 'Open link',
+            ),
+        ],
+      ),
     );
   }
 }
