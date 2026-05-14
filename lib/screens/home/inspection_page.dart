@@ -2848,7 +2848,7 @@ class _InspectionScreenState extends State<InspectionScreen>
         ? (items[_currentItemIndex]['title'] as String? ?? sectionTitle)
         : sectionTitle;
     final subtitle =
-        'Item ${_currentItemIndex + 1} of $sectionTitle';
+        'Field ${_currentItemIndex + 1} out ${items.length} ° Section ${_currentSection + 1}/${_sections.length}';
 
     return AppBar(
       backgroundColor: Colors.black,
