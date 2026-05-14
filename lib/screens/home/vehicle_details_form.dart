@@ -327,7 +327,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DropdownButtonFormField<VehicleBrand>(
-            value: _selectedMake,
+            initialValue: _selectedMake,
             style: const TextStyle(
               fontSize: 16,
               color: Colors.white,
@@ -399,7 +399,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       child: DropdownButtonFormField<VehicleModel>(
-        value: _selectedModel,
+        initialValue: _selectedModel,
         style: const TextStyle(
           fontSize: 16,
           color: Colors.white,

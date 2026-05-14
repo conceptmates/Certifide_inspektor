@@ -67,25 +67,25 @@ class InspectionStorageModel extends HiveObject {
     Map<String, dynamic>? vehicleDetails,
     Map<String, dynamic>? inspectionTemplate,
     this.inspectionId,
-  })  : this.itemValues = Map<dynamic, dynamic>.from(itemValues ?? {}),
-        this.itemImages = Map<dynamic, dynamic>.from(itemImages ?? {}),
-        this.itemRemarks = Map<dynamic, dynamic>.from(itemRemarks ?? {}),
-        this.currentSection = currentSection ?? 0,
-        this.textFieldValues =
+  })  : itemValues = Map<dynamic, dynamic>.from(itemValues ?? {}),
+        itemImages = Map<dynamic, dynamic>.from(itemImages ?? {}),
+        itemRemarks = Map<dynamic, dynamic>.from(itemRemarks ?? {}),
+        currentSection = currentSection ?? 0,
+        textFieldValues =
             Map<dynamic, dynamic>.from(textFieldValues ?? {}),
-        this.timestamp = timestamp ?? DateTime.now(),
-        this.isCompleted = isCompleted ?? false,
-        this.multiImages = multiImages != null
+        timestamp = timestamp ?? DateTime.now(),
+        isCompleted = isCompleted ?? false,
+        multiImages = multiImages != null
             ? Map<dynamic, dynamic>.from(multiImages)
             : null,
-        this.status = status ?? 'draft',
-        this.itemVideos = Map<dynamic, dynamic>.from(itemVideos ?? {}),
-        this.itemAudios = Map<dynamic, dynamic>.from(itemAudios ?? {}),
-        this.itemFiles = Map<dynamic, dynamic>.from(itemFiles ?? {}),
-        this.vehicleDetails = vehicleDetails != null
+        status = status ?? 'draft',
+        itemVideos = Map<dynamic, dynamic>.from(itemVideos ?? {}),
+        itemAudios = Map<dynamic, dynamic>.from(itemAudios ?? {}),
+        itemFiles = Map<dynamic, dynamic>.from(itemFiles ?? {}),
+        vehicleDetails = vehicleDetails != null
             ? Map<dynamic, dynamic>.from(vehicleDetails)
             : null,
-        this.inspectionTemplate = inspectionTemplate != null
+        inspectionTemplate = inspectionTemplate != null
             ? Map<dynamic, dynamic>.from(inspectionTemplate)
             : null;
 

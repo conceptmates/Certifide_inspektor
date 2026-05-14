@@ -11,6 +11,16 @@ class SectionVideoCameraCard extends StatefulWidget {
   final VoidCallback? onPickFromGallery;
   final String? instructionText;
 
+  /// When false the card is a pure viewfinder with only a minimal recording
+  /// indicator. All controls live in the parent UI.
+  final bool showControls;
+
+  /// Called once the camera is ready, passing a toggle function.
+  final void Function(VoidCallback toggleRecording)? onRecordingToggleReady;
+
+  /// Fired whenever the recording state changes (true = recording started).
+  final void Function(bool isRecording)? onRecordingChanged;
+
   const SectionVideoCameraCard({
     super.key,
     this.height = 220,
@@ -18,6 +28,9 @@ class SectionVideoCameraCard extends StatefulWidget {
     this.onCapture,
     this.onPickFromGallery,
     this.instructionText,
+    this.showControls = true,
+    this.onRecordingToggleReady,
+    this.onRecordingChanged,
   });
 
   @override
@@ -195,6 +208,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
           _isInitialized = true;
           _hasError = false;
         });
+        widget.onRecordingToggleReady?.call(_toggleRecording);
       }
       return true;
     } on CameraException {
@@ -248,7 +262,10 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() => _elapsed += const Duration(seconds: 1));
       });
-      if (mounted) setState(() => _isRecording = true);
+      if (mounted) {
+        setState(() => _isRecording = true);
+        widget.onRecordingChanged?.call(true);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -263,7 +280,10 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
       _timer?.cancel();
       _timer = null;
       final file = await _controller!.stopVideoRecording();
-      if (mounted) setState(() => _isRecording = false);
+      if (mounted) {
+        setState(() => _isRecording = false);
+        widget.onRecordingChanged?.call(false);
+      }
       widget.onCapture?.call(file);
     } catch (e) {
       if (mounted) {
@@ -373,12 +393,14 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: widget.borderRadius,
-        border: Border.all(
-          color: _isRecording
-              ? Colors.red.withAlpha(200)
-              : Colors.deepPurple.withAlpha(100),
-          width: _isRecording ? 2 : 1.5,
-        ),
+        border: widget.showControls
+            ? Border.all(
+                color: _isRecording
+                    ? Colors.red.withAlpha(200)
+                    : Colors.deepPurple.withAlpha(100),
+                width: _isRecording ? 2 : 1.5,
+              )
+            : null,
       ),
       child: ClipRRect(
         borderRadius: widget.borderRadius,
@@ -386,126 +408,128 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
           fit: StackFit.expand,
           children: [
             Center(child: CameraPreview(_controller!)),
-            // Top bar
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withAlpha(200),
-                      Colors.transparent,
-                    ],
+            if (widget.showControls) ...[
+              // Top bar (full controls mode)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withAlpha(200),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
-                ),
-                child: Row(
-                  children: [
-                    if (_isRecording) ...[
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _formatDuration(_elapsed),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ] else ...[
-                      Icon(
-                        Icons.videocam_outlined,
-                        color: Colors.white.withAlpha(230),
-                        size: 16,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          widget.instructionText ??
-                              'Tap the button below to start recording',
-                          style: TextStyle(
-                            color: Colors.white.withAlpha(242),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            height: 1.25,
+                  child: Row(
+                    children: [
+                      if (_isRecording) ...[
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            // Bottom bar
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Colors.black.withAlpha(200),
-                      Colors.transparent,
+                        const SizedBox(width: 6),
+                        Text(
+                          _formatDuration(_elapsed),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ] else ...[
+                        Icon(
+                          Icons.videocam_outlined,
+                          color: Colors.white.withAlpha(230),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            widget.instructionText ??
+                                'Tap the button below to start recording',
+                            style: TextStyle(
+                              color: Colors.white.withAlpha(242),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              height: 1.25,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    // Gallery picker (left)
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6, right: 6),
-                          child: widget.onPickFromGallery != null
-                              ? Tooltip(
-                                  message: 'Pick video from gallery',
-                                  child: _VideoActionButton(
-                                    icon: Icons.video_library_outlined,
-                                    onTap: widget.onPickFromGallery,
-                                    size: 44,
-                                  ),
-                                )
-                              : const SizedBox(width: 44, height: 44),
+              ),
+              // Bottom bar (full controls mode)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withAlpha(200),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 6, right: 6),
+                            child: widget.onPickFromGallery != null
+                                ? Tooltip(
+                                    message: 'Pick video from gallery',
+                                    child: _VideoActionButton(
+                                      icon: Icons.video_library_outlined,
+                                      onTap: widget.onPickFromGallery,
+                                      size: 44,
+                                    ),
+                                  )
+                                : const SizedBox(width: 44, height: 44),
+                          ),
                         ),
                       ),
-                    ),
-                    // Record / Stop button (center)
-                    Tooltip(
-                      message: _isRecording ? 'Stop recording' : 'Start recording',
-                      child: _VideoActionButton(
-                        icon: _isRecording ? Icons.stop : Icons.fiber_manual_record,
-                        onTap: _toggleRecording,
-                        size: 56,
-                        isPrimary: true,
-                        isRecording: _isRecording,
+                      Tooltip(
+                        message:
+                            _isRecording ? 'Stop recording' : 'Start recording',
+                        child: _VideoActionButton(
+                          icon: _isRecording
+                              ? Icons.stop
+                              : Icons.fiber_manual_record,
+                          onTap: _toggleRecording,
+                          size: 56,
+                          isPrimary: true,
+                          isRecording: _isRecording,
+                        ),
                       ),
-                    ),
-                    // Spacer (right — symmetry)
-                    const Expanded(child: SizedBox()),
-                  ],
+                      const Expanded(child: SizedBox()),
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),

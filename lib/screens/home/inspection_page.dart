@@ -12,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
@@ -26,10 +27,11 @@ import '../../widgets/inspection_field_info_sheet.dart';
 import '../../widgets/section_camera_card.dart';
 import '../../widgets/section_video_camera_card.dart';
 import '../main_screen.dart';
-import 'inspection_page/components/inspection_app_bar_title.dart';
-import 'inspection_page/components/inspection_bottom_actions.dart';
-import 'inspection_page/components/inspection_progress_header.dart';
+import 'inspection_page/components/inspection_flag_issues_sheet.dart';
+import 'inspection_page/components/inspection_image_review.dart';
+import 'inspection_page/components/inspection_reference_fullscreen.dart';
 import 'inspection_page/components/inspection_sections_drawer.dart';
+import 'inspection_page/components/inspection_video_player.dart';
 import 'inspection_success_page.dart';
 import '../../utils/ads manager/rewarded_interstitial_ad.dart';
 
@@ -73,10 +75,24 @@ class _InspectionScreenState extends State<InspectionScreen>
   bool _showButton = true;
   bool _isScrollable = false;
   bool _isSubmitting = false;
-  Set<String> _uploadingImages = {};
+  final Set<String> _uploadingImages = {};
   String? _verifyingRegNoUniqueId;
   final Map<String, String> _regNoVerifyMessage = {};
   final Map<String, bool> _regNoVerifyIsError = {};
+  Map<String, List<String>> itemFlaggedIssues = {};
+  XFile? _pendingCapturedXFile;
+  String? _pendingCapturedUniqueId;
+  bool _isReviewingCapture = false;
+  String _currentCaptureMode = 'PHOTO';
+  // Bound to SectionCameraCard when showControls:false; resets on item change.
+  VoidCallback? _triggerPhotoCapture;
+  VoidCallback? _triggerEnlarge;
+  VoidCallback? _triggerVideoToggle;
+  bool _isVideoRecording = false;
+  AudioRecorder? _audioRecorder;
+  bool _isRecordingAudio = false;
+  Timer? _audioTimer;
+  Duration _audioElapsed = Duration.zero;
 
   // Dynamic inspection template from API
   InspectionInitializationResponse? _inspectionTemplate;
@@ -88,6 +104,22 @@ class _InspectionScreenState extends State<InspectionScreen>
 
   int? get _effectiveInspectionId =>
       _sessionInspectionId ?? widget.inspectionId;
+
+  int get _totalFields =>
+      _sections.fold(0, (sum, s) => sum + (s['items'] as List).length);
+
+  int get _processedFields {
+    int count = 0;
+    for (int i = 0; i < _currentSection; i++) {
+      count += (_sections[i]['items'] as List).length;
+    }
+    return count + _currentItemIndex + 1;
+  }
+
+  int get _progressPercent {
+    if (_totalFields == 0) return 0;
+    return ((_processedFields / _totalFields) * 100).round();
+  }
 
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
@@ -808,6 +840,13 @@ class _InspectionScreenState extends State<InspectionScreen>
     return false;
   }
 
+  String _defaultCaptureModeForItem(dynamic item) {
+    if (_itemHasImage(item)) return 'PHOTO';
+    if (_itemHasVideo(item)) return 'VIDEO';
+    if (_itemHasFile(item)) return 'FILE';
+    return 'PHOTO';
+  }
+
   List<Map<String, dynamic>> _getItemReferenceMedia(dynamic item) {
     if (item is Map) {
       final media = item['referenceMedia'];
@@ -1058,60 +1097,6 @@ class _InspectionScreenState extends State<InspectionScreen>
     return _buildSingleItemContainer(item, title);
   }
 
-  Widget _buildItemNavigationBar(List<dynamic> items) {
-    final canGoPrevious =
-        !_isSubmitting && (_currentItemIndex > 0 || _currentSection > 0);
-    final canGoNext = !_isSubmitting && items.isNotEmpty;
-
-    final previousLabel = _currentItemIndex == 0 && _currentSection > 0
-        ? 'Previous section'
-        : 'Previous';
-
-    final String nextLabel;
-    if (items.isEmpty) {
-      nextLabel = 'Next';
-    } else if (_currentItemIndex < items.length - 1) {
-      nextLabel = 'Next';
-    } else if (_currentSection < _sections.length - 1) {
-      nextLabel = 'Next section';
-    } else {
-      nextLabel = 'Finish';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          ElevatedButton.icon(
-            onPressed: canGoPrevious ? _previousItem : null,
-            icon: const Icon(Icons.arrow_back, size: 18),
-            label: Text(previousLabel),
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 12,
-              ),
-            ),
-          ),
-          ElevatedButton.icon(
-            onPressed: canGoNext ? _nextItem : null,
-            icon: const Icon(Icons.arrow_forward, size: 18),
-            label: Text(nextLabel),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF448AFF),
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 12,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSingleItemContainer(dynamic item, String sectionTitle) {
     final uniqueId = _getItemUniqueId(item);
     final title = _getItemTitle(item);
@@ -1271,7 +1256,7 @@ class _InspectionScreenState extends State<InspectionScreen>
               ),
               const SizedBox(height: 10),
             ],
-            if (_isImageFieldType(item) && itemImages[uniqueId] == null)
+            if (_itemHasImage(item) && itemImages[uniqueId] == null)
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -1479,7 +1464,8 @@ class _InspectionScreenState extends State<InspectionScreen>
                     height: 220,
                     borderRadius: BorderRadius.circular(12),
                     instructionText: 'Record a video of: $title',
-                    onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
+                    onPickFromGallery: () =>
+                        _pickVideo(item, ImageSource.gallery),
                     onCapture: (XFile file) {
                       setState(() {
                         itemVideos[uniqueId] = file.path;
@@ -1617,7 +1603,7 @@ class _InspectionScreenState extends State<InspectionScreen>
           ),
         if (!useTextField && _itemHasOptions(item))
           DropdownButtonFormField<String>(
-            value: itemValues[uniqueId] == 'N/A' ? null : itemValues[uniqueId],
+            initialValue: itemValues[uniqueId] == 'N/A' ? null : itemValues[uniqueId],
             decoration: InputDecoration(
               filled: true,
               fillColor: Theme.of(context).brightness == Brightness.dark
@@ -1950,21 +1936,67 @@ class _InspectionScreenState extends State<InspectionScreen>
     }
   }
 
+  String _formatAudioDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  Future<void> _startAudioRecording(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    final hasMicPerm = await _ensureMediaPermission(
+      Permission.microphone,
+      permissionName: 'Microphone',
+    );
+    if (!hasMicPerm) return;
+    try {
+      final dir = await getTemporaryDirectory();
+      final path =
+          '${dir.path}/audio_${uniqueId}_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      _audioRecorder ??= AudioRecorder();
+      await _audioRecorder!.start(const RecordConfig(), path: path);
+      _audioElapsed = Duration.zero;
+      _audioTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) {
+          setState(() => _audioElapsed += const Duration(seconds: 1));
+        }
+      });
+      if (mounted) setState(() => _isRecordingAudio = true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start recording: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopAudioRecording(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    _audioTimer?.cancel();
+    _audioTimer = null;
+    try {
+      final path = await _audioRecorder?.stop();
+      if (mounted) {
+        setState(() {
+          _isRecordingAudio = false;
+          if (path != null) itemAudios[uniqueId] = path;
+        });
+        if (path != null) _autoSave();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isRecordingAudio = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to stop recording: $e')),
+        );
+      }
+    }
+  }
+
   Future<void> _pickAudio(dynamic item) async {
     final uniqueId = _getItemUniqueId(item);
     try {
-      final hasMicrophonePermission = await _ensureMediaPermission(
-        Permission.microphone,
-        permissionName: 'Microphone',
-      );
-      if (!hasMicrophonePermission) return;
-
-      final hasMediaLibraryPermission = await _ensureMediaPermission(
-        Permission.mediaLibrary,
-        permissionName: 'Media library',
-      );
-      if (!hasMediaLibraryPermission) return;
-
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['mp3', 'wav', 'm4a', 'aac'],
@@ -1982,6 +2014,47 @@ class _InspectionScreenState extends State<InspectionScreen>
           SnackBar(content: Text('Failed to pick audio: $e')),
         );
       }
+    }
+  }
+
+  Future<void> _discardAllMedia(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Discard all media?',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: const Text(
+          'This will remove the photo, video, audio, and any attached file for this item.',
+          style: TextStyle(color: Colors.white60, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Discard',
+                style: TextStyle(
+                    color: Color(0xFFFF6B6B), fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      setState(() {
+        itemImages[uniqueId] = null;
+        itemVideos[uniqueId] = null;
+        itemAudios[uniqueId] = null;
+        itemFiles[uniqueId] = null;
+        itemMultiImages[uniqueId] = [];
+      });
+      _autoSave();
     }
   }
 
@@ -2065,8 +2138,7 @@ class _InspectionScreenState extends State<InspectionScreen>
     }
   }
 
-  Widget _buildImageWidget(String imagePath,
-      {BoxFit fit = BoxFit.fitWidth}) {
+  Widget _buildImageWidget(String imagePath, {BoxFit fit = BoxFit.fitWidth}) {
     if (imagePath.startsWith('http')) {
       return Image.network(
         imagePath,
@@ -2150,13 +2222,75 @@ class _InspectionScreenState extends State<InspectionScreen>
     );
   }
 
+  Future<void> _acceptCapturedImage() async {
+    final file = _pendingCapturedXFile;
+    final uniqueId = _pendingCapturedUniqueId;
+    if (file == null || uniqueId == null) return;
+
+    setState(() {
+      _isReviewingCapture = false;
+      _pendingCapturedXFile = null;
+      _pendingCapturedUniqueId = null;
+    });
+
+    final item = (_sections[_currentSection]['items']
+        as List<dynamic>)[_currentItemIndex];
+    final fieldId = _getItemFieldId(item);
+    final sectionTitle = _sections[_currentSection]['title'] as String;
+    final savedPath = await LocalStorageService.saveImage(file.path);
+
+    setState(() {
+      itemImages[uniqueId] = savedPath;
+      _uploadingImages.add(uniqueId);
+    });
+    await _saveDataLocally();
+
+    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    if (hasInternet) {
+      final result = await ApiService.uploadImage(
+        savedPath,
+        inspectionId: _effectiveInspectionId,
+        section: sectionTitle,
+        itemId: fieldId,
+      );
+      if (mounted) {
+        setState(() => _uploadingImages.remove(uniqueId));
+        if (result['success']) {
+          setState(() => itemImages[uniqueId] = result['url'] as String);
+          await _saveDataLocally();
+        }
+      }
+    } else {
+      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+    }
+  }
+
   void _nextItem() {
+    if (_isReviewingCapture) {
+      setState(() {
+        _isReviewingCapture = false;
+        _pendingCapturedXFile = null;
+        _pendingCapturedUniqueId = null;
+      });
+      return;
+    }
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
     if (items.isEmpty) return;
     if (_currentItemIndex < items.length - 1) {
+      _audioTimer?.cancel();
+      _audioTimer = null;
+      _audioRecorder?.stop();
+      final nextItem = items[_currentItemIndex + 1];
       setState(() {
         _currentItemIndex++;
+        _currentCaptureMode = _defaultCaptureModeForItem(nextItem);
+        _triggerPhotoCapture = null;
+        _triggerEnlarge = null;
+        _triggerVideoToggle = null;
+        _isVideoRecording = false;
+        _isRecordingAudio = false;
+        _audioElapsed = Duration.zero;
       });
       _autoSave();
     } else {
@@ -2165,9 +2299,29 @@ class _InspectionScreenState extends State<InspectionScreen>
   }
 
   void _previousItem() {
+    if (_isReviewingCapture) {
+      setState(() {
+        _isReviewingCapture = false;
+        _pendingCapturedXFile = null;
+        _pendingCapturedUniqueId = null;
+      });
+      return;
+    }
     if (_currentItemIndex > 0) {
+      _audioTimer?.cancel();
+      _audioTimer = null;
+      _audioRecorder?.stop();
+      final currentItems = _sections[_currentSection]['items'] as List<dynamic>;
+      final prevItem = currentItems[_currentItemIndex - 1];
       setState(() {
         _currentItemIndex--;
+        _currentCaptureMode = _defaultCaptureModeForItem(prevItem);
+        _triggerPhotoCapture = null;
+        _triggerEnlarge = null;
+        _triggerVideoToggle = null;
+        _isVideoRecording = false;
+        _isRecordingAudio = false;
+        _audioElapsed = Duration.zero;
       });
       _autoSave();
       return;
@@ -2176,12 +2330,14 @@ class _InspectionScreenState extends State<InspectionScreen>
 
     final prevItems = _sections[_currentSection - 1]['items'] as List<dynamic>;
     final lastIdx = prevItems.isEmpty ? 0 : prevItems.length - 1;
+    final lastItem = prevItems.isNotEmpty ? prevItems[lastIdx] : null;
 
     setState(() {
       _currentSection--;
       _currentItemIndex = lastIdx;
       _showButton = false;
       _isScrollable = false;
+      if (lastItem != null) _currentCaptureMode = _defaultCaptureModeForItem(lastItem);
     });
 
     if (_scrollController.hasClients) {
@@ -2258,11 +2414,27 @@ class _InspectionScreenState extends State<InspectionScreen>
     }
 
     if (_currentSection < _sections.length - 1) {
+      _audioTimer?.cancel();
+      _audioTimer = null;
+      _audioRecorder?.stop();
+      final nextSectionItems =
+          _sections[_currentSection + 1]['items'] as List<dynamic>;
+      final firstNextItem =
+          nextSectionItems.isNotEmpty ? nextSectionItems.first : null;
       setState(() {
         _currentSection++;
         _currentItemIndex = 0;
         _showButton = false;
         _isScrollable = false;
+        _currentCaptureMode = firstNextItem != null
+            ? _defaultCaptureModeForItem(firstNextItem)
+            : 'PHOTO';
+        _triggerPhotoCapture = null;
+        _triggerEnlarge = null;
+        _triggerVideoToggle = null;
+        _isVideoRecording = false;
+        _isRecordingAudio = false;
+        _audioElapsed = Duration.zero;
       });
 
       if (_scrollController.hasClients) {
@@ -2273,7 +2445,12 @@ class _InspectionScreenState extends State<InspectionScreen>
         if (mounted) {
           _autoSave();
           setState(() {
-            _isScrollable = _scrollController.position.maxScrollExtent > 0;
+            if (_scrollController.hasClients) {
+              _isScrollable =
+                  _scrollController.position.maxScrollExtent > 0;
+            } else {
+              _isScrollable = false;
+            }
             _showButton = !_isScrollable;
           });
         }
@@ -2405,6 +2582,59 @@ class _InspectionScreenState extends State<InspectionScreen>
     };
   }
 
+  /// Uploads any images that are still local paths (capture-time upload failed).
+  /// Runs before submission so the backend always receives URLs, not local paths.
+  Future<void> _uploadRemainingImages() async {
+    for (var section in _sections) {
+      final sectionTitle = section['title'] as String;
+      for (var item in section['items'] as List<dynamic>) {
+        final uniqueId = _getItemUniqueId(item);
+        final fieldId = _getItemFieldId(item);
+
+        final imagePath = itemImages[uniqueId];
+        if (imagePath != null && !imagePath.startsWith('http')) {
+          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          final result = await ApiService.uploadImage(
+            imagePath,
+            inspectionId: _effectiveInspectionId,
+            section: sectionTitle,
+            itemId: fieldId,
+          );
+          if (mounted) {
+            setState(() {
+              _uploadingImages.remove(uniqueId);
+              if (result['success'] == true) {
+                itemImages[uniqueId] = result['url'] as String;
+              }
+            });
+          }
+        }
+
+        final multiImages = itemMultiImages[uniqueId];
+        if (multiImages != null && multiImages.isNotEmpty) {
+          final List<String> updated = [];
+          for (final path in multiImages) {
+            if (!path.startsWith('http')) {
+              final result = await ApiService.uploadImage(
+                path,
+                inspectionId: _effectiveInspectionId,
+                section: sectionTitle,
+                itemId: fieldId,
+              );
+              updated.add(
+                result['success'] == true ? result['url'] as String : path,
+              );
+            } else {
+              updated.add(path);
+            }
+          }
+          if (mounted) setState(() => itemMultiImages[uniqueId] = updated);
+        }
+      }
+    }
+    await _saveDataLocally();
+  }
+
   Future<void> _handleSubmission() async {
     if (_isSubmitting) return;
 
@@ -2454,6 +2684,7 @@ class _InspectionScreenState extends State<InspectionScreen>
       }
 
       try {
+        await _uploadRemainingImages();
         final body = _buildSubmissionBody();
         final result = await ApiService.submitInspection(body);
         log(body.toString());
@@ -2547,8 +2778,945 @@ class _InspectionScreenState extends State<InspectionScreen>
     );
   }
 
+  void _showFlagIssuesSheet(dynamic item) {
+    final uniqueId = _getItemUniqueId(item);
+    final sectionTitle = _sections[_currentSection]['title'] as String;
+    final currentIssues = itemFlaggedIssues[uniqueId] ?? [];
+    final currentNotes = itemRemarks[uniqueId] ?? '';
+
+    final List<String> availableIssues = [];
+    if (item is Map) {
+      final opts = item['options'] as List?;
+      if (opts != null) {
+        for (final opt in opts) {
+          final lbl = opt['label']?.toString() ?? '';
+          final val = opt['value']?.toString() ?? '';
+          final label = lbl.isNotEmpty ? lbl : val;
+          if (label.isNotEmpty) availableIssues.add(label);
+        }
+      }
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Padding(
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: InspectionFlagIssuesSheet(
+          sectionTitle: sectionTitle,
+          selectedIssues: currentIssues,
+          notes: currentNotes,
+          availableIssues: availableIssues,
+          onConfirm: (issues, notes, markedNoIssues) {
+            setState(() {
+              if (markedNoIssues) {
+                itemFlaggedIssues[uniqueId] = [];
+                itemValues[uniqueId] = 'no_issues';
+              } else {
+                itemFlaggedIssues[uniqueId] = issues;
+                itemValues[uniqueId] = issues.isEmpty ? '' : 'flagged';
+              }
+              if (notes.isNotEmpty) {
+                remarksControllers[uniqueId]?.text = notes;
+                itemRemarks[uniqueId] = notes;
+              }
+            });
+            _autoSave();
+          },
+        ),
+      ),
+    );
+  }
+
   void _openDrawer() {
     _scaffoldKey.currentState?.openEndDrawer();
+  }
+
+  PreferredSizeWidget _buildDarkAppBar(Map<String, dynamic> currentSection) {
+    final sectionTitle = currentSection['title'] as String;
+    final items = currentSection['items'] as List<dynamic>;
+    final itemTitle = (items.isNotEmpty && _currentItemIndex < items.length)
+        ? (items[_currentItemIndex]['title'] as String? ?? sectionTitle)
+        : sectionTitle;
+    final subtitle =
+        'Item ${_currentItemIndex + 1} of $sectionTitle';
+
+    return AppBar(
+      backgroundColor: Colors.black,
+      elevation: 0,
+      automaticallyImplyLeading: false,
+      titleSpacing: 16,
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            itemTitle,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          Text(
+            subtitle,
+            style: const TextStyle(color: Colors.white60, fontSize: 11),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+      actions: [
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Text(
+              '$_progressPercent% Complete',
+              style: const TextStyle(color: Colors.white60, fontSize: 12),
+            ),
+          ),
+        ),
+        IconButton(
+          onPressed: () {
+            showDialog(
+              context: context,
+              builder: (BuildContext context) {
+                return AlertDialog(
+                  title: const Text('Stop Inspection?'),
+                  content: const Text(
+                    'Your progress will be saved and you can continue later.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: _handleClose,
+                      child: const Text('Stop'),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+          icon: const Icon(Icons.close, color: Colors.white60, size: 22),
+        ),
+        IconButton(
+          icon: const Icon(Icons.menu, color: Colors.white60, size: 22),
+          onPressed: _openDrawer,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDarkNavBar(List<dynamic> items) {
+    final canGoPrevious =
+        !_isSubmitting && (_currentItemIndex > 0 || _currentSection > 0);
+    final canGoNext = !_isSubmitting && items.isNotEmpty;
+
+    final bool isLast = _currentItemIndex == items.length - 1 &&
+        _currentSection == _sections.length - 1;
+
+    return Container(
+      color: Colors.black,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: canGoPrevious ? _previousItem : null,
+                  icon: const Icon(Icons.arrow_back, size: 18),
+                  label: const Text('Previous'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: Colors.white30,
+                    side: BorderSide(
+                      color: canGoPrevious ? Colors.white30 : Colors.white12,
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed:
+                      canGoNext ? (isLast ? _nextSection : _nextItem) : null,
+                  iconAlignment: IconAlignment.end,
+                  icon: const Icon(Icons.arrow_forward, size: 18),
+                  label: Text(isLast ? 'Finish' : 'Next'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF448AFF),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showFullscreenReferenceImage(
+      List<Map<String, dynamic>> referenceMedia, int initialIndex) {
+    showDialog(
+      context: context,
+      builder: (_) => InspectionReferenceFullscreen(
+        mediaList: referenceMedia,
+        initialIndex: initialIndex,
+      ),
+    );
+  }
+
+  Widget _buildImageFieldView(dynamic item) {
+    final uniqueId = _getItemUniqueId(item);
+    final title = _getItemTitle(item);
+    final referenceMedia = _getItemReferenceMedia(item);
+    final fieldId = _getItemFieldId(item);
+    final hasCapturedPhoto = itemImages[uniqueId] != null;
+    final hasCapturedVideo = itemVideos[uniqueId] != null;
+    final hasAttachedFile = itemFiles[uniqueId] != null;
+    final hasRecordedAudio = itemAudios[uniqueId] != null;
+    final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
+    final conditionValue = itemValues[uniqueId] ?? '';
+    final isUploading = _uploadingImages.contains(uniqueId);
+    final refUrl = referenceMedia.isNotEmpty
+        ? (referenceMedia.first['url'] as String? ?? '')
+        : '';
+    final refMediaType = referenceMedia.isNotEmpty
+        ? (referenceMedia.first['mediaType'] as String? ?? 'image')
+        : 'image';
+
+    // Build the main capture area based on current mode
+    Widget captureArea;
+    if (_currentCaptureMode == 'PHOTO') {
+      if (hasCapturedPhoto) {
+        captureArea = GestureDetector(
+          onTap: () => _showImagePreview(itemImages[uniqueId]!),
+          child: _buildImageWidget(itemImages[uniqueId]!, fit: BoxFit.cover),
+        );
+      } else {
+        captureArea = LayoutBuilder(
+          builder: (ctx, constraints) => SectionCameraCard(
+            key: ValueKey('cam_$uniqueId'),
+            height: constraints.maxHeight,
+            borderRadius: BorderRadius.zero,
+            showControls: false,
+            onCaptureReady: (fn) => setState(() => _triggerPhotoCapture = fn),
+            onEnlargeReady: (fn) => setState(() => _triggerEnlarge = fn),
+            onPickFromGallery: () =>
+                _pickImage(ImageSource.gallery, uniqueId, fieldId),
+            onCapture: (XFile file) {
+              setState(() {
+                _pendingCapturedXFile = file;
+                _pendingCapturedUniqueId = uniqueId;
+                _isReviewingCapture = true;
+              });
+            },
+          ),
+        );
+      }
+    } else if (_currentCaptureMode == 'VIDEO') {
+      if (hasCapturedVideo) {
+        captureArea = InspectionVideoPlayer(
+          key: ValueKey('vplay_$uniqueId'),
+          videoPath: itemVideos[uniqueId]!,
+          onReRecord: () => _showVideoPickerOptions(item),
+          onDiscard: () => _discardAllMedia(item),
+        );
+      } else {
+        captureArea = LayoutBuilder(
+          builder: (ctx, constraints) => SectionVideoCameraCard(
+            key: ValueKey('vid_$uniqueId'),
+            height: constraints.maxHeight,
+            borderRadius: BorderRadius.zero,
+            showControls: false,
+            onRecordingToggleReady: (fn) =>
+                setState(() => _triggerVideoToggle = fn),
+            onRecordingChanged: (recording) =>
+                setState(() => _isVideoRecording = recording),
+            onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
+            onCapture: (XFile file) {
+              setState(() {
+                itemVideos[uniqueId] = file.path;
+                _isVideoRecording = false;
+              });
+              _autoSave();
+            },
+          ),
+        );
+      }
+    } else if (_currentCaptureMode == 'FILE') {
+      if (hasAttachedFile) {
+        // File attached — show info on dark background
+        captureArea = Container(
+          color: const Color(0xFF111111),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.insert_drive_file,
+                      color: Color(0xFF4D9EFF), size: 64),
+                  const SizedBox(height: 14),
+                  Text(
+                    _extractFileName(itemFiles[uniqueId]!),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500),
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      } else {
+        // No file — clean dark bg with faint icon; action button is in panel
+        captureArea = Container(
+          color: const Color(0xFF111111),
+          child: Center(
+            child: Icon(Icons.attach_file,
+                color: Colors.white.withValues(alpha: 0.06), size: 120),
+          ),
+        );
+      }
+    } else {
+      // AUDIO mode
+      if (hasRecordedAudio) {
+        captureArea = InspectionVideoPlayer(
+          key: ValueKey('aplay_$uniqueId'),
+          videoPath: itemAudios[uniqueId]!,
+          onReRecord: () => setState(() => itemAudios[uniqueId] = null),
+          onDiscard: () => _discardAllMedia(item),
+        );
+      } else if (_isRecordingAudio) {
+        captureArea = Container(
+          color: const Color(0xFF111111),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.red, width: 2),
+                  ),
+                  child: const Icon(Icons.mic, color: Colors.red, size: 32),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.circle, color: Colors.red, size: 8),
+                    const SizedBox(width: 8),
+                    Text(
+                      _formatAudioDuration(_audioElapsed),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.w600,
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Text('Recording...',
+                    style: TextStyle(color: Colors.white54, fontSize: 13)),
+              ],
+            ),
+          ),
+        );
+      } else {
+        // No audio — faint bg + browse button
+        captureArea = Container(
+          color: const Color(0xFF111111),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.mic_outlined,
+                    color: Colors.white.withValues(alpha: 0.06), size: 120),
+                const SizedBox(height: 24),
+                OutlinedButton.icon(
+                  onPressed: () => _pickAudio(item),
+                  icon: const Icon(Icons.folder_open_outlined, size: 16),
+                  label: const Text('Browse audio files'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.white60,
+                    side: const BorderSide(color: Colors.white24),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    // Show action row for any mode that has no media yet
+    final bool showCameraRow =
+        (_currentCaptureMode == 'PHOTO' && !hasCapturedPhoto) ||
+            (_currentCaptureMode == 'VIDEO' && !hasCapturedVideo) ||
+            (_currentCaptureMode == 'FILE' && !hasAttachedFile) ||
+            (_currentCaptureMode == 'AUDIO' && !hasRecordedAudio);
+
+    // Condition chip colours
+    final Color condColor = conditionValue == 'no_issues'
+        ? Colors.green
+        : conditionValue == 'flagged'
+            ? Colors.red
+            : Colors.white54;
+    final IconData condIcon = conditionValue == 'no_issues'
+        ? Icons.check_circle_outline
+        : conditionValue == 'flagged'
+            ? Icons.flag_outlined
+            : Icons.radio_button_unchecked;
+    final String condLabel = conditionValue == 'flagged'
+        ? '${flaggedIssues.length} issue${flaggedIssues.length == 1 ? '' : 's'} flagged'
+        : 'No issues — looks good';
+
+    return Column(
+      children: [
+        // ── Capture area ──────────────────────────────────────────
+        Expanded(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              captureArea,
+
+              // Reference thumbnail (PHOTO / VIDEO only, top-left)
+              if (refUrl.isNotEmpty &&
+                  _currentCaptureMode != 'FILE' &&
+                  _currentCaptureMode != 'AUDIO')
+                Positioned(
+                  top: 12,
+                  left: 12,
+                  child: GestureDetector(
+                    onTap: () =>
+                        _showFullscreenReferenceImage(referenceMedia, 0),
+                    child: Container(
+                      width: 100,
+                      height: 75,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: const Color(0xFFFF6B6B).withValues(alpha: 0.8),
+                          width: 2,
+                        ),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(6),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            if (refMediaType == 'video')
+                              Container(
+                                color: Colors.black87,
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.play_circle_filled,
+                                    color: Colors.white70,
+                                    size: 32,
+                                  ),
+                                ),
+                              )
+                            else
+                              Image.network(
+                                refUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    Container(color: Colors.grey[900]),
+                              ),
+                            Positioned(
+                              bottom: 2,
+                              left: 0,
+                              right: 0,
+                              child: Container(
+                                color: Colors.black54,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 2),
+                                child: const Text(
+                                  'REF',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Recording indicator (VIDEO recording, top-right)
+              if (_currentCaptureMode == 'VIDEO' && _isVideoRecording)
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.circle, color: Colors.red, size: 8),
+                        SizedBox(width: 5),
+                        Text('REC',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Retake badge (PHOTO captured, top-right)
+              if (hasCapturedPhoto && _currentCaptureMode == 'PHOTO')
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: GestureDetector(
+                    onTap: () => _showImagePickerOptions(item),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white30),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isUploading) ...[
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white),
+                            ),
+                            const SizedBox(width: 6),
+                            const Text('Uploading',
+                                style: TextStyle(
+                                    color: Colors.white, fontSize: 12)),
+                          ] else ...[
+                            const Icon(Icons.refresh,
+                                color: Colors.white, size: 14),
+                            const SizedBox(width: 4),
+                            const Text('Retake',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600)),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Replace badge (FILE attached, top-right)
+              if (hasAttachedFile && _currentCaptureMode == 'FILE')
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: GestureDetector(
+                    onTap: () => _pickFile(item),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white30),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.swap_horiz, color: Colors.white, size: 14),
+                          SizedBox(width: 4),
+                          Text('Replace',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Condition chip overlay (bottom of capture area)
+              Positioned(
+                bottom: 10,
+                left: 12,
+                right: 12,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => _showFlagIssuesSheet(item),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: condColor.withValues(alpha: 0.6)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(condIcon, size: 13, color: condColor),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  condLabel,
+                                  style: TextStyle(
+                                    color: condColor,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: () => _showFlagIssuesSheet(item),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.flag_outlined,
+                                size: 13, color: Colors.white70),
+                            SizedBox(width: 4),
+                            Text('Flag Issue',
+                                style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // ── Bottom control panel ───────────────────────────────────
+        Container(
+          color: const Color(0xFF0D0D0D),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Instruction text
+                Text(
+                  _currentCaptureMode == 'VIDEO'
+                      ? 'Record a video of: $title'
+                      : _currentCaptureMode == 'FILE'
+                          ? 'Attach a document for: $title'
+                          : _currentCaptureMode == 'AUDIO'
+                              ? 'Add an audio note for: $title'
+                              : 'Take a clear photo of: $title',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+
+                // Mode tabs — text + underline only
+                Row(
+                  children: ['FILE', 'PHOTO', 'VIDEO', 'AUDIO'].map((mode) {
+                    final isSelected = mode == _currentCaptureMode;
+                    return Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          if (!isSelected) {
+                            _audioTimer?.cancel();
+                            _audioTimer = null;
+                            _audioRecorder?.stop();
+                            setState(() {
+                              _currentCaptureMode = mode;
+                              _triggerPhotoCapture = null;
+                              _triggerEnlarge = null;
+                              _triggerVideoToggle = null;
+                              _isVideoRecording = false;
+                              _isRecordingAudio = false;
+                              _audioElapsed = Duration.zero;
+                            });
+                          }
+                        },
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              mode,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color:
+                                    isSelected ? Colors.white : Colors.white38,
+                                fontSize: 11,
+                                fontWeight: isSelected
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              height: 2,
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? const Color(0xFF4D9EFF)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+
+                // Action row — shown for all modes when no media captured yet
+                if (showCameraRow) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // Left slot: gallery (PHOTO/VIDEO) or spacer (FILE/AUDIO)
+                      if (_currentCaptureMode == 'PHOTO' ||
+                          _currentCaptureMode == 'VIDEO')
+                        GestureDetector(
+                          onTap: () => _currentCaptureMode == 'VIDEO'
+                              ? _pickVideo(item, ImageSource.gallery)
+                              : _pickImage(
+                                  ImageSource.gallery, uniqueId, fieldId),
+                          child: Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: Icon(
+                              _currentCaptureMode == 'VIDEO'
+                                  ? Icons.video_library_outlined
+                                  : Icons.photo_library_outlined,
+                              color: Colors.white70,
+                              size: 22,
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox(width: 46, height: 46),
+
+                      // Centre: main action button for each mode
+                      if (_currentCaptureMode == 'PHOTO')
+                        // Shutter ring
+                        GestureDetector(
+                          onTap: _triggerPhotoCapture,
+                          child: Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 3),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(5),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _triggerPhotoCapture != null
+                                      ? Colors.white
+                                      : Colors.white38,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      else if (_currentCaptureMode == 'VIDEO')
+                        // Record ring → square stop
+                        GestureDetector(
+                          onTap: _triggerVideoToggle,
+                          child: Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _isVideoRecording
+                                    ? Colors.red
+                                    : Colors.white,
+                                width: 3,
+                              ),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(10),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                decoration: BoxDecoration(
+                                  color: _isVideoRecording
+                                      ? Colors.red
+                                      : (_triggerVideoToggle != null
+                                          ? Colors.white
+                                          : Colors.white38),
+                                  borderRadius: BorderRadius.circular(
+                                      _isVideoRecording ? 4 : 40),
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      else if (_currentCaptureMode == 'FILE')
+                        // Attach button
+                        GestureDetector(
+                          onTap: () => _pickFile(item),
+                          child: Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: const Color(0xFF4D9EFF)
+                                  .withValues(alpha: 0.15),
+                              border: Border.all(
+                                  color: const Color(0xFF4D9EFF), width: 2.5),
+                            ),
+                            child: const Icon(Icons.attach_file,
+                                color: Color(0xFF4D9EFF), size: 30),
+                          ),
+                        )
+                      else
+                        // AUDIO: toggle recording
+                        GestureDetector(
+                          onTap: () => _isRecordingAudio
+                              ? _stopAudioRecording(item)
+                              : _startAudioRecording(item),
+                          child: Container(
+                            width: 72,
+                            height: 72,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _isRecordingAudio
+                                  ? Colors.red.withValues(alpha: 0.15)
+                                  : const Color(0xFFEC4899)
+                                      .withValues(alpha: 0.15),
+                              border: Border.all(
+                                color: _isRecordingAudio
+                                    ? Colors.red
+                                    : const Color(0xFFEC4899),
+                                width: 2.5,
+                              ),
+                            ),
+                            child: Icon(
+                              _isRecordingAudio ? Icons.stop : Icons.mic,
+                              color: _isRecordingAudio
+                                  ? Colors.red
+                                  : const Color(0xFFEC4899),
+                              size: 30,
+                            ),
+                          ),
+                        ),
+
+                      // Right slot: enlarge (PHOTO) or spacer
+                      if (_currentCaptureMode == 'PHOTO')
+                        GestureDetector(
+                          onTap: _triggerEnlarge,
+                          child: Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white24),
+                            ),
+                            child: Icon(
+                              Icons.open_in_full,
+                              color: _triggerEnlarge != null
+                                  ? Colors.white70
+                                  : Colors.white24,
+                              size: 20,
+                            ),
+                          ),
+                        )
+                      else
+                        const SizedBox(width: 46, height: 46),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                ] else ...[
+                  const SizedBox(height: 10),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   @override
@@ -2627,10 +3795,12 @@ class _InspectionScreenState extends State<InspectionScreen>
     }
 
     final currentSection = _sections[_currentSection];
+    final items = currentSection['items'] as List<dynamic>;
+    final currentItem = items.isNotEmpty ? items[_currentItemIndex] : null;
 
     return PopScope(
       canPop: false,
-      onPopInvoked: (bool didPop) async {
+      onPopInvokedWithResult: (bool didPop, _) async {
         if (didPop) return;
 
         final bool shouldClose = await showDialog(
@@ -2664,82 +3834,52 @@ class _InspectionScreenState extends State<InspectionScreen>
       },
       child: Scaffold(
         key: _scaffoldKey,
-        backgroundColor: const Color(0xFFF7F8FA),
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          toolbarHeight: 60,
-          title: InspectionAppBarTitle(
-            sectionTitle: _sections[_currentSection]['title'] as String,
-            itemCount:
-                (_sections[_currentSection]['items'] as List<dynamic>).length,
-            currentItemIndex: _currentItemIndex,
-            sectionIcon:
-                _getSectionIcon(_sections[_currentSection]['title'] as String),
-            currentSection: _currentSection,
-            totalSections: _sections.length,
-          ),
-          actions: [
-            IconButton(
-              onPressed: () {
-                showDialog(
-                  context: context,
-                  builder: (BuildContext context) {
-                    return AlertDialog(
-                      title: const Text('Stop Inspection?'),
-                      content: const Text(
-                        'Your progress will be saved and you can continue later. Do you want to stop?',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: _handleClose,
-                          child: const Text('Stop'),
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-              icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
-            ),
-            IconButton(
-              icon: const Icon(Icons.menu, color: Color(0xFF6B7280)),
-              onPressed: _openDrawer,
-            ),
-          ],
-          automaticallyImplyLeading: false,
-        ),
+        backgroundColor: Colors.black,
+        appBar: _buildDarkAppBar(currentSection),
         endDrawer: _buildDrawer(),
         body: Column(
           children: [
-            InspectionProgressHeader(
-              currentSection: _currentSection,
-              totalSections: _sections.length,
+            // Thin progress bar
+            LinearProgressIndicator(
+              value: _totalFields > 0 ? _processedFields / _totalFields : 0.0,
+              minHeight: 3,
+              backgroundColor: Colors.white12,
+              color: const Color(0xFF448AFF),
             ),
             Expanded(
-              child: ListView(
-                key: PageStorageKey<int>(_currentSection),
-                controller: _scrollController,
-                children: [
-                  _buildInspectionSection(
-                    currentSection['title'],
-                    currentSection['items'] as List<dynamic>,
-                  ),
-                ],
-              ),
+              child: _isReviewingCapture && _pendingCapturedXFile != null
+                  ? InspectionImageReview(
+                      capturedImagePath: _pendingCapturedXFile!.path,
+                      fieldTitle:
+                          currentItem != null ? _getItemTitle(currentItem) : '',
+                      referenceMedia: currentItem != null
+                          ? _getItemReferenceMedia(currentItem)
+                          : [],
+                      onRetake: () {
+                        setState(() {
+                          _isReviewingCapture = false;
+                          _pendingCapturedXFile = null;
+                          _pendingCapturedUniqueId = null;
+                        });
+                      },
+                      onUsePhoto: _acceptCapturedImage,
+                    )
+                  : currentItem != null &&
+                          (_itemHasImage(currentItem) ||
+                              _itemHasVideo(currentItem))
+                      ? _buildImageFieldView(currentItem)
+                      : ListView(
+                          key: PageStorageKey<int>(_currentSection),
+                          controller: _scrollController,
+                          children: [
+                            _buildInspectionSection(
+                              currentSection['title'],
+                              items,
+                            ),
+                          ],
+                        ),
             ),
-            InspectionBottomActions(
-              isSubmitting: _isSubmitting,
-              isLastSection: _currentSection == _sections.length - 1,
-              onSubmitInspection: _nextSection,
-              itemNavigationBar: _buildItemNavigationBar(
-                currentSection['items'] as List<dynamic>,
-              ),
-            ),
+            _buildDarkNavBar(items),
           ],
         ),
       ),
@@ -2786,16 +3926,32 @@ class _InspectionScreenState extends State<InspectionScreen>
       isSectionComplete: _isSectionComplete,
       getSectionIcon: _getSectionIcon,
       onSelectSection: (index) {
+        final sectionItems = _sections[index]['items'] as List<dynamic>;
+        final firstItem = sectionItems.isNotEmpty ? sectionItems.first : null;
         setState(() {
           _currentSection = index;
           _currentItemIndex = 0;
           _isScrollable = false;
           _showButton = true;
+          _isVideoRecording = false;
+          _isRecordingAudio = false;
+          _triggerPhotoCapture = null;
+          _triggerEnlarge = null;
+          _triggerVideoToggle = null;
+          if (firstItem != null) {
+            _currentCaptureMode = _defaultCaptureModeForItem(firstItem);
+          }
         });
 
         Future.delayed(const Duration(milliseconds: 100), () {
+          if (!mounted) return;
           setState(() {
-            _isScrollable = _scrollController.position.maxScrollExtent > 0;
+            if (_scrollController.hasClients) {
+              _isScrollable =
+                  _scrollController.position.maxScrollExtent > 0;
+            } else {
+              _isScrollable = false;
+            }
             _showButton = !_isScrollable;
           });
 
@@ -2833,6 +3989,8 @@ class _InspectionScreenState extends State<InspectionScreen>
     _cleanupControllers();
     _isSubmitting = false;
     _rewardedAdManager.dispose();
+    _audioTimer?.cancel();
+    _audioRecorder?.dispose();
     super.dispose();
   }
 

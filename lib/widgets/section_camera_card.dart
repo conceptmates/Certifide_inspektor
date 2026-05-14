@@ -11,8 +11,21 @@ class SectionCameraCard extends StatefulWidget {
   final void Function(XFile file)? onCapture;
   final VoidCallback? onPickFromGallery;
 
-  /// Shown above the preview so users know what this photo is for (e.g. field title).
+  /// Shown above the preview so users know what this photo is for.
   final String? instructionText;
+
+  /// When false the card is a pure viewfinder — no instruction text overlay
+  /// and no bottom shutter/gallery row. Use [onCaptureReady] to trigger
+  /// capture from an external button.
+  final bool showControls;
+
+  /// Called once the camera is initialized, passing a function that takes a
+  /// photo when invoked. Only useful when [showControls] is false.
+  final void Function(VoidCallback captureNow)? onCaptureReady;
+
+  /// Called once the camera is initialized, passing a function that opens
+  /// the fullscreen preview. Only useful when [showControls] is false.
+  final void Function(VoidCallback enlarge)? onEnlargeReady;
 
   const SectionCameraCard({
     super.key,
@@ -21,6 +34,9 @@ class SectionCameraCard extends StatefulWidget {
     this.onCapture,
     this.onPickFromGallery,
     this.instructionText,
+    this.showControls = true,
+    this.onCaptureReady,
+    this.onEnlargeReady,
   });
 
   @override
@@ -209,6 +225,8 @@ class _SectionCameraCardState extends State<SectionCameraCard>
           _isInitialized = true;
           _hasError = false;
         });
+        widget.onCaptureReady?.call(_captureImage);
+        widget.onEnlargeReady?.call(_openFullscreenPreview);
       }
       return true;
     } on CameraException {
@@ -351,7 +369,9 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: widget.borderRadius,
-        border: Border.all(color: Colors.blue.withAlpha(100), width: 1.5),
+        border: widget.showControls
+            ? Border.all(color: Colors.blue.withAlpha(100), width: 1.5)
+            : null,
       ),
       child: ClipRRect(
         borderRadius: widget.borderRadius,
@@ -361,132 +381,129 @@ class _SectionCameraCardState extends State<SectionCameraCard>
             Center(
               child: CameraPreview(_controller!),
             ),
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.black.withAlpha(200),
-                      Colors.transparent,
+            if (widget.showControls) ...[
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withAlpha(200),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.photo_camera_outlined,
+                        color: Colors.white.withAlpha(230),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.instructionText ??
+                              'Center the subject in the frame, then tap Take photo',
+                          style: TextStyle(
+                            color: Colors.white.withAlpha(242),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            height: 1.25,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.photo_camera_outlined,
-                      color: Colors.white.withAlpha(230),
-                      size: 16,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        widget.instructionText ??
-                            'Center the subject in the frame, then tap Take photo',
-                        style: TextStyle(
-                          color: Colors.white.withAlpha(242),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          height: 1.25,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
                 ),
               ),
-            ),
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.bottomCenter,
-                    end: Alignment.topCenter,
-                    colors: [
-                      Colors.black.withAlpha(200),
-                      Colors.transparent,
-                    ],
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withAlpha(200),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6, right: 6),
-                          child: widget.onPickFromGallery != null
-                              ? Tooltip(
-                                  message: 'Pick photo from gallery',
-                                  child: Semantics(
-                                    button: true,
-                                    label: 'Pick from gallery',
-                                    child: _CameraActionButton(
-                                      icon: Icons.photo_library_outlined,
-                                      onTap: widget.onPickFromGallery,
-                                      size: 44,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 6, right: 6),
+                            child: widget.onPickFromGallery != null
+                                ? Tooltip(
+                                    message: 'Pick photo from gallery',
+                                    child: Semantics(
+                                      button: true,
+                                      label: 'Pick from gallery',
+                                      child: _CameraActionButton(
+                                        icon: Icons.photo_library_outlined,
+                                        onTap: widget.onPickFromGallery,
+                                        size: 44,
+                                      ),
                                     ),
-                                  ),
-                                )
-                              : const SizedBox(width: 44, height: 44),
-                        ),
-                      ),
-                    ),
-                    Tooltip(
-                      message: 'Save this photo for the inspection',
-                      child: Semantics(
-                        button: true,
-                        label: 'Take photo',
-                        child: _CameraActionButton(
-                          icon: Icons.camera_alt,
-                          onTap: _isCapturing ? null : _captureImage,
-                          size: 56,
-                          isPrimary: true,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 6, left: 6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Tooltip(
-                                message: 'Open a larger view (same camera)',
-                                child: Semantics(
-                                  button: true,
-                                  label: 'Larger preview',
-                                  child: _CameraActionButton(
-                                    icon: Icons.open_in_full,
-                                    onTap: _openFullscreenPreview,
-                                    size: 44,
-                                  ),
-                                ),
-                              ),
-                            ],
+                                  )
+                                : const SizedBox(width: 44, height: 44),
                           ),
                         ),
                       ),
-                    ),
-                  ],
+                      Tooltip(
+                        message: 'Save this photo for the inspection',
+                        child: Semantics(
+                          button: true,
+                          label: 'Take photo',
+                          child: _CameraActionButton(
+                            icon: Icons.camera_alt,
+                            onTap: _isCapturing ? null : _captureImage,
+                            size: 56,
+                            isPrimary: true,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 6, left: 6),
+                            child: Tooltip(
+                              message: 'Open a larger view (same camera)',
+                              child: Semantics(
+                                button: true,
+                                label: 'Larger preview',
+                                child: _CameraActionButton(
+                                  icon: Icons.open_in_full,
+                                  onTap: _openFullscreenPreview,
+                                  size: 44,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
+            ],
             if (_isCapturing)
               Container(
                 color: Colors.white.withAlpha(100),

@@ -285,7 +285,7 @@ class _AddCreditsPageState extends State<AddCreditsPage> {
           ),
         ],
       ),
-      backgroundColor: colorScheme.background,
+      backgroundColor: colorScheme.surface,
       body: Row(
         children: [
           // Left side - Inspector List (Desktop)
@@ -311,7 +311,7 @@ class _AddCreditsPageState extends State<AddCreditsPage> {
                               color: colorScheme.onSurfaceVariant),
                           filled: true,
                           fillColor:
-                              colorScheme.surfaceVariant.withOpacity(0.1),
+                              colorScheme.surfaceContainerHighest.withOpacity(0.1),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,

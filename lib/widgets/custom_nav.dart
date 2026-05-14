@@ -70,7 +70,7 @@ class CustomBottomNavBar extends StatelessWidget {
                 end: Alignment.bottomRight,
                 colors: [
                   colorScheme.surface.withOpacity(0.9),
-                  colorScheme.surfaceVariant.withOpacity(0.9),
+                  colorScheme.surfaceContainerHighest.withOpacity(0.9),
                 ],
               ),
               boxShadow: [

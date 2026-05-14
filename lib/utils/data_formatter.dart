@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../models/inspection_item.dart';
-import '../utils/image_converter.dart';
 
 class InspectionDataFormatter {
   static Map<String, dynamic> formatData({
