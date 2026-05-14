@@ -841,6 +841,13 @@ class _InspectionScreenState extends State<InspectionScreen>
   }
 
   String _defaultCaptureModeForItem(dynamic item) {
+    final refMedia = _getItemReferenceMedia(item);
+    if (refMedia.isNotEmpty) {
+      final refType =
+          (refMedia.first['mediaType'] as String? ?? '').toLowerCase();
+      if (refType == 'image') return 'PHOTO';
+      if (refType == 'video') return 'VIDEO';
+    }
     if (_itemHasImage(item)) return 'PHOTO';
     if (_itemHasVideo(item)) return 'VIDEO';
     if (_itemHasFile(item)) return 'FILE';
