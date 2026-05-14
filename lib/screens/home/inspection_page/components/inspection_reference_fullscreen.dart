@@ -1,4 +1,8 @@
+import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:video_player/video_player.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 class InspectionReferenceFullscreen extends StatefulWidget {
   final List<Map<String, dynamic>> mediaList;
@@ -84,18 +88,19 @@ class _InspectionReferenceFullscreenState
                   );
                 }
 
-                // Non-image media: show icon + link hint
+                if (mediaType == 'video') {
+                  return _FullscreenVideoPlayer(url: url);
+                }
+
+                // Audio / link fallback
                 return Center(
                   child: Column(
-                    
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(
-                        mediaType == 'video'
-                            ? Icons.videocam_outlined
-                            : mediaType == 'audio'
-                                ? Icons.audiotrack_outlined
-                                : Icons.link,
+                        mediaType == 'audio'
+                            ? Icons.audiotrack_outlined
+                            : Icons.link,
                         color: Colors.white54,
                         size: 56,
                       ),
@@ -252,5 +257,175 @@ class _InspectionReferenceFullscreenState
         ),
       ),
     );
+  }
+}
+
+// ── Video player (YouTube WebView or native Chewie) ──────────────────────────
+
+class _FullscreenVideoPlayer extends StatelessWidget {
+  final String url;
+  const _FullscreenVideoPlayer({required this.url});
+
+  static final _ytRegex = RegExp(
+    r'^(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/(?:watch\?.*v=|embed/|shorts/)|youtu\.be/)([\w-]{11})',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final match = _ytRegex.firstMatch(url);
+    final videoId = match?.group(1);
+    if (videoId != null && videoId.isNotEmpty) {
+      return _YouTubePlayer(videoId: videoId);
+    }
+    return _NativePlayer(url: url);
+  }
+}
+
+// ── YouTube via WebView ──────────────────────────────────────────────────────
+
+class _YouTubePlayer extends StatefulWidget {
+  final String videoId;
+  const _YouTubePlayer({required this.videoId});
+
+  @override
+  State<_YouTubePlayer> createState() => _YouTubePlayerState();
+}
+
+class _YouTubePlayerState extends State<_YouTubePlayer> {
+  late final WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.black)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onNavigationRequest: (request) {
+            final u = request.url;
+            if (u.startsWith('https://www.youtube.com/embed/') ||
+                u.startsWith('https://www.youtube-nocookie.com/embed/')) {
+              return NavigationDecision.navigate;
+            }
+            return NavigationDecision.prevent;
+          },
+        ),
+      )
+      ..loadHtmlString(_html(widget.videoId));
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    super.dispose();
+  }
+
+  String _html(String id) => '''
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+      html, body { margin:0; padding:0; background:#000; overflow:hidden; }
+      .wrap { position:relative; width:100vw; height:100vh; }
+      iframe { position:absolute; inset:0; width:100%; height:100%; border:0; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <iframe
+        src="https://www.youtube.com/embed/$id?autoplay=1&playsinline=1&rel=0&modestbranding=1"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen>
+      </iframe>
+    </div>
+  </body>
+</html>
+''';
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(child: WebViewWidget(controller: _controller));
+  }
+}
+
+// ── Native video via Chewie ──────────────────────────────────────────────────
+
+class _NativePlayer extends StatefulWidget {
+  final String url;
+  const _NativePlayer({required this.url});
+
+  @override
+  State<_NativePlayer> createState() => _NativePlayerState();
+}
+
+class _NativePlayerState extends State<_NativePlayer> {
+  VideoPlayerController? _vpc;
+  ChewieController? _chewie;
+  bool _loading = true;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _init();
+  }
+
+  Future<void> _init() async {
+    try {
+      _vpc = VideoPlayerController.networkUrl(Uri.parse(widget.url));
+      await _vpc!.initialize();
+      _chewie = ChewieController(
+        videoPlayerController: _vpc!,
+        autoPlay: true,
+        looping: false,
+        allowFullScreen: true,
+        allowMuting: true,
+        showControlsOnInitialize: true,
+      );
+      if (mounted) setState(() => _loading = false);
+    } catch (_) {
+      if (mounted) setState(() { _loading = false; _error = true; });
+    }
+  }
+
+  @override
+  void dispose() {
+    _chewie?.dispose();
+    _vpc?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.white70),
+      );
+    }
+    if (_error || _chewie == null) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.videocam_off_outlined, color: Colors.white38, size: 48),
+            SizedBox(height: 12),
+            Text('Unable to load video',
+                style: TextStyle(color: Colors.white38, fontSize: 13)),
+          ],
+        ),
+      );
+    }
+    return Center(child: Chewie(controller: _chewie!));
   }
 }

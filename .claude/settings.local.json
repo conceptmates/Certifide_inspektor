@@ -3,7 +3,8 @@
     "allow": [
       "Bash(flutter analyze:*)",
       "Bash(grep -v \"^$\")",
-      "Bash(flutter pub *)"
+      "Bash(flutter pub *)",
+      "Bash(xargs ls *)"
     ]
   }
 }
