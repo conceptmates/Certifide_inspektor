@@ -11,6 +11,7 @@ class InspectionProvider extends ChangeNotifier {
   List<LocalInspection> _inspections = [];
   bool _isLoading = false;
   bool _refreshCooldown = false;
+  bool _isDirty = true; // true = data may have changed, reload needed
   Map<String, bool> _submittingStates = {};
   Map<String, bool> _uploadingImagesStates = {};
   Timer? _cooldownTimer;
@@ -18,8 +19,13 @@ class InspectionProvider extends ChangeNotifier {
   List<LocalInspection> get inspections => _inspections;
   bool get isLoading => _isLoading;
   bool get refreshCooldown => _refreshCooldown;
+  bool get isDirty => _isDirty;
   Map<String, bool> get submittingStates => _submittingStates;
   Map<String, bool> get uploadingImagesStates => _uploadingImagesStates;
+
+  void markDirty() {
+    _isDirty = true;
+  }
 
   void startRefreshCooldown() {
     _refreshCooldown = true;
@@ -32,8 +38,8 @@ class InspectionProvider extends ChangeNotifier {
   }
 
   Future<void> loadInspections() async {
-    // Prevent multiple simultaneous loading
-    if (_isLoading || _refreshCooldown) return;
+    // Prevent multiple simultaneous loading or redundant loads when data is fresh
+    if (_isLoading || _refreshCooldown || !_isDirty) return;
 
     startRefreshCooldown();
     _isLoading = true;
@@ -46,6 +52,7 @@ class InspectionProvider extends ChangeNotifier {
       inspections.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       _inspections = inspections;
+      _isDirty = false;
       _submittingStates = {
         for (var inspection in inspections) inspection.id: false
       };
@@ -112,6 +119,7 @@ class InspectionProvider extends ChangeNotifier {
       }
 
       // Reload inspections to get updated data
+      _isDirty = true;
       await loadInspections();
     } catch (e) {
       log('Error syncing pending images: $e');
@@ -292,6 +300,7 @@ class InspectionProvider extends ChangeNotifier {
 
     try {
       await LocalStorageService.deleteInspection(id);
+      _isDirty = true;
       await loadInspections();
     } catch (e) {
       print('Error deleting inspection: $e');

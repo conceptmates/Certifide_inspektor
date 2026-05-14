@@ -5,6 +5,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../constants/hive_constants.dart';
 import '../data/inspection_storage_model.dart';
 import '../providers/inspection_provider.dart';
+import '../providers/inspection_session_provider.dart';
 import '../routes/routes.dart';
 import '../screens/auth/auth_wrapper.dart';
 import '../services/local_storage_services.dart';
@@ -52,6 +53,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => InspectionProvider()),
+        ChangeNotifierProvider(create: (_) => InspectionSessionProvider()),
       ],
       child: const MyApp(),
     ),

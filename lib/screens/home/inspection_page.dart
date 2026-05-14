@@ -18,6 +18,8 @@ import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
 import '../../models/inspection_item.dart';
 import '../../models/inspection_template_model.dart';
+import '../../providers/inspection_provider.dart';
+import '../../providers/inspection_session_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
 import '../../services/local_storage_services.dart';
@@ -55,6 +57,14 @@ class InspectionScreen extends StatefulWidget {
 
 class _InspectionScreenState extends State<InspectionScreen>
     with WidgetsBindingObserver {
+  // Survives navigation — keyed by "${brandId}_${modelId}"
+  static final Map<String, InspectionInitializationResponse> _templateCache =
+      {};
+
+  late final InspectionSessionProvider _sessionProvider;
+  // Set true on successful submit so dispose() doesn't snapshot a dead session.
+  bool _sessionCompleted = false;
+
   Timer? _saveDebouncer;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -206,6 +216,9 @@ class _InspectionScreenState extends State<InspectionScreen>
     _scrollController.addListener(_onScroll);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _sessionProvider =
+          Provider.of<InspectionSessionProvider>(context, listen: false);
+
       await _initHive();
 
       _sessionInspectionId = widget.inspectionId;
@@ -213,54 +226,63 @@ class _InspectionScreenState extends State<InspectionScreen>
       // Set vehicle details from widget
       vehicleDetails = widget.vehicleDetails;
 
-      // If continuing a previous inspection, load template from storage first
-      if (!widget.isNewInspection) {
-        await _loadTemplateFromStorage();
-        _sessionInspectionId ??= _inspectionBox
-            ?.get(HiveConstants.CURRENT_INSPECTION_KEY)
-            ?.inspectionId;
-      }
-
-      // Check if we have a dynamic inspection template from API
-      if (widget.inspectionTemplate != null) {
-        _inspectionTemplate = widget.inspectionTemplate;
-        _useDynamicTemplate = true;
-      } else if (_inspectionTemplate == null &&
-          vehicleDetails != null &&
-          vehicleDetails!.containsKey('inspectionTemplate')) {
-        final templateData = vehicleDetails!['inspectionTemplate'];
-        if (templateData != null) {
-          if (templateData is InspectionInitializationResponse) {
-            _inspectionTemplate = templateData;
-          } else {
-            try {
-              _inspectionTemplate = InspectionInitializationResponse.fromJson(
-                templateData is Map<String, dynamic>
-                    ? templateData
-                    : templateData as Map<String, dynamic>,
-              );
-            } catch (e) {
-              log('Error parsing inspection template: $e');
-            }
-          }
-          _useDynamicTemplate = _inspectionTemplate != null;
-        }
-      }
-
-      // Hive may lack template JSON (older saves / failed serialization). Refetch.
-      if (!widget.isNewInspection) {
-        await _fetchInspectionTemplateIfMissing();
-      }
-
       if (widget.isNewInspection) {
+        // Fresh start — discard any leftover session from a previous run.
+        _sessionProvider.clearSession();
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
         _initializeValues();
         _initializeControllers();
       } else {
-        await _loadDataFromStorage();
-        // Persist refetched template + restored answers together for next offline resume.
-        if (_inspectionTemplate != null && mounted) {
-          await _saveDataLocally();
+        // Resume path: prefer in-memory snapshot over Hive to avoid I/O.
+        final snap = _sessionProvider.snapshot;
+        if (snap != null) {
+          _restoreFromSnapshot(snap);
+        } else {
+          // If continuing a previous inspection, load template from storage first
+          await _loadTemplateFromStorage();
+          _sessionInspectionId ??= _inspectionBox
+              ?.get(HiveConstants.CURRENT_INSPECTION_KEY)
+              ?.inspectionId;
+
+          // Check if we have a dynamic inspection template from API
+          if (widget.inspectionTemplate != null) {
+            _inspectionTemplate = widget.inspectionTemplate;
+            _useDynamicTemplate = true;
+          } else if (_inspectionTemplate == null &&
+              vehicleDetails != null &&
+              vehicleDetails!.containsKey('inspectionTemplate')) {
+            final templateData = vehicleDetails!['inspectionTemplate'];
+            if (templateData != null) {
+              if (templateData is InspectionInitializationResponse) {
+                _inspectionTemplate = templateData;
+              } else {
+                try {
+                  _inspectionTemplate =
+                      InspectionInitializationResponse.fromJson(
+                    templateData is Map<String, dynamic>
+                        ? templateData
+                        : templateData as Map<String, dynamic>,
+                  );
+                } catch (e) {
+                  log('Error parsing inspection template: $e');
+                }
+              }
+              _useDynamicTemplate = _inspectionTemplate != null;
+            }
+          }
+
+          // Hive may lack template JSON (older saves / failed serialization). Refetch.
+          final hadTemplate = _inspectionTemplate != null;
+          await _fetchInspectionTemplateIfMissing();
+          final templateWasRefetched =
+              !hadTemplate && _inspectionTemplate != null;
+
+          await _loadDataFromStorage();
+          // Only re-save when a new template was fetched so future offline resumes
+          // find template + answers together in Hive.
+          if (templateWasRefetched && mounted) {
+            await _saveDataLocally();
+          }
         }
       }
 
@@ -564,6 +586,14 @@ class _InspectionScreenState extends State<InspectionScreen>
       return;
     }
 
+    final cacheKey = '${brandId}_$modelId';
+    final cached = _templateCache[cacheKey];
+    if (cached != null) {
+      _inspectionTemplate = cached;
+      _useDynamicTemplate = true;
+      return;
+    }
+
     final online = await ConnectivityChecker.hasInternetConnection();
     if (!online) {
       log('Resume: offline — cannot refetch inspection template');
@@ -592,6 +622,7 @@ class _InspectionScreenState extends State<InspectionScreen>
         }
 
         if (parsed != null) {
+          _templateCache[cacheKey] = parsed;
           _inspectionTemplate = parsed;
           _useDynamicTemplate = true;
         }
@@ -609,14 +640,32 @@ class _InspectionScreenState extends State<InspectionScreen>
     }
   }
 
+  void _restoreFromSnapshot(InspectionSessionSnapshot snap) {
+    _inspectionTemplate = snap.inspectionTemplate;
+    _useDynamicTemplate = snap.useDynamicTemplate;
+    _sessionInspectionId = snap.sessionInspectionId;
+    vehicleDetails ??= snap.vehicleDetails;
+    setState(() {
+      itemValues = Map.from(snap.itemValues);
+      itemImages = Map.from(snap.itemImages);
+      itemVideos = Map.from(snap.itemVideos);
+      itemAudios = Map.from(snap.itemAudios);
+      itemFiles = Map.from(snap.itemFiles);
+      itemRemarks = Map.from(snap.itemRemarks);
+      itemMultiImages = Map.from(snap.itemMultiImages);
+      itemFlaggedIssues = Map.from(snap.itemFlaggedIssues);
+      _currentSection = snap.currentSection;
+      _currentItemIndex = snap.currentItemIndex;
+    });
+    _initializeControllers();
+  }
+
   Future<void> _loadDataFromStorage() async {
     try {
       final storedData =
           _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
 
       if (storedData != null) {
-        _cleanupControllers();
-
         setState(() {
           itemValues = storedData.typedItemValues;
           itemImages = storedData.typedItemImages;
@@ -627,25 +676,7 @@ class _InspectionScreenState extends State<InspectionScreen>
           _currentSection = storedData.currentSection;
           itemMultiImages = storedData.typedMultiImages;
         });
-
-        for (var section in _sections) {
-          final items = section['items'] as List<dynamic>;
-          for (var item in items) {
-            final uniqueId = _getItemUniqueId(item);
-
-            if (_itemHasRemarks(item)) {
-              remarksControllers[uniqueId] = TextEditingController(
-                text: storedData.typedItemRemarks[uniqueId] ?? '',
-              );
-            }
-
-            if (_itemUsesTextField(item)) {
-              textFieldControllers[uniqueId] = TextEditingController(
-                text: storedData.typedItemValues[uniqueId] ?? '',
-              );
-            }
-          }
-        }
+        _initializeControllers();
       } else {
         _initializeValues();
         _initializeControllers();
@@ -678,6 +709,9 @@ class _InspectionScreenState extends State<InspectionScreen>
 
   Future<void> _cleanupCurrentInspection() async {
     try {
+      _sessionCompleted = true;
+      _sessionProvider.clearSession();
+
       if (_inspectionBox?.isOpen ?? false) {
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
       }
@@ -1610,7 +1644,8 @@ class _InspectionScreenState extends State<InspectionScreen>
           ),
         if (!useTextField && _itemHasOptions(item))
           DropdownButtonFormField<String>(
-            initialValue: itemValues[uniqueId] == 'N/A' ? null : itemValues[uniqueId],
+            initialValue:
+                itemValues[uniqueId] == 'N/A' ? null : itemValues[uniqueId],
             decoration: InputDecoration(
               filled: true,
               fillColor: Theme.of(context).brightness == Brightness.dark
@@ -2344,7 +2379,8 @@ class _InspectionScreenState extends State<InspectionScreen>
       _currentItemIndex = lastIdx;
       _showButton = false;
       _isScrollable = false;
-      if (lastItem != null) _currentCaptureMode = _defaultCaptureModeForItem(lastItem);
+      if (lastItem != null)
+        _currentCaptureMode = _defaultCaptureModeForItem(lastItem);
     });
 
     if (_scrollController.hasClients) {
@@ -2453,8 +2489,7 @@ class _InspectionScreenState extends State<InspectionScreen>
           _autoSave();
           setState(() {
             if (_scrollController.hasClients) {
-              _isScrollable =
-                  _scrollController.position.maxScrollExtent > 0;
+              _isScrollable = _scrollController.position.maxScrollExtent > 0;
             } else {
               _isScrollable = false;
             }
@@ -2675,6 +2710,9 @@ class _InspectionScreenState extends State<InspectionScreen>
           files: finalItemFiles,
           multiImages: finalMultiImages,
         );
+        if (mounted) {
+          Provider.of<InspectionProvider>(context, listen: false).markDirty();
+        }
 
         await _completeInspection();
         await _cleanupCurrentInspection();
@@ -2743,8 +2781,8 @@ class _InspectionScreenState extends State<InspectionScreen>
             files: finalItemFiles,
             multiImages: finalMultiImages,
           );
-
           if (mounted) {
+            Provider.of<InspectionProvider>(context, listen: false).markDirty();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Failed to submit: ${result['message']}')),
             );
@@ -2848,7 +2886,7 @@ class _InspectionScreenState extends State<InspectionScreen>
         ? (items[_currentItemIndex]['title'] as String? ?? sectionTitle)
         : sectionTitle;
     final subtitle =
-        'Field ${_currentItemIndex + 1} out ${items.length} ° Section ${_currentSection + 1}/${_sections.length}';
+        'Field ${_currentItemIndex + 1} out ${items.length} • Section ${_currentSection + 1}/${_sections.length}';
 
     return AppBar(
       backgroundColor: Colors.black,
@@ -3954,8 +3992,7 @@ class _InspectionScreenState extends State<InspectionScreen>
           if (!mounted) return;
           setState(() {
             if (_scrollController.hasClients) {
-              _isScrollable =
-                  _scrollController.position.maxScrollExtent > 0;
+              _isScrollable = _scrollController.position.maxScrollExtent > 0;
             } else {
               _isScrollable = false;
             }
@@ -3992,6 +4029,26 @@ class _InspectionScreenState extends State<InspectionScreen>
     WidgetsBinding.instance.removeObserver(this);
     _saveDebouncer?.cancel();
     _flushPendingAutoSave();
+    if (!_sessionCompleted) {
+      _sessionProvider.saveSnapshot(
+        InspectionSessionSnapshot(
+          itemImages: Map.from(itemImages),
+          itemVideos: Map.from(itemVideos),
+          itemAudios: Map.from(itemAudios),
+          itemFiles: Map.from(itemFiles),
+          itemRemarks: Map.from(itemRemarks),
+          itemValues: Map.from(itemValues),
+          itemMultiImages: Map.from(itemMultiImages),
+          itemFlaggedIssues: Map.from(itemFlaggedIssues),
+          currentSection: _currentSection,
+          currentItemIndex: _currentItemIndex,
+          vehicleDetails: vehicleDetails,
+          inspectionTemplate: _inspectionTemplate,
+          useDynamicTemplate: _useDynamicTemplate,
+          sessionInspectionId: _sessionInspectionId,
+        ),
+      );
+    }
     _scrollController.dispose();
     _cleanupControllers();
     _isSubmitting = false;

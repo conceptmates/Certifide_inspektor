@@ -16,6 +16,9 @@ class LocalStorageService {
   static const String IMAGES_DIR = 'inspection_images';
   static const String PENDING_IMAGES_BOX = 'pending_images';
 
+  static Box<LocalInspection> get _box =>
+      Hive.box<LocalInspection>(INSPECTIONS_BOX);
+
   static Future<void> init() async {
     await Hive.initFlutter();
     if (!Hive.isAdapterRegistered(3)) {
@@ -103,7 +106,7 @@ class LocalStorageService {
     Map<String, List<String>>? multiImages,
   }) async {
     try {
-      final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+      final box = _box;
 
       // Save images to local storage
       Map<String, String> savedImages = {};
@@ -314,7 +317,7 @@ class LocalStorageService {
   }
 
   static Future<List<LocalInspection>> getPendingInspections() async {
-    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    final box = _box;
     return box.values
         .where(
           (inspection) =>
@@ -324,7 +327,7 @@ class LocalStorageService {
   }
 
   static Future<List<LocalInspection>> getInspectionsWithPendingImages() async {
-    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    final box = _box;
     return box.values
         .where(
           (inspection) =>
@@ -336,7 +339,7 @@ class LocalStorageService {
   }
 
   static Future<void> markInspectionAsSubmitted(String id) async {
-    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    final box = _box;
     final inspection = box.get(id);
 
     if (inspection != null) {
@@ -348,7 +351,7 @@ class LocalStorageService {
   }
 
   static Future<void> deleteInspection(String id) async {
-    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    final box = _box;
     final inspection = box.get(id);
 
     if (inspection != null) {
@@ -558,7 +561,7 @@ class LocalStorageService {
     required String inspectionId,
     required Map<String, String> uploadedImages,
   }) async {
-    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    final box = _box;
     final inspection = box.get(inspectionId);
 
     if (inspection != null) {
@@ -596,7 +599,7 @@ class LocalStorageService {
     required String section,
     required String itemId,
   }) async {
-    final box = await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    final box = _box;
     final inspection = box.get(inspectionId);
 
     if (inspection != null) {
