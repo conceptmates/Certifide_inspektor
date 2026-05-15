@@ -217,6 +217,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initHive();
 
+      if (!mounted) return;
+
       _sessionInspectionId = widget.inspectionId;
 
       // Set vehicle details from widget
@@ -226,6 +228,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         // Fresh start — discard any leftover session from a previous run.
         ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
+        if (!mounted) return;
         _initializeValues();
         _initializeControllers();
       } else {
@@ -4026,24 +4029,29 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _saveDebouncer?.cancel();
     _flushPendingAutoSave();
     if (!_sessionCompleted) {
-      ref.read(inspectionSessionNotifierProvider.notifier).saveSnapshot(
-        InspectionSessionSnapshot(
-          itemImages: Map.from(itemImages),
-          itemVideos: Map.from(itemVideos),
-          itemAudios: Map.from(itemAudios),
-          itemFiles: Map.from(itemFiles),
-          itemRemarks: Map.from(itemRemarks),
-          itemValues: Map.from(itemValues),
-          itemMultiImages: Map.from(itemMultiImages),
-          itemFlaggedIssues: Map.from(itemFlaggedIssues),
-          currentSection: _currentSection,
-          currentItemIndex: _currentItemIndex,
-          vehicleDetails: vehicleDetails,
-          inspectionTemplate: _inspectionTemplate,
-          useDynamicTemplate: _useDynamicTemplate,
-          sessionInspectionId: _sessionInspectionId,
-        ),
-      );
+      // ref is not guaranteed to be valid during dispose() in Riverpod — guard it.
+      try {
+        ref.read(inspectionSessionNotifierProvider.notifier).saveSnapshot(
+          InspectionSessionSnapshot(
+            itemImages: Map.from(itemImages),
+            itemVideos: Map.from(itemVideos),
+            itemAudios: Map.from(itemAudios),
+            itemFiles: Map.from(itemFiles),
+            itemRemarks: Map.from(itemRemarks),
+            itemValues: Map.from(itemValues),
+            itemMultiImages: Map.from(itemMultiImages),
+            itemFlaggedIssues: Map.from(itemFlaggedIssues),
+            currentSection: _currentSection,
+            currentItemIndex: _currentItemIndex,
+            vehicleDetails: vehicleDetails,
+            inspectionTemplate: _inspectionTemplate,
+            useDynamicTemplate: _useDynamicTemplate,
+            sessionInspectionId: _sessionInspectionId,
+          ),
+        );
+      } catch (_) {
+        // ref was already invalidated; session data persisted to Hive via _flushPendingAutoSave.
+      }
     }
     _scrollController.dispose();
     _cleanupControllers();

@@ -66,6 +66,6 @@ const List<ServiceItemData> carSpyServices = [
 const List<BottomNavItemData> carSpyBottomNavItems = [
   BottomNavItemData(icon: Icons.home_rounded, label: 'HOME'),
   BottomNavItemData(icon: Icons.description_outlined, label: 'REPORTS'),
-  BottomNavItemData(icon: Icons.garage_outlined, label: 'GARAGE'),
-  BottomNavItemData(icon: Icons.person_outline, label: 'PROFILE'),
+  BottomNavItemData(icon: Icons.calendar_today_outlined, label: 'ATTENDANCE'),
+  BottomNavItemData(icon: Icons.assignment_outlined, label: 'WORK ASSIGNED'),
 ];

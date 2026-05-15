@@ -36,29 +36,13 @@ class CarSpyTopAppBar extends StatelessWidget implements PreferredSizeWidget {
           ],
         ),
       ),
-      // actions: const [_ProfileAvatar()],
-    );
-  }
-}
-
-class _ProfileAvatar extends StatelessWidget {
-  const _ProfileAvatar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 16),
-      child: GestureDetector(
-        onTap: () => Navigator.pushNamed(context, Routes.login),
-        child: CircleAvatar(
-          radius: 18,
-          backgroundColor: const Color(0xFFEFF3FA),
-          foregroundImage: const NetworkImage(
-            'https://lh3.googleusercontent.com/aida-public/AB6AXuDzwV3ne_WATyw86rC4SLc4GWf_5rbqcNUGriG8tR1oGL1uHipDsmMydqzuUQSwlwKPwNIaH24W9fCl4kgqoDW_GC7TvUedu9P3624E-CP5eovcYBCF4IJyqKhfOAQ07zJCg_jkxruwia--xmfaVDnnb0usyU4KL2nwbqbXTuVJDwNDBzskPJ29fVC8Y7rJMs0GZVR_gTP_VAM09EkKhlgUYAYygnY8ZcCvfWbeYIyjLXz1t1bUJdG5L6-VFj-IaRvWiNT6kQEFiSU',
-          ),
-          child: const Icon(Icons.person, color: Color(0xFF1E40AF)),
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.person_outline, color: Color(0xFF1E40AF)),
+          onPressed: () => Navigator.pushNamed(context, Routes.profile),
+          tooltip: 'Profile',
         ),
-      ),
+      ],
     );
   }
 }
