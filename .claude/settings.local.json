@@ -4,7 +4,8 @@
       "Bash(flutter analyze:*)",
       "Bash(grep -v \"^$\")",
       "Bash(flutter pub *)",
-      "Bash(xargs ls *)"
+      "Bash(xargs ls *)",
+      "Bash(dart run *)"
     ]
   }
 }

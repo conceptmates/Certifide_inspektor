@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
-import '../providers/user_provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../screens/profile/profile.dart';
+import '../providers/user_provider.dart';
 import '../screens/home/home.dart';
 import '../screens/home/reports_page.dart';
+import '../screens/profile/profile.dart';
 import '../widgets/custom_nav.dart';
 
-class MainScreen extends StatefulWidget {
+class MainScreen extends ConsumerStatefulWidget {
   final int? initialIndex;
   const MainScreen({
     super.key,
@@ -16,10 +16,10 @@ class MainScreen extends StatefulWidget {
   });
 
   @override
-  State<MainScreen> createState() => _MainScreenState();
+  ConsumerState<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends ConsumerState<MainScreen> {
   int _selectedIndex = 0;
   DateTime? _lastBackPressTime;
   bool _isLoading = true;
@@ -124,21 +124,17 @@ class _MainScreenState extends State<MainScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: _handlePopInvokedWithResult,
-      child: Consumer<UserProvider>(
-        builder: (context, userProvider, child) {
-          if (userProvider.isLoading) {
+      child: Builder(
+        builder: (context) {
+          final userState = ref.watch(userNotifierProvider);
+          if (userState.isLoading) {
             return const Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(),
-              ),
+              body: Center(child: CircularProgressIndicator()),
             );
           }
 
           final screens = _userScreens;
-
-          if (_selectedIndex >= screens.length) {
-            _selectedIndex = 0;
-          }
+          if (_selectedIndex >= screens.length) _selectedIndex = 0;
 
           return Scaffold(
             body: IndexedStack(

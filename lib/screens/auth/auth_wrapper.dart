@@ -1,37 +1,29 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../providers/user_provider.dart';
 import '../../screens/auth/login_page.dart';
 import '../home/car_spy/car_spy_home.dart';
 
-class AuthWrapper extends StatefulWidget {
+class AuthWrapper extends ConsumerStatefulWidget {
   const AuthWrapper({super.key});
 
   @override
-  State<AuthWrapper> createState() => _AuthWrapperState();
+  ConsumerState<AuthWrapper> createState() => _AuthWrapperState();
 }
 
-class _AuthWrapperState extends State<AuthWrapper> {
+class _AuthWrapperState extends ConsumerState<AuthWrapper> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeAuth();
+      ref.read(userNotifierProvider.notifier).initializeAuth(context);
     });
-  }
-
-  Future<void> _initializeAuth() async {
-    if (!mounted) return;
-    final userProvider = Provider.of<UserProvider>(context, listen: false);
-    await userProvider.initializeAuth(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<UserProvider>(
-      builder: (context, userProvider, child) {
-        return userProvider.isAuthenticated ? const CarSpyHome() : LoginPage();
-      },
-    );
+    final userState = ref.watch(userNotifierProvider);
+    return userState.isAuthenticated ? const CarSpyHome() : LoginPage();
   }
 }

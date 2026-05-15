@@ -23,21 +23,12 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       images: (fields[3] as Map).cast<String, String>(),
       isSubmitted: fields[4] as bool,
       status: fields[5] as String,
-      pendingImages: (fields[6] as Map?)
-              ?.map((key, value) => MapEntry(
-                    key as String,
-                    value as PendingImage,
-                  ))
-              .cast<String, PendingImage>() ??
-          {},
-      videos: (fields[7] as Map?)?.cast<String, String>() ?? {},
-      audios: (fields[8] as Map?)?.cast<String, String>() ?? {},
-      files: (fields[9] as Map?)?.cast<String, String>() ?? {},
-      multiImages: (fields[10] as Map?)?.map((key, value) => MapEntry(
-                key as String,
-                (value as List).cast<String>(),
-              )) ??
-          {},
+      pendingImages: (fields[6] as Map?)?.cast<String, PendingImage>(),
+      videos: (fields[7] as Map?)?.cast<String, String>(),
+      audios: (fields[8] as Map?)?.cast<String, String>(),
+      files: (fields[9] as Map?)?.cast<String, String>(),
+      multiImages: (fields[10] as Map?)?.map((dynamic k, dynamic v) =>
+          MapEntry(k as String, (v as List).cast<String>())),
     );
   }
 

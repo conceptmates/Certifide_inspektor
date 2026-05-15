@@ -11,7 +11,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:record/record.dart';
 
 import '../../constants/hive_constants.dart';
@@ -37,7 +37,7 @@ import 'inspection_page/components/inspection_video_player.dart';
 import 'inspection_success_page.dart';
 import '../../utils/ads manager/rewarded_interstitial_ad.dart';
 
-class InspectionScreen extends StatefulWidget {
+class InspectionScreen extends ConsumerStatefulWidget {
   final bool isNewInspection;
   final Map<String, dynamic>? vehicleDetails;
   final int? inspectionId;
@@ -52,16 +52,15 @@ class InspectionScreen extends StatefulWidget {
   });
 
   @override
-  State<InspectionScreen> createState() => _InspectionScreenState();
+  ConsumerState<InspectionScreen> createState() => _InspectionScreenState();
 }
 
-class _InspectionScreenState extends State<InspectionScreen>
+class _InspectionScreenState extends ConsumerState<InspectionScreen>
     with WidgetsBindingObserver {
   // Survives navigation — keyed by "${brandId}_${modelId}"
   static final Map<String, InspectionInitializationResponse> _templateCache =
       {};
 
-  late final InspectionSessionProvider _sessionProvider;
   // Set true on successful submit so dispose() doesn't snapshot a dead session.
   bool _sessionCompleted = false;
 
@@ -216,9 +215,6 @@ class _InspectionScreenState extends State<InspectionScreen>
     _scrollController.addListener(_onScroll);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _sessionProvider =
-          Provider.of<InspectionSessionProvider>(context, listen: false);
-
       await _initHive();
 
       _sessionInspectionId = widget.inspectionId;
@@ -228,13 +224,13 @@ class _InspectionScreenState extends State<InspectionScreen>
 
       if (widget.isNewInspection) {
         // Fresh start — discard any leftover session from a previous run.
-        _sessionProvider.clearSession();
+        ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
         _initializeValues();
         _initializeControllers();
       } else {
         // Resume path: prefer in-memory snapshot over Hive to avoid I/O.
-        final snap = _sessionProvider.snapshot;
+        final snap = ref.read(inspectionSessionNotifierProvider);
         if (snap != null) {
           _restoreFromSnapshot(snap);
         } else {
@@ -710,7 +706,7 @@ class _InspectionScreenState extends State<InspectionScreen>
   Future<void> _cleanupCurrentInspection() async {
     try {
       _sessionCompleted = true;
-      _sessionProvider.clearSession();
+      ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
 
       if (_inspectionBox?.isOpen ?? false) {
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
@@ -2711,7 +2707,7 @@ class _InspectionScreenState extends State<InspectionScreen>
           multiImages: finalMultiImages,
         );
         if (mounted) {
-          Provider.of<InspectionProvider>(context, listen: false).markDirty();
+          ref.read(inspectionNotifierProvider.notifier).markDirty();
         }
 
         await _completeInspection();
@@ -2782,7 +2778,7 @@ class _InspectionScreenState extends State<InspectionScreen>
             multiImages: finalMultiImages,
           );
           if (mounted) {
-            Provider.of<InspectionProvider>(context, listen: false).markDirty();
+            ref.read(inspectionNotifierProvider.notifier).markDirty();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Failed to submit: ${result['message']}')),
             );
@@ -2817,7 +2813,7 @@ class _InspectionScreenState extends State<InspectionScreen>
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => MainScreen(
-          initialIndex: context.read<UserProvider>().isAdmin() ? 3 : 2,
+          initialIndex: ref.read(userNotifierProvider).isAdmin() ? 3 : 2,
         ),
       ),
     );
@@ -4030,7 +4026,7 @@ class _InspectionScreenState extends State<InspectionScreen>
     _saveDebouncer?.cancel();
     _flushPendingAutoSave();
     if (!_sessionCompleted) {
-      _sessionProvider.saveSnapshot(
+      ref.read(inspectionSessionNotifierProvider.notifier).saveSnapshot(
         InspectionSessionSnapshot(
           itemImages: Map.from(itemImages),
           itemVideos: Map.from(itemVideos),

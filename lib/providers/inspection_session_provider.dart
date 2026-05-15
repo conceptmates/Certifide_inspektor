@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/inspection_template_model.dart';
+
+part 'inspection_session_provider.g.dart';
 
 class InspectionSessionSnapshot {
   final Map<String, String?> itemImages;
@@ -38,20 +40,16 @@ class InspectionSessionSnapshot {
 
 /// Holds active inspection data in memory across screen navigations.
 /// Cleared on successful submit or explicit abandon.
-class InspectionSessionProvider extends ChangeNotifier {
-  InspectionSessionSnapshot? _snapshot;
-
-  InspectionSessionSnapshot? get snapshot => _snapshot;
-  bool get hasSession => _snapshot != null;
+@Riverpod(keepAlive: true)
+class InspectionSessionNotifier extends _$InspectionSessionNotifier {
+  @override
+  InspectionSessionSnapshot? build() => null;
 
   void saveSnapshot(InspectionSessionSnapshot snapshot) {
-    _snapshot = snapshot;
+    state = snapshot;
   }
 
   void clearSession() {
-    if (_snapshot != null) {
-      _snapshot = null;
-      notifyListeners();
-    }
+    if (state != null) state = null;
   }
 }

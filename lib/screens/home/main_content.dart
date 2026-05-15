@@ -1,25 +1,26 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'dart:convert';
+
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
-import '../../routes/routes.dart';
-import '../../widgets/fade_animation.dart';
-import '../../providers/user_provider.dart';
 import '../../providers/inspection_provider.dart';
+import '../../routes/routes.dart';
 import '../../utils/ads%20manager/banner_ad_manager.dart';
+import '../../widgets/fade_animation.dart';
 
-class MainContent extends StatefulWidget {
+class MainContent extends ConsumerStatefulWidget {
   const MainContent({super.key});
 
   @override
-  _MainContentState createState() => _MainContentState();
+  ConsumerState<MainContent> createState() => _MainContentState();
 }
 
-class _MainContentState extends State<MainContent>
+class _MainContentState extends ConsumerState<MainContent>
     with TickerProviderStateMixin {
   final _storage = FlutterSecureStorage();
   String _userName = 'User';
@@ -48,8 +49,7 @@ class _MainContentState extends State<MainContent>
     _loadUserName();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        Provider.of<InspectionProvider>(context, listen: false)
-            .loadInspections();
+        ref.read(inspectionNotifierProvider.notifier).loadInspections();
       }
     });
   }
@@ -387,9 +387,7 @@ class _MainContentState extends State<MainContent>
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: Consumer2<UserProvider, InspectionProvider>(
-        builder: (context, userProvider, inspectionProvider, child) {
-          return Container(
+      child: Container(
             color: _surface,
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -752,9 +750,7 @@ class _MainContentState extends State<MainContent>
                 ],
               ),
             ),
-          );
-        },
-      ),
+          ),
     );
   }
 }

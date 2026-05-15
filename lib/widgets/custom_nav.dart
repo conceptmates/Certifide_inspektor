@@ -1,7 +1,6 @@
-import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:provider/provider.dart';
-import '../providers/user_provider.dart';
+
+import 'package:flutter/material.dart';
 
 class CustomBottomNavBar extends StatelessWidget {
   final int selectedIndex;
@@ -15,15 +14,10 @@ class CustomBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<UserProvider>(
-      builder: (context, userProvider, child) {
-        final navItems = _getUserNavItems();
-        return _buildNavBar(context, navItems);
-      },
-    );
+    return _buildNavBar(context, _getNavItems());
   }
 
-  List<_NavItem> _getUserNavItems() {
+  List<_NavItem> _getNavItems() {
     return [
       _NavItem(
         index: 0,
@@ -84,9 +78,7 @@ class CustomBottomNavBar extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: items
-                  .map((item) => Expanded(
-                        child: _buildNavItem(context, item),
-                      ))
+                  .map((item) => Expanded(child: _buildNavItem(context, item)))
                   .toList(),
             ),
           ),
@@ -140,7 +132,8 @@ class CustomBottomNavBar extends StatelessWidget {
                     ? colorScheme.primary
                     : colorScheme.onSurface.withOpacity(0.7),
                 fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                fontWeight:
+                    isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,

@@ -3,8 +3,8 @@ import 'dart:io' show HandshakeException, SocketException;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:provider/provider.dart';
 import '../../constants/const.dart';
 
 import '../../providers/user_provider.dart';
@@ -30,14 +30,14 @@ class AppColors {
   static const secondaryContainer = Color(0xFFFF9800);
 }
 
-class LoginPage extends StatefulWidget {
+class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends State<LoginPage>
+class _LoginPageState extends ConsumerState<LoginPage>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
@@ -181,14 +181,12 @@ class _LoginPageState extends State<LoginPage>
         if (!mounted) return;
 
         if (response['success'] == true) {
-          final userProvider =
-              Provider.of<UserProvider>(context, listen: false);
           if (response['data'] != null &&
               response['data']['user'] != null &&
               response['data']['access_token'] != null) {
-            await userProvider.setUserData(
-              response['data']['user'],
-              response['data']['access_token'],
+            await ref.read(userNotifierProvider.notifier).setUserData(
+              response['data']['user'] as Map<String, dynamic>,
+              response['data']['access_token'] as String,
             );
 
             Navigator.of(context).pushReplacement(

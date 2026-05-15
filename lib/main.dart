@@ -1,23 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
-import '../constants/hive_constants.dart';
-import '../data/inspection_storage_model.dart';
-import '../providers/inspection_provider.dart';
-import '../providers/inspection_session_provider.dart';
-import '../routes/routes.dart';
-import '../screens/auth/auth_wrapper.dart';
-import '../services/local_storage_services.dart';
-import '../themes/app_scroll_behavior.dart';
-import '../themes/app_theme.dart';
-import 'package:provider/provider.dart';
-import '../providers/user_provider.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+
+import 'constants/hive_constants.dart';
+import 'data/inspection_storage_model.dart';
+import 'routes/routes.dart';
+import 'screens/auth/auth_wrapper.dart';
+import 'services/local_storage_services.dart';
+import 'themes/app_scroll_behavior.dart';
+import 'themes/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Google Mobile Ads
   await MobileAds.instance.initialize();
 
   await SystemChrome.setPreferredOrientations([
@@ -25,22 +22,18 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  // Initialize Hive
   await Hive.initFlutter();
   await LocalStorageService.init();
 
-  // Register Hive Adapters
   if (!Hive.isAdapterRegistered(0)) {
     Hive.registerAdapter(InspectionStorageModelAdapter());
   }
 
-  // Open Hive Boxes
   await Future.wait([
     Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_BOX),
     Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX),
   ]);
 
-  // Handle app lifecycle
   SystemChannels.lifecycle.setMessageHandler((msg) async {
     if (msg == AppLifecycleState.detached.toString()) {
       await Hive.close();
@@ -48,16 +41,7 @@ void main() async {
     return null;
   });
 
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => UserProvider()),
-        ChangeNotifierProvider(create: (_) => InspectionProvider()),
-        ChangeNotifierProvider(create: (_) => InspectionSessionProvider()),
-      ],
-      child: const MyApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: MyApp()));
 }
 
 class MyApp extends StatelessWidget {
