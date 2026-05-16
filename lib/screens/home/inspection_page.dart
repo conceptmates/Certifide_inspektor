@@ -1150,6 +1150,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final allowMultiImage = _itemHasMultiImage(item);
     final isRequired = _itemIsRequired(item);
     final referenceMedia = _getItemReferenceMedia(item);
+    final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
+    final hasFlaggableOptions = _itemHasOptions(item) &&
+        !_itemHasImage(item) &&
+        !_itemHasVideo(item);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -1284,6 +1288,24 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           minHeight: 36,
                         ),
                         onPressed: () => _pickAudio(item),
+                      ),
+                    if (hasFlaggableOptions)
+                      IconButton(
+                        icon: Icon(
+                          flaggedIssues.isNotEmpty
+                              ? Icons.flag
+                              : Icons.flag_outlined,
+                          size: 22,
+                        ),
+                        color: flaggedIssues.isNotEmpty
+                            ? Colors.orange
+                            : Colors.grey[500],
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 36,
+                          minHeight: 36,
+                        ),
+                        onPressed: () => _showFlagIssuesSheet(item),
                       ),
                   ],
                 ),
@@ -1547,6 +1569,41 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 ),
               ),
             _buildItemControls(item, sectionTitle),
+            if (hasFlaggableOptions && flaggedIssues.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: flaggedIssues.map((issue) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: Colors.orange.withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.flag,
+                            size: 11, color: Colors.orange),
+                        const SizedBox(width: 4),
+                        Text(
+                          issue,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
           ],
         ),
       ),
@@ -2873,7 +2930,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final currentIssues = itemFlaggedIssues[uniqueId] ?? [];
     final currentNotes = itemRemarks[uniqueId] ?? '';
 
+    // For fields that are pure dropdowns (have options, no image/video capture),
+    // don't overwrite the dropdown's selected value when flagging issues.
+    final isPureDropdownField = _itemHasOptions(item) &&
+        !_itemHasImage(item) &&
+        !_itemHasVideo(item);
+
     final List<String> availableIssues = [];
+    final Map<String, Color> issueColors = {};
     if (item is Map) {
       final opts = item['options'] as List?;
       if (opts != null) {
@@ -2881,7 +2945,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           final lbl = opt['label']?.toString() ?? '';
           final val = opt['value']?.toString() ?? '';
           final label = lbl.isNotEmpty ? lbl : val;
-          if (label.isNotEmpty) availableIssues.add(label);
+          if (label.isNotEmpty) {
+            availableIssues.add(label);
+            final colorCode = opt['colorCode']?.toString() ?? '';
+            if (colorCode.isNotEmpty) {
+              try {
+                final hex =
+                    colorCode.startsWith('#') ? colorCode.substring(1) : colorCode;
+                issueColors[label] =
+                    Color(int.parse('FF$hex', radix: 16));
+              } catch (_) {}
+            }
+          }
         }
       }
     }
@@ -2898,15 +2973,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           selectedIssues: currentIssues,
           notes: currentNotes,
           availableIssues: availableIssues,
+          issueColors: issueColors.isEmpty ? null : issueColors,
           onConfirm: (issues, notes, markedNoIssues) {
             setState(() {
               _highlightFlagIssues = false;
               if (markedNoIssues) {
                 itemFlaggedIssues[uniqueId] = [];
-                itemValues[uniqueId] = 'no_issues';
+                if (!isPureDropdownField) itemValues[uniqueId] = 'no_issues';
               } else {
                 itemFlaggedIssues[uniqueId] = issues;
-                itemValues[uniqueId] = issues.isEmpty ? '' : 'flagged';
+                if (!isPureDropdownField) {
+                  itemValues[uniqueId] = issues.isEmpty ? '' : 'flagged';
+                }
               }
               if (notes.isNotEmpty) {
                 remarksControllers[uniqueId]?.text = notes;

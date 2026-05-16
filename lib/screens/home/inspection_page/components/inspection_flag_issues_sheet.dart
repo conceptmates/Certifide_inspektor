@@ -5,6 +5,8 @@ class InspectionFlagIssuesSheet extends StatefulWidget {
   final List<String> selectedIssues;
   final String notes;
   final List<String> availableIssues;
+  // Optional color map: issue label → color from API colorCode
+  final Map<String, Color>? issueColors;
   final void Function(List<String> issues, String notes, bool markedNoIssues)
       onConfirm;
 
@@ -14,6 +16,7 @@ class InspectionFlagIssuesSheet extends StatefulWidget {
     required this.selectedIssues,
     required this.notes,
     required this.availableIssues,
+    this.issueColors,
     required this.onConfirm,
   });
 
@@ -49,6 +52,10 @@ class _InspectionFlagIssuesSheetState extends State<InspectionFlagIssuesSheet> {
         _selected.add(issue);
       }
     });
+  }
+
+  Color _chipColor(String issue) {
+    return widget.issueColors?[issue] ?? const Color(0xFF4D9EFF);
   }
 
   @override
@@ -121,70 +128,73 @@ class _InspectionFlagIssuesSheetState extends State<InspectionFlagIssuesSheet> {
                   ],
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 12, 20, 8),
-                child: Text(
-                  'TAP TO ADD',
-                  style: TextStyle(
-                    color: Colors.white54,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 1.1,
+              if (_issues.isNotEmpty) ...[
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 12, 20, 8),
+                  child: Text(
+                    'TAP TO ADD',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.1,
+                    ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _issues.map((issue) {
-                    final isSelected = _selected.contains(issue);
-                    return GestureDetector(
-                      onTap: () => _toggle(issue),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? const Color(0xFF4D9EFF).withValues(alpha: 0.18)
-                              : Colors.white.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _issues.map((issue) {
+                      final isSelected = _selected.contains(issue);
+                      final color = _chipColor(issue);
+                      return GestureDetector(
+                        onTap: () => _toggle(issue),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
                             color: isSelected
-                                ? const Color(0xFF4D9EFF)
-                                : Colors.white24,
-                            width: 1.5,
+                                ? color.withValues(alpha: 0.18)
+                                : Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isSelected
+                                  ? color
+                                  : Colors.white24,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isSelected) ...[
+                                Icon(Icons.check,
+                                    color: color, size: 13),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                issue,
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? color
+                                      : Colors.white70,
+                                  fontSize: 13,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.w400,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (isSelected) ...[
-                              const Icon(Icons.check,
-                                  color: Color(0xFF4D9EFF), size: 13),
-                              const SizedBox(width: 4),
-                            ],
-                            Text(
-                              issue,
-                              style: TextStyle(
-                                color: isSelected
-                                    ? const Color(0xFF4D9EFF)
-                                    : Colors.white70,
-                                fontSize: 13,
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
+                      );
+                    }).toList(),
+                  ),
                 ),
-              ),
+              ],
               const Padding(
                 padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
                 child: Text(
