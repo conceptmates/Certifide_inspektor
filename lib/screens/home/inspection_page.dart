@@ -102,6 +102,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   bool _isRecordingAudio = false;
   Timer? _audioTimer;
   Duration _audioElapsed = Duration.zero;
+  bool _highlightFlagIssues = false;
 
   // Dynamic inspection template from API
   InspectionInitializationResponse? _inspectionTemplate;
@@ -229,6 +230,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
         if (!mounted) return;
+        // Load the API template (with sections, fields, and options) for new inspections.
+        if (widget.inspectionTemplate != null) {
+          _inspectionTemplate = widget.inspectionTemplate;
+          _useDynamicTemplate = true;
+        }
         _initializeValues();
         _initializeControllers();
       } else {
@@ -2306,6 +2312,40 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
+  bool _checkCurrentItemFlagIssue() {
+    final currentSection = _sections[_currentSection];
+    final items = currentSection['items'] as List<dynamic>;
+    if (items.isEmpty) return true;
+
+    final currentItem = items[_currentItemIndex];
+    if (!(_itemHasImage(currentItem) || _itemHasVideo(currentItem))) return true;
+
+    final uniqueId = _getItemUniqueId(currentItem);
+    final hasMedia = (itemImages[uniqueId] != null) ||
+        (itemVideos[uniqueId] != null) ||
+        (itemFiles[uniqueId] != null) ||
+        (itemAudios[uniqueId] != null);
+    if (!hasMedia) return true;
+
+    final conditionValue = itemValues[uniqueId] ?? '';
+    final issueMarked =
+        conditionValue == 'no_issues' || conditionValue == 'flagged';
+    if (!issueMarked) {
+      setState(() => _highlightFlagIssues = true);
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Please flag an issue or mark as no issues before proceeding'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return false;
+    }
+    return true;
+  }
+
   void _nextItem() {
     if (_isReviewingCapture) {
       setState(() {
@@ -2315,6 +2355,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       });
       return;
     }
+    if (!_checkCurrentItemFlagIssue()) return;
+    setState(() => _highlightFlagIssues = false);
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
     if (items.isEmpty) return;
@@ -2363,6 +2405,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _isVideoRecording = false;
         _isRecordingAudio = false;
         _audioElapsed = Duration.zero;
+        _highlightFlagIssues = false;
       });
       _autoSave();
       return;
@@ -2443,6 +2486,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   }
 
   void _nextSection() {
+    if (!_checkCurrentItemFlagIssue()) return;
+    setState(() => _highlightFlagIssues = false);
     final errors = _getRequiredFieldErrors();
     if (errors.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2855,6 +2900,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           availableIssues: availableIssues,
           onConfirm: (issues, notes, markedNoIssues) {
             setState(() {
+              _highlightFlagIssues = false;
               if (markedNoIssues) {
                 itemFlaggedIssues[uniqueId] = [];
                 itemValues[uniqueId] = 'no_issues';
@@ -3469,24 +3515,37 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     ),
                     const SizedBox(width: 8),
                     GestureDetector(
-                      onTap: () => _showFlagIssuesSheet(item),
+                      onTap: () {
+                        setState(() => _highlightFlagIssues = false);
+                        _showFlagIssuesSheet(item);
+                      },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
-                          color: Colors.black54,
+                          color: _highlightFlagIssues
+                              ? Colors.orange.withValues(alpha: 0.2)
+                              : Colors.black54,
                           borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.white24),
+                          border: Border.all(
+                              color: _highlightFlagIssues
+                                  ? Colors.orange
+                                  : Colors.white24),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.flag_outlined,
-                                size: 13, color: Colors.white70),
-                            SizedBox(width: 4),
+                                size: 13,
+                                color: _highlightFlagIssues
+                                    ? Colors.orange
+                                    : Colors.white70),
+                            const SizedBox(width: 4),
                             Text('Flag Issue',
                                 style: TextStyle(
-                                    color: Colors.white70,
+                                    color: _highlightFlagIssues
+                                        ? Colors.orange
+                                        : Colors.white70,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500)),
                           ],
@@ -3969,47 +4028,53 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       currentSection: _currentSection,
       isSectionComplete: _isSectionComplete,
       getSectionIcon: _getSectionIcon,
-      onSelectSection: (index) {
-        final sectionItems = _sections[index]['items'] as List<dynamic>;
-        final firstItem = sectionItems.isNotEmpty ? sectionItems.first : null;
-        setState(() {
-          _currentSection = index;
-          _currentItemIndex = 0;
-          _isScrollable = false;
-          _showButton = true;
-          _isVideoRecording = false;
-          _isRecordingAudio = false;
-          _triggerPhotoCapture = null;
-          _triggerEnlarge = null;
-          _triggerVideoToggle = null;
-          if (firstItem != null) {
-            _currentCaptureMode = _defaultCaptureModeForItem(firstItem);
-          }
-        });
-
-        Future.delayed(const Duration(milliseconds: 100), () {
-          if (!mounted) return;
-          setState(() {
-            if (_scrollController.hasClients) {
-              _isScrollable = _scrollController.position.maxScrollExtent > 0;
-            } else {
-              _isScrollable = false;
-            }
-            _showButton = !_isScrollable;
-          });
-
-          if (_scrollController.hasClients) {
-            _scrollController.animateTo(
-              0,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            );
-          }
-        });
-
-        Navigator.pop(context);
-      },
+      onSelectSection: (index) => _navigateToField(index, 0),
+      onSelectField: (sectionIndex, fieldIndex) =>
+          _navigateToField(sectionIndex, fieldIndex),
     );
+  }
+
+  void _navigateToField(int sectionIndex, int fieldIndex) {
+    final sectionItems = _sections[sectionIndex]['items'] as List<dynamic>;
+    final clampedField = fieldIndex.clamp(0, sectionItems.length - 1);
+    final targetItem =
+        sectionItems.isNotEmpty ? sectionItems[clampedField] : null;
+    setState(() {
+      _currentSection = sectionIndex;
+      _currentItemIndex = clampedField;
+      _isScrollable = false;
+      _showButton = true;
+      _isVideoRecording = false;
+      _isRecordingAudio = false;
+      _triggerPhotoCapture = null;
+      _triggerEnlarge = null;
+      _triggerVideoToggle = null;
+      if (targetItem != null) {
+        _currentCaptureMode = _defaultCaptureModeForItem(targetItem);
+      }
+    });
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (!mounted) return;
+      setState(() {
+        if (_scrollController.hasClients) {
+          _isScrollable = _scrollController.position.maxScrollExtent > 0;
+        } else {
+          _isScrollable = false;
+        }
+        _showButton = !_isScrollable;
+      });
+
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+
+    Navigator.pop(context);
   }
 
   void _cleanupControllers() {
