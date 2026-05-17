@@ -7,6 +7,7 @@ import '../models/inspection_state.dart';
 import '../models/local_inspection.dart';
 import '../services/api_services.dart';
 import '../services/local_storage_services.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../utils/connectivity_checker.dart';
 
 part 'inspection_provider.g.dart';
@@ -14,11 +15,42 @@ part 'inspection_provider.g.dart';
 @Riverpod(keepAlive: true)
 class InspectionNotifier extends _$InspectionNotifier {
   Timer? _cooldownTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   @override
   InspectionState build() {
-    ref.onDispose(() => _cooldownTimer?.cancel());
+    ref.onDispose(() {
+      _cooldownTimer?.cancel();
+      _connectivitySubscription?.cancel();
+    });
+    _startConnectivityListener();
     return const InspectionState();
+  }
+
+  void _startConnectivityListener() {
+    _connectivitySubscription = Connectivity()
+        .onConnectivityChanged
+        .listen((List<ConnectivityResult> results) async {
+      if (results.isNotEmpty && results.first != ConnectivityResult.none) {
+        final hasInternet = await ConnectivityChecker.hasInternetConnection();
+        if (hasInternet) await _autoSubmitPending();
+      }
+    });
+  }
+
+  Future<void> _autoSubmitPending() async {
+    try {
+      final pending = await LocalStorageService.getPendingInspections();
+      if (pending.isEmpty) return;
+      for (final inspection in pending) {
+        if (!(state.submittingStates[inspection.id] ?? false)) {
+          await retrySubmission(inspection);
+        }
+      }
+      state = state.copyWith(isDirty: true);
+    } catch (e) {
+      log('Error auto-submitting pending inspections: $e');
+    }
   }
 
   void _startRefreshCooldown() {
@@ -125,6 +157,7 @@ class InspectionNotifier extends _$InspectionNotifier {
 
       var currentInspection = inspection;
 
+      // Upload pending images
       if (inspection.pendingImages.isNotEmpty) {
         state = state.copyWith(
           uploadingImagesStates: {
@@ -153,8 +186,10 @@ class InspectionNotifier extends _$InspectionNotifier {
             uploadedImages: uploadedImages,
           );
           final updated = await LocalStorageService.getPendingInspections();
-          currentInspection =
-              updated.firstWhere((i) => i.id == inspection.id);
+          currentInspection = updated.firstWhere(
+            (i) => i.id == inspection.id,
+            orElse: () => currentInspection,
+          );
         }
 
         state = state.copyWith(
@@ -165,11 +200,94 @@ class InspectionNotifier extends _$InspectionNotifier {
         );
       }
 
+      // Upload local videos, audios, and files
+      // Maps: localPath -> uploadedUrl (for in-data replacement)
+      final videoReplacements = <String, String>{};
+      final audioReplacements = <String, String>{};
+      final fileReplacements = <String, String>{};
+
+      for (var entry in currentInspection.videos.entries) {
+        if (!entry.value.startsWith('http')) {
+          final result = await ApiService.uploadImage(
+            entry.value,
+            section: '',
+            itemId: entry.key,
+            fieldName: 'video',
+          );
+          if (result['success'] == true) {
+            videoReplacements[entry.value] = result['url'] as String;
+          }
+        }
+      }
+
+      for (var entry in currentInspection.audios.entries) {
+        if (!entry.value.startsWith('http')) {
+          final result = await ApiService.uploadImage(
+            entry.value,
+            section: '',
+            itemId: entry.key,
+            fieldName: 'audio',
+          );
+          if (result['success'] == true) {
+            audioReplacements[entry.value] = result['url'] as String;
+          }
+        }
+      }
+
+      for (var entry in currentInspection.files.entries) {
+        if (!entry.value.startsWith('http')) {
+          final result = await ApiService.uploadImage(
+            entry.value,
+            section: '',
+            itemId: entry.key,
+            fieldName: 'file',
+          );
+          if (result['success'] == true) {
+            fileReplacements[entry.value] = result['url'] as String;
+          }
+        }
+      }
+
+      // Persist uploaded media URLs to local storage
+      if (videoReplacements.isNotEmpty ||
+          audioReplacements.isNotEmpty ||
+          fileReplacements.isNotEmpty) {
+        await LocalStorageService.updateInspectionMedia(
+          inspectionId: inspection.id,
+          uploadedVideos: {
+            for (var e in currentInspection.videos.entries)
+              if (videoReplacements.containsKey(e.value))
+                e.key: videoReplacements[e.value]!,
+          },
+          uploadedAudios: {
+            for (var e in currentInspection.audios.entries)
+              if (audioReplacements.containsKey(e.value))
+                e.key: audioReplacements[e.value]!,
+          },
+          uploadedFiles: {
+            for (var e in currentInspection.files.entries)
+              if (fileReplacements.containsKey(e.value))
+                e.key: fileReplacements[e.value]!,
+          },
+        );
+      }
+
+      // Build final submission payload with all uploaded URLs applied
       final inspectionData = Map<String, dynamic>.from(currentInspection.data);
+
       for (var entry in currentInspection.images.entries) {
         if (entry.value.startsWith('http')) {
           _updateNestedImagePath(inspectionData, entry.key, entry.value);
         }
+      }
+      for (var entry in videoReplacements.entries) {
+        _replaceValueInData(inspectionData, entry.key, entry.value);
+      }
+      for (var entry in audioReplacements.entries) {
+        _replaceValueInData(inspectionData, entry.key, entry.value);
+      }
+      for (var entry in fileReplacements.entries) {
+        _replaceValueInData(inspectionData, entry.key, entry.value);
       }
 
       final result = await ApiService.sendInspectionData(inspectionData);
@@ -225,6 +343,40 @@ class InspectionNotifier extends _$InspectionNotifier {
 
   void markDirty() {
     state = state.copyWith(isDirty: true);
+  }
+
+  void _replaceValueInData(
+    Map<String, dynamic> data,
+    String oldValue,
+    String newValue,
+  ) {
+    for (final key in data.keys.toList()) {
+      final val = data[key];
+      if (val is String && val == oldValue) {
+        data[key] = newValue;
+      } else if (val is Map<String, dynamic>) {
+        _replaceValueInData(val, oldValue, newValue);
+      } else if (val is List) {
+        _replaceValueInList(val, oldValue, newValue);
+      }
+    }
+  }
+
+  void _replaceValueInList(
+    List<dynamic> list,
+    String oldValue,
+    String newValue,
+  ) {
+    for (var i = 0; i < list.length; i++) {
+      final item = list[i];
+      if (item is String && item == oldValue) {
+        list[i] = newValue;
+      } else if (item is Map<String, dynamic>) {
+        _replaceValueInData(item, oldValue, newValue);
+      } else if (item is List) {
+        _replaceValueInList(item, oldValue, newValue);
+      }
+    }
   }
 
   void _updateNestedImagePath(

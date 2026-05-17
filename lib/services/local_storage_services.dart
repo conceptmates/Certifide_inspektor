@@ -321,7 +321,7 @@ class LocalStorageService {
     return box.values
         .where(
           (inspection) =>
-              !inspection.isSubmitted && inspection.status != 'completed',
+              !inspection.isSubmitted && inspection.status == 'offline',
         )
         .toList();
   }
@@ -333,7 +333,7 @@ class LocalStorageService {
           (inspection) =>
               !inspection.isSubmitted &&
               inspection.pendingImages.isNotEmpty &&
-              inspection.status != 'completed',
+              inspection.status == 'offline',
         )
         .toList();
   }
@@ -577,7 +577,6 @@ class LocalStorageService {
         }
       }
 
-      // Save updated inspection
       final updatedInspection = LocalInspection(
         id: inspection.id,
         createdAt: inspection.createdAt,
@@ -586,10 +585,48 @@ class LocalStorageService {
         pendingImages: updatedPendingImages,
         status: inspection.status,
         isSubmitted: inspection.isSubmitted,
+        videos: inspection.videos,
+        audios: inspection.audios,
+        files: inspection.files,
+        multiImages: inspection.multiImages,
       );
 
       await box.put(inspectionId, updatedInspection);
     }
+  }
+
+  static Future<void> updateInspectionMedia({
+    required String inspectionId,
+    Map<String, String> uploadedVideos = const {},
+    Map<String, String> uploadedAudios = const {},
+    Map<String, String> uploadedFiles = const {},
+  }) async {
+    final box = _box;
+    final inspection = box.get(inspectionId);
+    if (inspection == null) return;
+
+    final updatedVideos = Map<String, String>.from(inspection.videos)
+      ..addAll(uploadedVideos);
+    final updatedAudios = Map<String, String>.from(inspection.audios)
+      ..addAll(uploadedAudios);
+    final updatedFiles = Map<String, String>.from(inspection.files)
+      ..addAll(uploadedFiles);
+
+    final updatedInspection = LocalInspection(
+      id: inspection.id,
+      createdAt: inspection.createdAt,
+      data: inspection.data,
+      images: inspection.images,
+      pendingImages: inspection.pendingImages,
+      status: inspection.status,
+      isSubmitted: inspection.isSubmitted,
+      videos: updatedVideos,
+      audios: updatedAudios,
+      files: updatedFiles,
+      multiImages: inspection.multiImages,
+    );
+
+    await box.put(inspectionId, updatedInspection);
   }
 
   static Future<void> addPendingImage({
@@ -618,6 +655,10 @@ class LocalStorageService {
         pendingImages: updatedPendingImages,
         status: inspection.status,
         isSubmitted: inspection.isSubmitted,
+        videos: inspection.videos,
+        audios: inspection.audios,
+        files: inspection.files,
+        multiImages: inspection.multiImages,
       );
 
       await box.put(inspectionId, updatedInspection);

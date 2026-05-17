@@ -6,7 +6,9 @@
       "Bash(flutter pub *)",
       "Bash(xargs ls *)",
       "Bash(dart run *)",
-      "Bash(grep -E \"\\\\.dart$\")"
+      "Bash(grep -E \"\\\\.dart$\")",
+      "Bash(pod install *)",
+      "Bash(python3 -m json.tool)"
     ]
   }
 }

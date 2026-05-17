@@ -1186,6 +1186,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         !_itemHasVideo(item);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -1203,224 +1204,241 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           width: isRequired ? 2 : 1,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Header + reference media (padded) ──────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: _fieldTypeColor(item).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    _fieldTypeIcon(item),
-                    color: _fieldTypeColor(item),
-                    size: 15,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: _fieldTypeColor(item).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        _fieldTypeIcon(item),
+                        color: _fieldTypeColor(item),
+                        size: 15,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Flexible(
-                            child: Text(
-                              title,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF111827),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
                               ),
+                              if (isRequired)
+                                const Text(
+                                  ' *',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.red,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _getItemFieldType(item),
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 11,
                             ),
                           ),
-                          if (isRequired)
-                            const Text(
-                              ' *',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.red,
-                              ),
-                            ),
                         ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _getItemFieldType(item),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if ((allowImage && !_isImageFieldType(item)) ||
-                        allowMultiImage)
-                      IconButton(
-                        icon: const Icon(Icons.camera_alt, size: 22),
-                        color: const Color(0xFF4D9EFF),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 36,
-                          minHeight: 36,
-                        ),
-                        onPressed: () {
-                          if (allowMultiImage) {
-                            _pickMultiImages(item);
-                          } else {
-                            _showImagePickerOptions(item);
-                          }
-                        },
-                      ),
-                    if (_itemHasVideo(item))
-                      IconButton(
-                        icon: const Icon(Icons.videocam, size: 22),
-                        color: const Color(0xFFA855F7),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 36,
-                          minHeight: 36,
-                        ),
-                        onPressed: () => _showVideoPickerOptions(item),
-                      ),
-                    if (_itemHasFile(item))
-                      IconButton(
-                        icon: const Icon(Icons.attach_file, size: 22),
-                        color: const Color(0xFF22C55E),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 36,
-                          minHeight: 36,
-                        ),
-                        onPressed: () => _showFilePickerOptions(item),
-                      ),
-                    if ((item is Map ? (item['fieldType'] as String?) : null)
-                            ?.toLowerCase() ==
-                        'audio')
-                      IconButton(
-                        icon: const Icon(Icons.audio_file, size: 22),
-                        color: const Color(0xFFF97316),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 36,
-                          minHeight: 36,
-                        ),
-                        onPressed: () => _showAudioPickerOptions(item),
-                      ),
-                    if (hasFlaggableOptions)
-                      IconButton(
-                        icon: Icon(
-                          flaggedIssues.isNotEmpty
-                              ? Icons.flag
-                              : Icons.flag_outlined,
-                          size: 22,
-                        ),
-                        color: flaggedIssues.isNotEmpty
-                            ? Colors.orange
-                            : Colors.grey[500],
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 36,
-                          minHeight: 36,
-                        ),
-                        onPressed: () => _showFlagIssuesSheet(item),
-                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if ((allowImage && !_isImageFieldType(item)) ||
+                            allowMultiImage)
+                          IconButton(
+                            icon: const Icon(Icons.camera_alt, size: 22),
+                            color: const Color(0xFF4D9EFF),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            onPressed: () {
+                              if (allowMultiImage) {
+                                _pickMultiImages(item);
+                              } else {
+                                _showImagePickerOptions(item);
+                              }
+                            },
+                          ),
+                        if (_itemHasVideo(item))
+                          IconButton(
+                            icon: const Icon(Icons.videocam, size: 22),
+                            color: const Color(0xFFA855F7),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            onPressed: () => _showVideoPickerOptions(item),
+                          ),
+                        if (_itemHasFile(item))
+                          IconButton(
+                            icon: const Icon(Icons.attach_file, size: 22),
+                            color: const Color(0xFF22C55E),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            onPressed: () => _showFilePickerOptions(item),
+                          ),
+                        if ((item is Map
+                                    ? (item['fieldType'] as String?)
+                                    : null)
+                                ?.toLowerCase() ==
+                            'audio')
+                          IconButton(
+                            icon: const Icon(Icons.audio_file, size: 22),
+                            color: const Color(0xFFF97316),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            onPressed: () => _showAudioPickerOptions(item),
+                          ),
+                        if (hasFlaggableOptions)
+                          IconButton(
+                            icon: Icon(
+                              flaggedIssues.isNotEmpty
+                                  ? Icons.flag
+                                  : Icons.flag_outlined,
+                              size: 22,
+                            ),
+                            color: flaggedIssues.isNotEmpty
+                                ? Colors.orange
+                                : Colors.grey[500],
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                            onPressed: () => _showFlagIssuesSheet(item),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
+                const SizedBox(height: 8),
+                if (referenceMedia.isNotEmpty) ...[
+                  ReferenceMediaSectionView(
+                    mediaList: referenceMedia,
+                    imageHeight: 110,
+                    maxItems: 1,
+                    trailing: InspectionInfoButton(
+                      fieldId: uniqueId,
+                      referenceMedia: referenceMedia,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
               ],
             ),
-            const SizedBox(height: 8),
-            if (referenceMedia.isNotEmpty) ...[
-              ReferenceMediaSectionView(
-                mediaList: referenceMedia,
-                imageHeight: 110,
-                maxItems: 1,
-                trailing: InspectionInfoButton(
-                  fieldId: uniqueId,
-                  referenceMedia: referenceMedia,
-                ),
+          ),
+
+          // ── Full-width camera card ──────────────────────────────
+          if (_itemHasImage(item) && itemImages[uniqueId] == null) ...[
+            SectionCameraCard(
+              key: ValueKey('camera_$uniqueId'),
+              height: 220,
+              borderRadius: BorderRadius.zero,
+              instructionText: 'Take a clear photo of: $title',
+              onPickFromGallery: () => _pickImage(
+                ImageSource.gallery,
+                uniqueId,
+                _getItemFieldId(item),
               ),
-              const SizedBox(height: 10),
-            ],
-            if (_itemHasImage(item) && itemImages[uniqueId] == null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SectionCameraCard(
-                    key: ValueKey('camera_$uniqueId'),
-                    height: 220,
-                    borderRadius: BorderRadius.circular(12),
-                    instructionText: 'Take a clear photo of: $title',
-                    onPickFromGallery: () => _pickImage(
-                      ImageSource.gallery,
-                      uniqueId,
-                      _getItemFieldId(item),
-                    ),
-                    onCapture: (XFile file) async {
-                      final fieldId = _getItemFieldId(item);
-                      final String sectionTitle =
-                          _sections[_currentSection]['title'] as String;
-                      final savedPath =
-                          await LocalStorageService.saveImage(file.path);
-
-                      setState(() {
-                        itemImages[uniqueId] = savedPath;
-                        _uploadingImages.add(uniqueId);
-                      });
-
+              onCapture: (XFile file) async {
+                final fieldId = _getItemFieldId(item);
+                final String sectionTitle =
+                    _sections[_currentSection]['title'] as String;
+                final savedPath =
+                    await LocalStorageService.saveImage(file.path);
+                setState(() {
+                  itemImages[uniqueId] = savedPath;
+                  _uploadingImages.add(uniqueId);
+                });
+                await _saveDataLocally();
+                final bool hasInternet =
+                    await ConnectivityChecker.hasInternetConnection();
+                if (hasInternet) {
+                  final result = await ApiService.uploadImage(
+                    savedPath,
+                    inspectionId: _effectiveInspectionId,
+                    section: sectionTitle,
+                    itemId: fieldId,
+                  );
+                  if (mounted) {
+                    setState(() => _uploadingImages.remove(uniqueId));
+                    if (result['success']) {
+                      setState(
+                          () => itemImages[uniqueId] = result['url'] as String);
                       await _saveDataLocally();
+                    }
+                  }
+                } else {
+                  if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+                }
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
 
-                      final bool hasInternet =
-                          await ConnectivityChecker.hasInternetConnection();
+          // ── Full-width video card ───────────────────────────────
+          if (_itemHasVideo(item) && itemVideos[uniqueId] == null) ...[
+            SectionVideoCameraCard(
+              key: ValueKey('video_$uniqueId'),
+              height: 220,
+              borderRadius: BorderRadius.zero,
+              instructionText: 'Record a video of: $title',
+              onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
+              onCapture: (XFile file) {
+                setState(() {
+                  _pendingCapturedVideoFile = file;
+                  _pendingCapturedVideoUniqueId = uniqueId;
+                  _isReviewingVideo = true;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
 
-                      if (hasInternet) {
-                        final result = await ApiService.uploadImage(
-                          savedPath,
-                          inspectionId: _effectiveInspectionId,
-                          section: sectionTitle,
-                          itemId: fieldId,
-                        );
-
-                        if (mounted) {
-                          setState(() {
-                            _uploadingImages.remove(uniqueId);
-                          });
-
-                          if (result['success']) {
-                            setState(() {
-                              itemImages[uniqueId] = result['url'] as String;
-                            });
-                            await _saveDataLocally();
-                          }
-                        }
-                      } else {
-                        if (mounted) {
-                          setState(() {
-                            _uploadingImages.remove(uniqueId);
-                          });
-                        }
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            if (allowImage && itemImages[uniqueId] != null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+          // ── Captured image preview + rest (padded) ─────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (allowImage && itemImages[uniqueId] != null) ...[
                   Row(
                     children: [
                       Text(
@@ -1428,7 +1446,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                          color:
+                              Theme.of(context).textTheme.bodyMedium?.color,
                         ),
                       ),
                       if (_uploadingImages.contains(uniqueId)) ...[
@@ -1439,9 +1458,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           child: CircularProgressIndicator(strokeWidth: 2),
                         ),
                         const SizedBox(width: 4),
-                        Text(
+                        const Text(
                           'Uploading...',
-                          style: TextStyle(fontSize: 11, color: Colors.orange),
+                          style:
+                              TextStyle(fontSize: 11, color: Colors.orange),
                         ),
                       ],
                     ],
@@ -1471,24 +1491,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   ),
                   const SizedBox(height: 16),
                 ],
-              ),
-            if (allowMultiImage &&
-                itemMultiImages[uniqueId] != null &&
-                itemMultiImages[uniqueId]!.isNotEmpty)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'Captured Images:',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).textTheme.bodyMedium?.color,
-                        ),
-                      ),
-                    ],
+                if (allowMultiImage &&
+                    itemMultiImages[uniqueId] != null &&
+                    itemMultiImages[uniqueId]!.isNotEmpty) ...[
+                  Text(
+                    'Captured Images:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
@@ -1497,7 +1509,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       scrollDirection: Axis.horizontal,
                       itemCount: itemMultiImages[uniqueId]!.length,
                       itemBuilder: (context, imgIndex) {
-                        final imagePath = itemMultiImages[uniqueId]![imgIndex];
+                        final imagePath =
+                            itemMultiImages[uniqueId]![imgIndex];
                         return Container(
                           margin: const EdgeInsets.only(right: 8),
                           width: 150,
@@ -1552,91 +1565,70 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   ),
                   const SizedBox(height: 16),
                 ],
-              ),
-            if (_itemHasVideo(item) && itemVideos[uniqueId] == null)
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SectionVideoCameraCard(
-                    key: ValueKey('video_$uniqueId'),
-                    height: 220,
-                    borderRadius: BorderRadius.circular(12),
-                    instructionText: 'Record a video of: $title',
-                    onPickFromGallery: () =>
-                        _pickVideo(item, ImageSource.gallery),
-                    onCapture: (XFile file) {
-                      setState(() {
-                        _pendingCapturedVideoFile = file;
-                        _pendingCapturedVideoUniqueId = uniqueId;
-                        _isReviewingVideo = true;
-                      });
-                    },
+                if (itemVideos[uniqueId] != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Video selected: ${itemVideos[uniqueId]!.split('/').last}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ),
+                if (itemAudios[uniqueId] != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'Audio selected: ${itemAudios[uniqueId]!.split('/').last}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                if (itemFiles[uniqueId] != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      'File attached: ${_extractFileName(itemFiles[uniqueId]!)}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                _buildItemControls(item, sectionTitle),
+                if (hasFlaggableOptions && flaggedIssues.isNotEmpty) ...[
                   const SizedBox(height: 8),
-                ],
-              ),
-            if (itemVideos[uniqueId] != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Video selected: ${itemVideos[uniqueId]!.split('/').last}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            if (itemAudios[uniqueId] != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Audio selected: ${itemAudios[uniqueId]!.split('/').last}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            if (itemFiles[uniqueId] != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'File attached: ${_extractFileName(itemFiles[uniqueId]!)}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-            _buildItemControls(item, sectionTitle),
-            if (hasFlaggableOptions && flaggedIssues.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: flaggedIssues.map((issue) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: Colors.orange.withValues(alpha: 0.5)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.flag,
-                            size: 11, color: Colors.orange),
-                        const SizedBox(width: 4),
-                        Text(
-                          issue,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Colors.orange,
-                            fontWeight: FontWeight.w500,
-                          ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: flaggedIssues.map((issue) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: Colors.orange.withValues(alpha: 0.5)),
                         ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ],
-        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.flag,
+                                size: 11, color: Colors.orange),
+                            const SizedBox(width: 4),
+                            Text(
+                              issue,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Colors.orange,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -53,10 +53,18 @@ post_install do |installer|
     end
   end
 
-  # file_picker's FileUtils conflicts with Apple's private OSAnalytics.framework
+  # file_picker's FileUtils conflicts with Apple's private OSAnalytics.framework.
+  # Only run if files haven't been renamed yet (idempotent guard).
   file_picker_dir = installer.sandbox.pod_dir('file_picker')
-  Dir.glob("#{file_picker_dir}/**/*.{h,m}").each do |file|
-    content = File.read(file)
-    File.write(file, content.gsub('FileUtils', 'FPFileUtils')) if content.include?('FileUtils')
+  original_headers = Dir.glob("#{file_picker_dir}/**/FileUtils.{h,m}")
+  unless original_headers.empty?
+    Dir.glob("#{file_picker_dir}/**/*.{h,m}").each do |file|
+      content = File.read(file)
+      File.write(file, content.gsub('FileUtils', 'FPFileUtils')) if content.include?('FileUtils')
+    end
+    original_headers.each do |file|
+      new_path = file.gsub('/FileUtils.', '/FPFileUtils.')
+      File.rename(file, new_path) unless File.exist?(new_path)
+    end
   end
 end
