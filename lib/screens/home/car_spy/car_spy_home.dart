@@ -18,19 +18,22 @@ import 'widgets/car_spy_hero_section.dart';
 import 'widgets/car_spy_top_app_bar.dart';
 
 class CarSpyHome extends StatefulWidget {
-  const CarSpyHome({super.key});
+  final int initialIndex;
+
+  const CarSpyHome({super.key, this.initialIndex = 0});
 
   @override
   State<CarSpyHome> createState() => _CarSpyHomeState();
 }
 
 class _CarSpyHomeState extends State<CarSpyHome> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
   Box<InspectionStorageModel>? _inspectionBox;
 
   @override
   void initState() {
     super.initState();
+    _selectedIndex = widget.initialIndex;
     _initHive();
   }
 
@@ -278,6 +281,7 @@ class _CarSpyHomeState extends State<CarSpyHome> {
       bottomNavigationBar: CarSpyBottomNavBar(
         selectedIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
+        disabledIndices: const [2, 3],
       ),
     );
   }

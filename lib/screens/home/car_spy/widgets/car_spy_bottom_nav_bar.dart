@@ -7,10 +7,12 @@ class CarSpyBottomNavBar extends StatelessWidget {
     super.key,
     required this.selectedIndex,
     required this.onTap,
+    this.disabledIndices = const [],
   });
 
   final int selectedIndex;
   final ValueChanged<int> onTap;
+  final List<int> disabledIndices;
 
   @override
   Widget build(BuildContext context) {
@@ -34,47 +36,53 @@ class CarSpyBottomNavBar extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: List.generate(carSpyBottomNavItems.length, (index) {
               final item = carSpyBottomNavItems[index];
               final isSelected = selectedIndex == index;
-              return GestureDetector(
-                onTap: () => onTap(index),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? const Color(0xFFEFF6FF)
-                        : Colors.transparent,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        item.icon,
-                        color: isSelected
-                            ? const Color(0xFF1D4ED8)
-                            : Colors.grey.shade400,
-                        size: 22,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.label,
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: isSelected
-                              ? const Color(0xFF1D4ED8)
-                              : Colors.grey.shade400,
-                          letterSpacing: 1,
+              final isDisabled = disabledIndices.contains(index);
+              final Color iconColor = isDisabled
+                  ? Colors.grey.shade300
+                  : isSelected
+                      ? const Color(0xFF1D4ED8)
+                      : Colors.grey.shade400;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: isDisabled ? null : () => onTap(index),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFFEFF6FF)
+                          : const Color(0x00EFF6FF),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          item.icon,
+                          color: iconColor,
+                          size: 22,
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 4),
+                        Text(
+                          item.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: iconColor,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );

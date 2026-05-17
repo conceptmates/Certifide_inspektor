@@ -30,8 +30,8 @@ class InspectionSuccessPage extends StatelessWidget {
 
   void _goToHomePage(BuildContext context) {
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const CarSpyHome()),
-      // MaterialPageRoute(builder: (context) => const MainScreen()),
+      MaterialPageRoute(
+          builder: (context) => const CarSpyHome(initialIndex: 1)),
       (route) => false,
     );
   }

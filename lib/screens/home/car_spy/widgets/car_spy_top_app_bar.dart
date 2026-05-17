@@ -37,10 +37,20 @@ class CarSpyTopAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
       ),
       actions: [
-        IconButton(
-          icon: const Icon(Icons.person_outline, color: Color(0xFF1E40AF)),
-          onPressed: () => Navigator.pushNamed(context, Routes.profile),
-          tooltip: 'Profile',
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: GestureDetector(
+            onTap: () => Navigator.pushNamed(context, Routes.profile),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: const BoxDecoration(
+                color: Color(0xFFEFF6FF),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.person_outline,
+                  color: Color(0xFF1E40AF), size: 22),
+            ),
+          ),
         ),
       ],
     );

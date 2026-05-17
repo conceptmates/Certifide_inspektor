@@ -5,6 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+/// Shared across [SectionCameraCard] and [SectionVideoCameraCard] so that
+/// switching between photo and video mode properly waits for the previous
+/// controller to release camera hardware before the next one initialises.
+Future<void>? cameraCardPendingDisposal;
+
 class SectionCameraCard extends StatefulWidget {
   final double height;
   final BorderRadius borderRadius;
@@ -45,9 +50,10 @@ class SectionCameraCard extends StatefulWidget {
 
 class _SectionCameraCardState extends State<SectionCameraCard>
     with WidgetsBindingObserver {
-  // Shared across all instances so the next card always waits for the
-  // previous controller's async disposal to complete before initialising.
-  static Future<void>? _pendingDisposal;
+  // Uses the library-level [cameraCardPendingDisposal] shared with
+  // SectionVideoCameraCard so mode switches don't conflict on hardware.
+  static Future<void>? get _pendingDisposal => cameraCardPendingDisposal;
+  static set _pendingDisposal(Future<void>? v) => cameraCardPendingDisposal = v;
 
   CameraController? _controller;
   List<CameraDescription>? _cameras;
@@ -57,6 +63,8 @@ class _SectionCameraCardState extends State<SectionCameraCard>
   String _errorMessage = '';
   bool _isCapturing = false;
   int _currentCameraIndex = 0;
+  // Incremented on every inactive/paused transition to cancel in-flight inits.
+  int _initGeneration = 0;
 
   @override
   void initState() {
@@ -70,6 +78,9 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      // Cancel any in-flight init (e.g. waiting for iOS permission dialog).
+      _initGeneration++;
+      _isInitializing = false;
       _disposeController();
       if (mounted) {
         setState(() {
@@ -93,14 +104,13 @@ class _SectionCameraCardState extends State<SectionCameraCard>
   Future<void> _initCamera() async {
     if (_isInitializing) return;
     _isInitializing = true;
+    final myGen = ++_initGeneration;
 
     try {
-      // Flutter calls initState() on the NEW widget BEFORE dispose() on the
-      // widget it replaced.  Yielding one event-loop tick lets Flutter finish
-      // reconciliation – including the old card's dispose() that sets
-      // _pendingDisposal – before we touch the camera hardware.
+      // Yield one tick so Flutter finishes reconciliation before we touch
+      // hardware (the old card's dispose() sets _pendingDisposal).
       await Future.delayed(Duration.zero);
-      if (!mounted) return;
+      if (!mounted || _initGeneration != myGen) return;
 
       // Wait for the previous card's camera controller to fully release.
       final disposal = _pendingDisposal;
@@ -111,7 +121,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
           onTimeout: () {},
         );
       }
-      if (!mounted) return;
+      if (!mounted || _initGeneration != myGen) return;
 
       if (mounted) {
         setState(() {
@@ -122,6 +132,20 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       }
 
       final hasPermission = await _ensureCameraPermission();
+
+      // On iOS the permission dialog causes a brief inactive→resumed cycle which
+      // disposes our controller.  Re-wait for that disposal before proceeding.
+      if (!mounted || _initGeneration != myGen) return;
+      final postPermDisposal = _pendingDisposal;
+      if (postPermDisposal != null) {
+        _pendingDisposal = null;
+        await postPermDisposal.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
+      }
+      if (!mounted || _initGeneration != myGen) return;
+
       if (!hasPermission) {
         if (mounted) {
           setState(() {
@@ -135,6 +159,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       }
 
       _cameras = await availableCameras();
+      if (!mounted || _initGeneration != myGen) return;
       if (_cameras == null || _cameras!.isEmpty) {
         if (mounted) {
           setState(() {
@@ -150,13 +175,10 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       );
       _currentCameraIndex = backCameraIndex >= 0 ? backCameraIndex : 0;
 
-      // Try up to 3 times.  Hardware may need extra time to release even after
-      // the disposal future completes, especially on Android.
       for (int attempt = 0; attempt < 3; attempt++) {
-        if (!mounted) return;
+        if (!mounted || _initGeneration != myGen) return;
 
         if (attempt > 0) {
-          // Wait for the previous (failed) controller to release, then delay.
           final prev = _pendingDisposal;
           _pendingDisposal = null;
           if (prev != null) {
@@ -167,15 +189,13 @@ class _SectionCameraCardState extends State<SectionCameraCard>
           } else {
             await Future.delayed(const Duration(milliseconds: 600));
           }
-          if (!mounted) return;
+          if (!mounted || _initGeneration != myGen) return;
         }
 
         final ok = await _tryStartCamera(_cameras![_currentCameraIndex]);
-        if (ok) return; // success – exit the loop
-        // failure – _pendingDisposal was set by _tryStartCamera; loop retries
+        if (ok) return;
       }
 
-      // All attempts failed.
       if (mounted) {
         setState(() {
           _hasError = true;
@@ -190,7 +210,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
         });
       }
     } finally {
-      _isInitializing = false;
+      if (_initGeneration == myGen) _isInitializing = false;
     }
   }
 
@@ -307,35 +327,71 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       return Container(
         height: widget.height,
         decoration: BoxDecoration(
-          color: Colors.grey[900],
+          color: const Color(0xFF111111),
           borderRadius: widget.borderRadius,
         ),
         child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.videocam_off, color: Colors.white54, size: 36),
-              const SizedBox(height: 8),
-              Text(
-                _errorMessage,
-                style: const TextStyle(color: Colors.white54, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: () async {
-                  final status = await Permission.camera.status;
-                  if (status.isPermanentlyDenied || status.isRestricted) {
-                    await openAppSettings();
-                    return;
-                  }
-                  _initCamera();
-                },
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Grant permission'),
-                style: TextButton.styleFrom(foregroundColor: Colors.white70),
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withAlpha(30),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.no_photography_outlined,
+                    color: Colors.redAccent,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _errorMessage,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      if (Platform.isIOS) {
+                        // On iOS, after the first denial the system will not
+                        // re-prompt — the user must grant access via Settings.
+                        await openAppSettings();
+                        return;
+                      }
+                      final status = await Permission.camera.status;
+                      if (status.isPermanentlyDenied || status.isRestricted) {
+                        await openAppSettings();
+                        return;
+                      }
+                      _initCamera();
+                    },
+                    icon: const Icon(Icons.camera_alt_outlined, size: 18),
+                    label: const Text('Allow Camera Access'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3B82F6),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );

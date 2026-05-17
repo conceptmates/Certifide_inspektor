@@ -43,15 +43,16 @@ class CustomBottomNavBar extends StatelessWidget {
   Widget _buildNavBar(BuildContext context, List<_NavItem> items) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPadding > 0 ? bottomPadding : 16),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(35),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
-            height: 90,
+            padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(35),
               color: colorScheme.surface.withOpacity(0.9),
@@ -76,7 +77,6 @@ class CustomBottomNavBar extends StatelessWidget {
               ],
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: items
                   .map((item) => Expanded(child: _buildNavItem(context, item)))
                   .toList(),
@@ -95,10 +95,9 @@ class CustomBottomNavBar extends StatelessWidget {
     return GestureDetector(
       onTap: () => onItemSelected(item.index),
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: SizedBox(
+        height: 60,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
@@ -106,15 +105,6 @@ class CustomBottomNavBar extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isSelected ? colorScheme.primary : Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: colorScheme.shadow.withOpacity(0.3),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        )
-                      ]
-                    : null,
               ),
               child: Icon(
                 isSelected ? item.selectedIcon : item.icon,

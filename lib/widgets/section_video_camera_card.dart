@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'section_camera_card.dart' show cameraCardPendingDisposal;
 
 class SectionVideoCameraCard extends StatefulWidget {
   final double height;
@@ -39,9 +40,10 @@ class SectionVideoCameraCard extends StatefulWidget {
 
 class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
     with WidgetsBindingObserver {
-  // Shared across all instances so the next card always waits for the
-  // previous controller's async disposal to complete before initialising.
-  static Future<void>? _pendingDisposal;
+  // Uses the library-level [cameraCardPendingDisposal] shared with
+  // SectionCameraCard so mode switches don't conflict on hardware.
+  static Future<void>? get _pendingDisposal => cameraCardPendingDisposal;
+  static set _pendingDisposal(Future<void>? v) => cameraCardPendingDisposal = v;
 
   CameraController? _controller;
   List<CameraDescription>? _cameras;
@@ -52,8 +54,11 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   int _currentCameraIndex = 0;
 
   bool _isRecording = false;
+  bool _isToggling = false;
   Duration _elapsed = Duration.zero;
   Timer? _timer;
+  // Incremented on every inactive/paused transition to cancel in-flight inits.
+  int _initGeneration = 0;
 
   @override
   void initState() {
@@ -67,6 +72,9 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
+      // Cancel any in-flight init (e.g. waiting for iOS permission dialog).
+      _initGeneration++;
+      _isInitializing = false;
       _stopRecordingIfActive();
       _disposeController();
       if (mounted) setState(() => _isInitialized = false);
@@ -86,14 +94,12 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   Future<void> _initCamera() async {
     if (_isInitializing) return;
     _isInitializing = true;
+    final myGen = ++_initGeneration;
 
     try {
-      // Flutter calls initState() on the NEW widget BEFORE dispose() on the
-      // widget it replaced.  Yielding one event-loop tick lets Flutter finish
-      // reconciliation – including the old card's dispose() that sets
-      // _pendingDisposal – before we touch the camera hardware.
+      // Yield one tick so Flutter finishes reconciliation before touching hardware.
       await Future.delayed(Duration.zero);
-      if (!mounted) return;
+      if (!mounted || _initGeneration != myGen) return;
 
       // Wait for the previous card's camera controller to fully release.
       final disposal = _pendingDisposal;
@@ -104,7 +110,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
           onTimeout: () {},
         );
       }
-      if (!mounted) return;
+      if (!mounted || _initGeneration != myGen) return;
 
       if (mounted) {
         setState(() {
@@ -118,15 +124,38 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
         Permission.camera,
         'Camera permission is required to record inspection videos',
       );
+      // On iOS the permission dialog causes a brief inactive→resumed cycle.
+      // Re-wait for any disposal that occurred during the dialog.
+      if (!mounted || _initGeneration != myGen) return;
+      final postCamDisposal = _pendingDisposal;
+      if (postCamDisposal != null) {
+        _pendingDisposal = null;
+        await postCamDisposal.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
+      }
+      if (!mounted || _initGeneration != myGen) return;
       if (!hasCamPerm) return;
 
       final hasMicPerm = await _ensurePermission(
         Permission.microphone,
         'Microphone permission is required to record inspection videos',
       );
+      if (!mounted || _initGeneration != myGen) return;
+      final postMicDisposal = _pendingDisposal;
+      if (postMicDisposal != null) {
+        _pendingDisposal = null;
+        await postMicDisposal.timeout(
+          const Duration(seconds: 2),
+          onTimeout: () {},
+        );
+      }
+      if (!mounted || _initGeneration != myGen) return;
       if (!hasMicPerm) return;
 
       _cameras = await availableCameras();
+      if (!mounted || _initGeneration != myGen) return;
       if (_cameras == null || _cameras!.isEmpty) {
         if (mounted) {
           setState(() {
@@ -141,10 +170,8 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
           .indexWhere((c) => c.lensDirection == CameraLensDirection.back);
       _currentCameraIndex = backIdx >= 0 ? backIdx : 0;
 
-      // Try up to 3 times.  Hardware may need extra time to release even after
-      // the disposal future completes, especially on Android.
       for (int attempt = 0; attempt < 3; attempt++) {
-        if (!mounted) return;
+        if (!mounted || _initGeneration != myGen) return;
 
         if (attempt > 0) {
           final prev = _pendingDisposal;
@@ -157,7 +184,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
           } else {
             await Future.delayed(const Duration(milliseconds: 600));
           }
-          if (!mounted) return;
+          if (!mounted || _initGeneration != myGen) return;
         }
 
         final ok = await _tryStartCamera(_cameras![_currentCameraIndex]);
@@ -178,7 +205,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
         });
       }
     } finally {
-      _isInitializing = false;
+      if (_initGeneration == myGen) _isInitializing = false;
     }
   }
 
@@ -246,16 +273,29 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   }
 
   Future<void> _toggleRecording() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
-
-    if (_isRecording) {
-      await _stopRecording();
-    } else {
-      await _startRecording();
+    if (_isToggling || _controller == null || !_controller!.value.isInitialized) return;
+    _isToggling = true;
+    try {
+      if (_isRecording) {
+        await _stopRecording();
+      } else {
+        await _startRecording();
+      }
+    } finally {
+      _isToggling = false;
     }
   }
 
   Future<void> _startRecording() async {
+    // Guard against the camera already recording at the native level.
+    if (_controller!.value.isRecordingVideo) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Recording already started')),
+        );
+      }
+      return;
+    }
     try {
       await _controller!.startVideoRecording();
       _elapsed = Duration.zero;
@@ -265,6 +305,16 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
       if (mounted) {
         setState(() => _isRecording = true);
         widget.onRecordingChanged?.call(true);
+      }
+    } on CameraException catch (e) {
+      if (mounted) {
+        final msg = e.description?.toLowerCase() ?? '';
+        final friendly = msg.contains('already')
+            ? 'Recording already started'
+            : 'Failed to start recording';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendly)),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -276,15 +326,34 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   }
 
   Future<void> _stopRecording() async {
+    _timer?.cancel();
+    _timer = null;
+
+    // Guard against the native layer not actually recording.
+    if (!(_controller?.value.isRecordingVideo ?? false)) {
+      if (mounted) setState(() => _isRecording = false);
+      return;
+    }
+
     try {
-      _timer?.cancel();
-      _timer = null;
       final file = await _controller!.stopVideoRecording();
       if (mounted) {
         setState(() => _isRecording = false);
         widget.onRecordingChanged?.call(false);
       }
       widget.onCapture?.call(file);
+    } on CameraException catch (e) {
+      if (mounted) {
+        setState(() => _isRecording = false);
+        widget.onRecordingChanged?.call(false);
+        final msg = e.description?.toLowerCase() ?? '';
+        final friendly = msg.contains('assertwriter') || msg.contains('assetwriter')
+            ? 'Recording was too short. Please try again.'
+            : 'Failed to save recording';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(friendly)),
+        );
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _isRecording = false);
@@ -296,7 +365,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   }
 
   Future<void> _stopRecordingIfActive() async {
-    if (_isRecording) {
+    if (_isRecording || (_controller?.value.isRecordingVideo ?? false)) {
       _timer?.cancel();
       _timer = null;
       try {
@@ -326,40 +395,71 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
       return Container(
         height: widget.height,
         decoration: BoxDecoration(
-          color: Colors.grey[900],
+          color: const Color(0xFF111111),
           borderRadius: widget.borderRadius,
         ),
         child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.videocam_off, color: Colors.white54, size: 36),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withAlpha(30),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.videocam_off_outlined,
+                    color: Colors.redAccent,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
                   _errorMessage,
-                  style: const TextStyle(color: Colors.white54, fontSize: 13),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    height: 1.4,
+                  ),
                   textAlign: TextAlign.center,
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextButton.icon(
-                onPressed: () async {
-                  final camStatus = await Permission.camera.status;
-                  final micStatus = await Permission.microphone.status;
-                  if (camStatus.isPermanentlyDenied ||
-                      micStatus.isPermanentlyDenied) {
-                    await openAppSettings();
-                    return;
-                  }
-                  _initCamera();
-                },
-                icon: const Icon(Icons.refresh, size: 16),
-                label: const Text('Grant permission'),
-                style: TextButton.styleFrom(foregroundColor: Colors.white70),
-              ),
-            ],
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () async {
+                      if (Platform.isIOS) {
+                        await openAppSettings();
+                        return;
+                      }
+                      final camStatus = await Permission.camera.status;
+                      final micStatus = await Permission.microphone.status;
+                      if (camStatus.isPermanentlyDenied ||
+                          micStatus.isPermanentlyDenied) {
+                        await openAppSettings();
+                        return;
+                      }
+                      _initCamera();
+                    },
+                    icon: const Icon(Icons.videocam_outlined, size: 18),
+                    label: const Text('Allow Camera & Microphone'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF3B82F6),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );

@@ -569,27 +569,26 @@ class ApiService {
     int? inspectionId,
     required String section,
     required String itemId,
+    String fieldName = 'image',
   }) async {
     try {
-      log('Uploading image to: $baseUrl$uploadImageEndPoint');
+      log('Uploading media ($fieldName) to: $baseUrl$uploadImageEndPoint');
       log('Section: $section, ItemId: $itemId');
 
-      // Read the image file
       final file = File(imagePath);
       if (!await file.exists()) {
-        log('Image file does not exist: $imagePath');
+        log('File does not exist: $imagePath');
         return {
           'success': false,
-          'message': 'Image file not found',
+          'message': 'File not found',
         };
       }
 
       final bytes = await file.readAsBytes();
       final fileName = imagePath.split('/').last;
 
-      log('Image file name: $fileName, size: ${bytes.length} bytes');
+      log('File name: $fileName, size: ${bytes.length} bytes');
 
-      // Get auth token
       final token = await _storage.read(key: 'jwt_token');
       if (token == null) {
         return {
@@ -598,7 +597,6 @@ class ApiService {
         };
       }
 
-      // Check if token is expired and refresh if needed
       if (await isTokenExpired(token)) {
         final refreshResult = await refreshToken();
         if (!refreshResult['success']) {
@@ -610,66 +608,61 @@ class ApiService {
         }
       }
 
-      // Get fresh token after refresh
       final newToken = await _storage.read(key: 'jwt_token');
 
-      // Create multipart request
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('$baseUrl$uploadImageEndPoint'),
       );
 
-      // Add headers
       request.headers['Authorization'] = 'Bearer $newToken';
       request.headers['Accept'] = 'application/json';
 
-      // Add the image file
       request.files.add(
         http.MultipartFile.fromBytes(
-          'image',
+          fieldName,
           bytes,
           filename: fileName,
         ),
       );
 
-      // Add form fields
       request.fields['section'] = section;
       request.fields['itemId'] = itemId;
 
-      // Add inspection_id if available
       if (inspectionId != null) {
         request.fields['inspection_id'] = inspectionId.toString();
         log('Adding inspection_id to request: ${inspectionId.toString()}');
       }
 
-      // Log the full request for debugging
       log('Upload request fields: section=$section, itemId=$itemId, inspectionId=$inspectionId');
-      log('Request URL: $baseUrl$uploadImageEndPoint');
 
-      // Send the request
       final response = await request.send();
 
       final responseBody = await response.stream.bytesToString();
-      log('Image upload response status: ${response.statusCode}');
-      log('Image upload response body: $responseBody');
+      log('Upload response status: ${response.statusCode}');
+      log('Upload response body: $responseBody');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(responseBody);
 
-        if (responseData['status'] == 'success' &&
-            responseData['imagePath'] != null) {
-          log('Image uploaded successfully. URL: ${responseData['imagePath']['url']}');
+        // Server returns imagePath for all media types on this endpoint
+        final mediaPath = responseData['imagePath'] ??
+            responseData['videoPath'] ??
+            responseData['audioPath'] ??
+            responseData['filePath'];
 
+        if (responseData['status'] == 'success' && mediaPath != null) {
+          log('Upload successful. URL: ${mediaPath['url']}');
           return {
             'success': true,
-            'url': responseData['imagePath']['url'],
-            'path': responseData['imagePath']['path'],
-            'message': responseData['message'] ?? 'Image uploaded successfully',
+            'url': mediaPath['url'],
+            'path': mediaPath['path'],
+            'message': responseData['message'] ?? 'Uploaded successfully',
           };
         } else {
           return {
             'success': false,
-            'message': responseData['message'] ?? 'Failed to upload image',
+            'message': responseData['message'] ?? 'Failed to upload',
           };
         }
       } else {
@@ -680,7 +673,7 @@ class ApiService {
         };
       }
     } catch (e) {
-      log('Error uploading image: $e');
+      log('Error uploading media: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',

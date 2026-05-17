@@ -31,6 +31,7 @@ import '../../widgets/section_video_camera_card.dart';
 import '../main_screen.dart';
 import 'inspection_page/components/inspection_flag_issues_sheet.dart';
 import 'inspection_page/components/inspection_image_review.dart';
+import 'inspection_page/components/inspection_video_review.dart';
 import 'inspection_page/components/inspection_reference_fullscreen.dart';
 import 'inspection_page/components/inspection_sections_drawer.dart';
 import 'inspection_page/components/inspection_video_player.dart';
@@ -92,6 +93,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   XFile? _pendingCapturedXFile;
   String? _pendingCapturedUniqueId;
   bool _isReviewingCapture = false;
+  XFile? _pendingCapturedVideoFile;
+  String? _pendingCapturedVideoUniqueId;
+  bool _isReviewingVideo = false;
+  String? _pendingCapturedAudioPath;
+  String? _pendingCapturedAudioUniqueId;
+  bool _isReviewingAudio = false;
   String _currentCaptureMode = 'PHOTO';
   // Bound to SectionCameraCard when showControls:false; resets on item change.
   VoidCallback? _triggerPhotoCapture;
@@ -294,6 +301,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // Load rewarded interstitial ad
       _rewardedAdManager.loadRewardedInterstitialAd();
 
+      // Request camera + mic permissions while the loading screen is still
+      // shown so the camera card renders with permissions already resolved.
+      await _requestInspectionPermissions();
+
       if (mounted) {
         setState(() {
           _isLoadingTemplate = false;
@@ -448,6 +459,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
       _flushPendingAutoSave();
+    }
+  }
+
+  /// Requests camera and microphone permissions while the loading screen is
+  /// shown so the camera card never races with a permission dialog.
+  Future<void> _requestInspectionPermissions() async {
+    if (!Platform.isIOS) return;
+    final camStatus = await Permission.camera.status;
+    if (!camStatus.isGranted &&
+        !camStatus.isPermanentlyDenied &&
+        !camStatus.isRestricted) {
+      await Permission.camera.request();
+    }
+    if (!mounted) return;
+    final micStatus = await Permission.microphone.status;
+    if (!micStatus.isGranted &&
+        !micStatus.isPermanentlyDenied &&
+        !micStatus.isRestricted) {
+      await Permission.microphone.request();
     }
   }
 
@@ -1274,7 +1304,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           minWidth: 36,
                           minHeight: 36,
                         ),
-                        onPressed: () => _pickFile(item),
+                        onPressed: () => _showFilePickerOptions(item),
                       ),
                     if ((item is Map ? (item['fieldType'] as String?) : null)
                             ?.toLowerCase() ==
@@ -1287,7 +1317,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           minWidth: 36,
                           minHeight: 36,
                         ),
-                        onPressed: () => _pickAudio(item),
+                        onPressed: () => _showAudioPickerOptions(item),
                       ),
                     if (hasFlaggableOptions)
                       IconButton(
@@ -1536,9 +1566,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         _pickVideo(item, ImageSource.gallery),
                     onCapture: (XFile file) {
                       setState(() {
-                        itemVideos[uniqueId] = file.path;
+                        _pendingCapturedVideoFile = file;
+                        _pendingCapturedVideoUniqueId = uniqueId;
+                        _isReviewingVideo = true;
                       });
-                      _autoSave();
                     },
                   ),
                   const SizedBox(height: 8),
@@ -2084,9 +2115,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       if (mounted) {
         setState(() {
           _isRecordingAudio = false;
-          if (path != null) itemAudios[uniqueId] = path;
+          if (path != null) {
+            _pendingCapturedAudioPath = path;
+            _pendingCapturedAudioUniqueId = uniqueId;
+            _isReviewingAudio = true;
+          }
         });
-        if (path != null) _autoSave();
       }
     } catch (e) {
       if (mounted) {
@@ -2108,9 +2142,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (result != null && result.files.single.path != null && mounted) {
         setState(() {
-          itemAudios[uniqueId] = result.files.single.path!;
+          _pendingCapturedAudioPath = result.files.single.path!;
+          _pendingCapturedAudioUniqueId = uniqueId;
+          _isReviewingAudio = true;
         });
-        _autoSave();
       }
     } catch (e) {
       if (mounted) {
@@ -2194,6 +2229,60 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     );
   }
 
+  void _showAudioPickerOptions(dynamic item) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.mic, color: Color(0xFFF97316)),
+                title: const Text('Record Audio'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _startAudioRecording(item);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.audio_file, color: Color(0xFFF97316)),
+                title: const Text('Browse Audio Files'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickAudio(item);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showFilePickerOptions(dynamic item) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.attach_file, color: Color(0xFF22C55E)),
+                title: const Text('Browse Files'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickFile(item);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _pickVideo(dynamic item, ImageSource source) async {
     final uniqueId = _getItemUniqueId(item);
     try {
@@ -2220,9 +2309,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final video = await picker.pickVideo(source: source);
       if (video != null && mounted) {
         setState(() {
-          itemVideos[uniqueId] = video.path;
+          _pendingCapturedVideoFile = video;
+          _pendingCapturedVideoUniqueId = uniqueId;
+          _isReviewingVideo = true;
         });
-        _autoSave();
       }
     } catch (e) {
       if (mounted) {
@@ -2369,6 +2459,104 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
+  Future<void> _acceptCapturedVideo() async {
+    final file = _pendingCapturedVideoFile;
+    final uniqueId = _pendingCapturedVideoUniqueId;
+    if (file == null || uniqueId == null) return;
+
+    String sectionTitle = '';
+    String fieldId = '';
+    for (final section in _sections) {
+      for (final item in section['items'] as List<dynamic>) {
+        if (_getItemUniqueId(item) == uniqueId) {
+          sectionTitle = section['title'] as String;
+          fieldId = _getItemFieldId(item);
+          break;
+        }
+      }
+      if (sectionTitle.isNotEmpty) break;
+    }
+
+    setState(() {
+      _isReviewingVideo = false;
+      _pendingCapturedVideoFile = null;
+      _pendingCapturedVideoUniqueId = null;
+      itemVideos[uniqueId] = file.path;
+      _uploadingImages.add(uniqueId);
+    });
+
+    await _saveDataLocally();
+
+    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    if (hasInternet && sectionTitle.isNotEmpty) {
+      final result = await ApiService.uploadImage(
+        file.path,
+        inspectionId: _effectiveInspectionId,
+        section: sectionTitle,
+        itemId: fieldId,
+        fieldName: 'image',
+      );
+      if (mounted) {
+        setState(() => _uploadingImages.remove(uniqueId));
+        if (result['success']) {
+          setState(() => itemVideos[uniqueId] = result['url'] as String);
+          await _saveDataLocally();
+        }
+      }
+    } else {
+      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+    }
+  }
+
+  Future<void> _acceptCapturedAudio() async {
+    final path = _pendingCapturedAudioPath;
+    final uniqueId = _pendingCapturedAudioUniqueId;
+    if (path == null || uniqueId == null) return;
+
+    String sectionTitle = '';
+    String fieldId = '';
+    for (final section in _sections) {
+      for (final item in section['items'] as List<dynamic>) {
+        if (_getItemUniqueId(item) == uniqueId) {
+          sectionTitle = section['title'] as String;
+          fieldId = _getItemFieldId(item);
+          break;
+        }
+      }
+      if (sectionTitle.isNotEmpty) break;
+    }
+
+    setState(() {
+      _isReviewingAudio = false;
+      _pendingCapturedAudioPath = null;
+      _pendingCapturedAudioUniqueId = null;
+      itemAudios[uniqueId] = path;
+      _uploadingImages.add(uniqueId);
+    });
+
+    await _saveDataLocally();
+
+    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    if (hasInternet && sectionTitle.isNotEmpty) {
+      final result = await ApiService.uploadImage(
+        path,
+        inspectionId: _effectiveInspectionId,
+        section: sectionTitle,
+        itemId: fieldId,
+        fieldName: 'image',
+      );
+      if (mounted) {
+        setState(() => _uploadingImages.remove(uniqueId));
+        if (result['success']) {
+          setState(() => itemAudios[uniqueId] = result['url'] as String);
+          await _saveDataLocally();
+        }
+      }
+    } else {
+      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+    }
+  }
+
   bool _checkCurrentItemFlagIssue() {
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
@@ -2412,6 +2600,22 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       });
       return;
     }
+    if (_isReviewingVideo) {
+      setState(() {
+        _isReviewingVideo = false;
+        _pendingCapturedVideoFile = null;
+        _pendingCapturedVideoUniqueId = null;
+      });
+      return;
+    }
+    if (_isReviewingAudio) {
+      setState(() {
+        _isReviewingAudio = false;
+        _pendingCapturedAudioPath = null;
+        _pendingCapturedAudioUniqueId = null;
+      });
+      return;
+    }
     if (!_checkCurrentItemFlagIssue()) return;
     setState(() => _highlightFlagIssues = false);
     final currentSection = _sections[_currentSection];
@@ -2444,6 +2648,22 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _isReviewingCapture = false;
         _pendingCapturedXFile = null;
         _pendingCapturedUniqueId = null;
+      });
+      return;
+    }
+    if (_isReviewingVideo) {
+      setState(() {
+        _isReviewingVideo = false;
+        _pendingCapturedVideoFile = null;
+        _pendingCapturedVideoUniqueId = null;
+      });
+      return;
+    }
+    if (_isReviewingAudio) {
+      setState(() {
+        _isReviewingAudio = false;
+        _pendingCapturedAudioPath = null;
+        _pendingCapturedAudioUniqueId = null;
       });
       return;
     }
@@ -2772,6 +2992,46 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             }
           }
           if (mounted) setState(() => itemMultiImages[uniqueId] = updated);
+        }
+
+        final videoPath = itemVideos[uniqueId];
+        if (videoPath != null && !videoPath.startsWith('http')) {
+          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          final result = await ApiService.uploadImage(
+            videoPath,
+            inspectionId: _effectiveInspectionId,
+            section: sectionTitle,
+            itemId: fieldId,
+            fieldName: 'image',
+          );
+          if (mounted) {
+            setState(() {
+              _uploadingImages.remove(uniqueId);
+              if (result['success'] == true) {
+                itemVideos[uniqueId] = result['url'] as String;
+              }
+            });
+          }
+        }
+
+        final audioPath = itemAudios[uniqueId];
+        if (audioPath != null && !audioPath.startsWith('http')) {
+          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          final result = await ApiService.uploadImage(
+            audioPath,
+            inspectionId: _effectiveInspectionId,
+            section: sectionTitle,
+            itemId: fieldId,
+            fieldName: 'image',
+          );
+          if (mounted) {
+            setState(() {
+              _uploadingImages.remove(uniqueId);
+              if (result['success'] == true) {
+                itemAudios[uniqueId] = result['url'] as String;
+              }
+            });
+          }
         }
       }
     }
@@ -3221,10 +3481,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
             onCapture: (XFile file) {
               setState(() {
-                itemVideos[uniqueId] = file.path;
+                _pendingCapturedVideoFile = file;
+                _pendingCapturedVideoUniqueId = uniqueId;
+                _isReviewingVideo = true;
                 _isVideoRecording = false;
               });
-              _autoSave();
             },
           ),
         );
@@ -3274,7 +3535,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         captureArea = InspectionVideoPlayer(
           key: ValueKey('aplay_$uniqueId'),
           videoPath: itemAudios[uniqueId]!,
-          onReRecord: () => setState(() => itemAudios[uniqueId] = null),
+          onReRecord: () {
+            setState(() => itemAudios[uniqueId] = null);
+            _showAudioPickerOptions(item);
+          },
           onDiscard: () => _discardAllMedia(item),
         );
       } else if (_isRecordingAudio) {
@@ -3526,7 +3790,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   top: 12,
                   right: 12,
                   child: GestureDetector(
-                    onTap: () => _pickFile(item),
+                    onTap: () => _showFilePickerOptions(item),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 6),
@@ -3816,7 +4080,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       else if (_currentCaptureMode == 'FILE')
                         // Attach button
                         GestureDetector(
-                          onTap: () => _pickFile(item),
+                          onTap: () => _showFilePickerOptions(item),
                           child: Container(
                             width: 72,
                             height: 72,
@@ -4028,28 +4292,60 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               color: const Color(0xFF448AFF),
             ),
             Expanded(
-              child: _isReviewingCapture && _pendingCapturedXFile != null
-                  ? InspectionImageReview(
-                      capturedImagePath: _pendingCapturedXFile!.path,
+              child: _isReviewingVideo && _pendingCapturedVideoFile != null
+                  ? InspectionVideoReview(
+                      capturedMediaPath: _pendingCapturedVideoFile!.path,
                       fieldTitle:
                           currentItem != null ? _getItemTitle(currentItem) : '',
-                      referenceMedia: currentItem != null
-                          ? _getItemReferenceMedia(currentItem)
-                          : [],
+                      mediaLabel: 'Video',
                       onRetake: () {
                         setState(() {
-                          _isReviewingCapture = false;
-                          _pendingCapturedXFile = null;
-                          _pendingCapturedUniqueId = null;
+                          _isReviewingVideo = false;
+                          _pendingCapturedVideoFile = null;
+                          _pendingCapturedVideoUniqueId = null;
                         });
                       },
-                      onUsePhoto: _acceptCapturedImage,
+                      onUseMedia: _acceptCapturedVideo,
                     )
-                  : currentItem != null &&
-                          (_itemHasImage(currentItem) ||
-                              _itemHasVideo(currentItem))
-                      ? _buildImageFieldView(currentItem)
-                      : ListView(
+                  : _isReviewingAudio && _pendingCapturedAudioPath != null
+                      ? InspectionVideoReview(
+                          capturedMediaPath: _pendingCapturedAudioPath!,
+                          fieldTitle: currentItem != null
+                              ? _getItemTitle(currentItem)
+                              : '',
+                          mediaLabel: 'Audio',
+                          onRetake: () {
+                            setState(() {
+                              _isReviewingAudio = false;
+                              _pendingCapturedAudioPath = null;
+                              _pendingCapturedAudioUniqueId = null;
+                            });
+                          },
+                          onUseMedia: _acceptCapturedAudio,
+                        )
+                      : _isReviewingCapture && _pendingCapturedXFile != null
+                          ? InspectionImageReview(
+                              capturedImagePath: _pendingCapturedXFile!.path,
+                              fieldTitle: currentItem != null
+                                  ? _getItemTitle(currentItem)
+                                  : '',
+                              referenceMedia: currentItem != null
+                                  ? _getItemReferenceMedia(currentItem)
+                                  : [],
+                              onRetake: () {
+                                setState(() {
+                                  _isReviewingCapture = false;
+                                  _pendingCapturedXFile = null;
+                                  _pendingCapturedUniqueId = null;
+                                });
+                              },
+                              onUsePhoto: _acceptCapturedImage,
+                            )
+                          : currentItem != null &&
+                                  (_itemHasImage(currentItem) ||
+                                      _itemHasVideo(currentItem))
+                              ? _buildImageFieldView(currentItem)
+                              : ListView(
                           key: PageStorageKey<int>(_currentSection),
                           controller: _scrollController,
                           children: [

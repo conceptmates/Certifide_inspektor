@@ -148,17 +148,22 @@ class _AttendanceScreenState extends State<AttendanceScreen>
     }
 
     var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied) {
+      throw 'Location permission denied.';
+    }
+    if (permission == LocationPermission.deniedForever) {
       if (!mounted) throw 'Location unavailable';
       await _showLocationDialog(
         title: 'Location Permission Required',
         message:
-            'Allow location access so your check-in coordinates can be recorded.',
+            'Location access is permanently denied. Please enable it in Settings to record your check-in coordinates.',
         actionLabel: 'Open Settings',
         onAction: Geolocator.openAppSettings,
       );
-      throw 'Location permission not granted.';
+      throw 'Location permission permanently denied.';
     }
 
     return Geolocator.getCurrentPosition(
