@@ -612,30 +612,6 @@ class _MainContentState extends ConsumerState<MainContent>
                                               height: 1.4,
                                             ),
                                           ),
-                                          // const SizedBox(height: 18),
-                                          // Row(
-                                          //   children: [
-                                          //     Container(
-                                          //       padding:
-                                          //           const EdgeInsets.symmetric(
-                                          //               horizontal: 16,
-                                          //               vertical: 8),
-                                          //       decoration: BoxDecoration(
-                                          //         color: Colors.white,
-                                          //         borderRadius:
-                                          //             BorderRadius.circular(10),
-                                          //       ),
-                                          //       child: const Text(
-                                          //         'Tap to begin →',
-                                          //         style: TextStyle(
-                                          //           color: Color(0xFF1A73E8),
-                                          //           fontSize: 13,
-                                          //           fontWeight: FontWeight.w700,
-                                          //         ),
-                                          //       ),
-                                          //     ),
-                                          //   ],
-                                          // ),
                                         ],
                                       ),
                                     ),

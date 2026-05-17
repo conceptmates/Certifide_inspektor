@@ -25,7 +25,7 @@ class CarSpyTopAppBar extends StatelessWidget implements PreferredSizeWidget {
             Icon(Icons.speed, color: Colors.blue.shade700, size: 24),
             const SizedBox(width: 8),
             const Text(
-              'CARSPY',
+              'CERTIFIDE',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w900,

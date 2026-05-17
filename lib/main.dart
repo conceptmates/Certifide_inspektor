@@ -50,7 +50,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'CarSpy',
+      title: 'Certifide Inspektor',
       debugShowCheckedModeBanner: false,
       theme: AppThemes.darkTheme(),
       themeMode: ThemeMode.dark,
