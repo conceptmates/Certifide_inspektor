@@ -30,6 +30,7 @@ import '../../widgets/section_camera_card.dart';
 import '../../widgets/section_video_camera_card.dart';
 import '../main_screen.dart';
 import 'inspection_page/components/inspection_flag_issues_sheet.dart';
+import 'inspection_page/components/inspection_file_review.dart';
 import 'inspection_page/components/inspection_image_review.dart';
 import 'inspection_page/components/inspection_video_review.dart';
 import 'inspection_page/components/inspection_reference_fullscreen.dart';
@@ -99,6 +100,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   String? _pendingCapturedAudioPath;
   String? _pendingCapturedAudioUniqueId;
   bool _isReviewingAudio = false;
+  String? _pendingCapturedFilePath;
+  String? _pendingCapturedFileUniqueId;
+  String? _pendingCapturedFileName;
+  String? _pendingCapturedFileExtension;
+  bool _isReviewingFile = false;
   String _currentCaptureMode = 'PHOTO';
   // Bound to SectionCameraCard when showControls:false; resets on item change.
   VoidCallback? _triggerPhotoCapture;
@@ -2044,15 +2050,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final result = await FilePicker.platform.pickFiles(allowMultiple: false);
       if (result != null && result.files.single.path != null && mounted) {
         final file = result.files.single;
-        final payload = json.encode({
-          'filePath': file.path,
-          'fileName': file.name,
-          'fileType': file.extension?.toLowerCase() ?? '',
-        });
         setState(() {
-          itemFiles[uniqueId] = payload;
+          _pendingCapturedFilePath = file.path;
+          _pendingCapturedFileUniqueId = uniqueId;
+          _pendingCapturedFileName = file.name;
+          _pendingCapturedFileExtension = file.extension?.toLowerCase() ?? '';
+          _isReviewingFile = true;
         });
-        _autoSave();
       }
     } catch (e) {
       if (mounted) {
@@ -2549,6 +2553,29 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
+  void _acceptCapturedFile() {
+    final path = _pendingCapturedFilePath;
+    final uniqueId = _pendingCapturedFileUniqueId;
+    final name = _pendingCapturedFileName;
+    final ext = _pendingCapturedFileExtension;
+    if (path == null || uniqueId == null) return;
+
+    final payload = json.encode({
+      'filePath': path,
+      'fileName': name ?? path.split('/').last,
+      'fileType': ext ?? '',
+    });
+    setState(() {
+      _isReviewingFile = false;
+      _pendingCapturedFilePath = null;
+      _pendingCapturedFileUniqueId = null;
+      _pendingCapturedFileName = null;
+      _pendingCapturedFileExtension = null;
+      itemFiles[uniqueId] = payload;
+    });
+    _autoSave();
+  }
+
   bool _checkCurrentItemFlagIssue() {
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
@@ -3025,6 +3052,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             });
           }
         }
+
       }
     }
     await _saveDataLocally();
@@ -4284,7 +4312,26 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               color: const Color(0xFF448AFF),
             ),
             Expanded(
-              child: _isReviewingVideo && _pendingCapturedVideoFile != null
+              child: _isReviewingFile &&
+                      _pendingCapturedFilePath != null &&
+                      _pendingCapturedFileName != null
+                  ? InspectionFileReview(
+                      fileName: _pendingCapturedFileName!,
+                      fileExtension: _pendingCapturedFileExtension ?? '',
+                      fieldTitle:
+                          currentItem != null ? _getItemTitle(currentItem) : '',
+                      onPickAgain: () {
+                        setState(() {
+                          _isReviewingFile = false;
+                          _pendingCapturedFilePath = null;
+                          _pendingCapturedFileUniqueId = null;
+                          _pendingCapturedFileName = null;
+                          _pendingCapturedFileExtension = null;
+                        });
+                      },
+                      onUseFile: _acceptCapturedFile,
+                    )
+                  : _isReviewingVideo && _pendingCapturedVideoFile != null
                   ? InspectionVideoReview(
                       capturedMediaPath: _pendingCapturedVideoFile!.path,
                       fieldTitle:

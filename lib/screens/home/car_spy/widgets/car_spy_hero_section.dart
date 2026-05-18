@@ -72,7 +72,7 @@ class CarSpyHeroSection extends StatelessWidget {
                     ),
                     const SizedBox(height: 10),
                     const Text(
-                      'Self-\nInspection\nRedefined.',
+                      'Start\nYour\nInspection.',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 36,
@@ -83,7 +83,7 @@ class CarSpyHeroSection extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Execute high-precision diagnostics and visual\nappraisals through our proprietary kinetic\nblueprint scanner.',
+                      'Execute high-precision diagnostics and visual\nappraisals through proprietary kinetic\nblueprint scanner.',
                       style: TextStyle(
                         color: Color(0xCCFFFFFF),
                         fontSize: 12,

@@ -19,8 +19,10 @@ class MainScreen extends ConsumerStatefulWidget {
   ConsumerState<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends ConsumerState<MainScreen> {
+class _MainScreenState extends ConsumerState<MainScreen>
+    with SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
+  int _previousIndex = 0;
   DateTime? _lastBackPressTime;
   bool _isLoading = true;
 
@@ -40,6 +42,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
 
   void changeSelectedIndex(int index) {
     setState(() {
+      _previousIndex = _selectedIndex;
       _selectedIndex = index;
     });
   }
@@ -115,6 +118,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
 
   void _onItemSelected(int index) {
     setState(() {
+      _previousIndex = _selectedIndex;
       _selectedIndex = index;
     });
   }
@@ -137,9 +141,16 @@ class _MainScreenState extends ConsumerState<MainScreen> {
           if (_selectedIndex >= screens.length) _selectedIndex = 0;
 
           return Scaffold(
-            body: IndexedStack(
-              index: _selectedIndex,
-              children: screens,
+            body: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              transitionBuilder: (child, animation) => FadeTransition(
+                opacity: animation,
+                child: child,
+              ),
+              child: KeyedSubtree(
+                key: ValueKey(_selectedIndex),
+                child: screens[_selectedIndex],
+              ),
             ),
             bottomNavigationBar: CustomBottomNavBar(
               selectedIndex: _selectedIndex,
