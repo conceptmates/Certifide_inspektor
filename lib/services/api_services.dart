@@ -107,7 +107,7 @@ class ApiService {
         'vehicle_model_id': vehicleModelId,
         if (year != null && year.isNotEmpty) 'year': year,
         if (variant != null && variant.isNotEmpty) 'variant': variant,
-        if (colour != null && colour.isNotEmpty) 'colour': colour,
+        if (colour != null && colour.isNotEmpty) 'color': colour,
         if (transmission != null && transmission.isNotEmpty)
           'transmission': transmission,
       };

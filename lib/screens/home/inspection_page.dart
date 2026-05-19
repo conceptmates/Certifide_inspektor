@@ -842,7 +842,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     add(['model'], vd['model']?.toString());
     add(['year'], vd['year']?.toString());
     add(['variant'], vd['variant']?.toString());
-    add(['colour', 'color'], vd['colour']?.toString());
+    add(['colour', 'color'], vd['color']?.toString());
     add(['transmission'], vd['transmission']?.toString());
 
     for (final section in _sections) {
@@ -2020,6 +2020,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           itemMultiImages[uniqueId] = updatedPaths;
           _uploadingImages.add(uniqueId);
         });
+        if (mounted) _showFlagIssuesSheet(item);
 
         await _saveDataLocally();
 
@@ -2502,11 +2503,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     String sectionTitle = '';
     String fieldId = '';
+    dynamic foundItem;
     for (final section in _sections) {
       for (final item in section['items'] as List<dynamic>) {
         if (_getItemUniqueId(item) == uniqueId) {
           sectionTitle = section['title'] as String;
           fieldId = _getItemFieldId(item);
+          foundItem = item;
           break;
         }
       }
@@ -2520,6 +2523,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       itemVideos[uniqueId] = file.path;
       _uploadingImages.add(uniqueId);
     });
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
 
     await _saveDataLocally();
 
@@ -2551,11 +2555,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     String sectionTitle = '';
     String fieldId = '';
+    dynamic foundItem;
     for (final section in _sections) {
       for (final item in section['items'] as List<dynamic>) {
         if (_getItemUniqueId(item) == uniqueId) {
           sectionTitle = section['title'] as String;
           fieldId = _getItemFieldId(item);
+          foundItem = item;
           break;
         }
       }
@@ -2569,6 +2575,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       itemAudios[uniqueId] = path;
       _uploadingImages.add(uniqueId);
     });
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
 
     await _saveDataLocally();
 
@@ -2602,11 +2609,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     String sectionTitle = '';
     String fieldId = '';
+    dynamic foundItem;
     for (final section in _sections) {
       for (final item in section['items'] as List<dynamic>) {
         if (_getItemUniqueId(item) == uniqueId) {
           sectionTitle = section['title'] as String;
           fieldId = _getItemFieldId(item);
+          foundItem = item;
           break;
         }
       }
@@ -2627,6 +2636,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       itemFiles[uniqueId] = payload;
       _uploadingImages.add(uniqueId);
     });
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
 
     await _saveDataLocally();
 
@@ -3035,8 +3045,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         'year': vehicleDetails!['year'],
       if ((vehicleDetails?['variant'] ?? '').toString().isNotEmpty)
         'variant': vehicleDetails!['variant'],
-      if ((vehicleDetails?['colour'] ?? '').toString().isNotEmpty)
-        'colour': vehicleDetails!['colour'],
+      if ((vehicleDetails?['color'] ?? '').toString().isNotEmpty)
+        'color': vehicleDetails!['color'],
       if ((vehicleDetails?['transmission'] ?? '').toString().isNotEmpty)
         'transmission': vehicleDetails!['transmission'],
       'registration_number': registrationNumber,

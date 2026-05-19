@@ -169,7 +169,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         'model': _selectedModel!.name,
         'year': _yearController.text.trim(),
         'variant': _variantController.text.trim().toUpperCase(),
-        'colour': _colourController.text.trim().toUpperCase(),
+        'color': _colourController.text.trim().toUpperCase(),
         'transmission': _selectedTransmission,
         'brand_id': _selectedMake!.id,
         'model_id': _selectedModel!.id,
@@ -207,7 +207,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
             _variantController.text = vi.variant!.toUpperCase();
           }
           if (vi.colour != null && vi.colour!.isNotEmpty) {
-            vehicleData['colour'] = vi.colour!.toUpperCase();
+            vehicleData['color'] = vi.colour!.toUpperCase();
             _colourController.text = vi.colour!.toUpperCase();
           }
           if (vi.transmission != null && vi.transmission!.isNotEmpty) {
