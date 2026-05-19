@@ -223,7 +223,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
 
     final controller = CameraController(
       camera,
-      ResolutionPreset.medium,
+      ResolutionPreset.max,
       enableAudio: true,
     );
     _controller = controller;

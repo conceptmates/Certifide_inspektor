@@ -232,7 +232,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
 
     final controller = CameraController(
       camera,
-      ResolutionPreset.medium,
+      ResolutionPreset.max,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );

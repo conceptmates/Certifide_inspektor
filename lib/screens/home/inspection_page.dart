@@ -1947,8 +1947,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: source,
-        maxWidth: 1024,
-        imageQuality: 85,
       );
 
       if (image != null && mounted) {
@@ -2030,10 +2028,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       if (!hasGalleryPermission) return;
 
       final ImagePicker picker = ImagePicker();
-      final List<XFile> images = await picker.pickMultiImage(
-        maxWidth: 1024,
-        imageQuality: 85,
-      );
+      final List<XFile> images = await picker.pickMultiImage();
 
       if (images.isNotEmpty && mounted) {
         final String sectionTitle =

@@ -128,8 +128,6 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: source,
-        maxWidth: 1024,
-        imageQuality: 85,
       );
 
       if (image != null && mounted) {
@@ -507,10 +505,7 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
       _isImagePickerActive = true;
 
       final ImagePicker picker = ImagePicker();
-      final List<XFile> images = await picker.pickMultiImage(
-        maxWidth: 1024,
-        imageQuality: 85,
-      );
+      final List<XFile> images = await picker.pickMultiImage();
 
       if (images.isNotEmpty && mounted) {
         // Calculate remaining slots
