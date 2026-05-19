@@ -16,16 +16,16 @@ import 'widgets/car_spy_bottom_nav_bar.dart';
 import 'widgets/car_spy_hero_section.dart';
 import 'widgets/car_spy_top_app_bar.dart';
 
-class CarSpyHome extends StatefulWidget {
+class CarSpyHome extends ConsumerStatefulWidget {
   final int initialIndex;
 
   const CarSpyHome({super.key, this.initialIndex = 0});
 
   @override
-  State<CarSpyHome> createState() => _CarSpyHomeState();
+  ConsumerState<CarSpyHome> createState() => _CarSpyHomeState();
 }
 
-class _CarSpyHomeState extends State<CarSpyHome> {
+class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
   late int _selectedIndex;
   int _selectedChartTab = 0; // 0 = daily, 1 = monthly
   Box<InspectionStorageModel>? _inspectionBox;
@@ -533,11 +533,8 @@ class _CarSpyHomeState extends State<CarSpyHome> {
           const SizedBox(height: 28),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Consumer(
-              builder: (context, ref, _) {
-                final state = ref.watch(inspectionNotifierProvider);
-                return _buildInspectionChart(state.inspections);
-              },
+            child: _buildInspectionChart(
+              ref.watch(inspectionNotifierProvider).inspections,
             ),
           ),
           const SizedBox(height: 24),
