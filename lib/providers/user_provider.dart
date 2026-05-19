@@ -80,12 +80,12 @@ class UserNotifier extends _$UserNotifier {
     try {
       await _storage.deleteAll();
 
-      final inspectionBox = await Hive.openBox<InspectionStorageModel>(
-        HiveConstants.INSPECTION_BOX,
-      );
-      final historyBox = await Hive.openBox<InspectionStorageModel>(
-        HiveConstants.INSPECTION_HISTORY_BOX,
-      );
+      final inspectionBox = Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)
+          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX)
+          : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
+      final historyBox = Hive.isBoxOpen(HiveConstants.INSPECTION_HISTORY_BOX)
+          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX)
+          : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX);
       await inspectionBox.clear();
       await historyBox.clear();
     } catch (_) {}

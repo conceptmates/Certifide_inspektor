@@ -116,15 +116,18 @@ class _MainContentState extends ConsumerState<MainContent>
           Hive.registerAdapter(InspectionStorageModelAdapter());
         }
 
-        await Hive.openBox<InspectionStorageModel>(
+        _inspectionBox = await Hive.openBox<InspectionStorageModel>(
           HiveConstants.INSPECTION_BOX,
         );
+      } else {
+        _inspectionBox =
+            Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
       }
     } catch (e) {
       print('Error initializing Hive: $e');
       await Hive.deleteBoxFromDisk(HiveConstants.INSPECTION_BOX);
       await Hive.initFlutter();
-      await Hive.openBox<InspectionStorageModel>(
+      _inspectionBox = await Hive.openBox<InspectionStorageModel>(
         HiveConstants.INSPECTION_BOX,
       );
     }
@@ -133,13 +136,8 @@ class _MainContentState extends ConsumerState<MainContent>
   // Check if there's an existing unfinished inspection
   Future<bool> hasExistingInspection() async {
     try {
-      if (!Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)) {
-        _inspectionBox = await Hive.openBox<InspectionStorageModel>(
-          HiveConstants.INSPECTION_BOX,
-        );
-      } else {
-        _inspectionBox =
-            Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
+      if (_inspectionBox == null || !(_inspectionBox?.isOpen ?? false)) {
+        await _initHive();
       }
 
       final existingData =

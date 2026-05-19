@@ -446,13 +446,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           status: 'submitted',
         );
 
-        final historyBox = await Hive.openBox<InspectionStorageModel>(
-          HiveConstants.INSPECTION_HISTORY_BOX,
-        );
+        final historyBox = Hive.isBoxOpen(HiveConstants.INSPECTION_HISTORY_BOX)
+            ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX)
+            : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX);
 
         await historyBox.add(completedInspection);
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
-        await historyBox.close();
       }
     } catch (e) {
       print('Error completing inspection: $e');
