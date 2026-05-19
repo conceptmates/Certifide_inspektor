@@ -30,10 +30,19 @@ class InspectionNotifier extends _$InspectionNotifier {
   void _startConnectivityListener() {
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
-        .listen((List<ConnectivityResult> results) async {
+        .listen((List<ConnectivityResult> results) {
       if (results.isNotEmpty && results.first != ConnectivityResult.none) {
-        final hasInternet = await ConnectivityChecker.hasInternetConnection();
-        if (hasInternet) await _autoSubmitPending();
+        // Schedule async work without propagating the Future to the listener,
+        // and catch any errors explicitly so they don't become unhandled.
+        Future(() async {
+          try {
+            final hasInternet =
+                await ConnectivityChecker.hasInternetConnection();
+            if (hasInternet) await _autoSubmitPending();
+          } catch (e) {
+            log('Connectivity listener error: $e');
+          }
+        });
       }
     });
   }
