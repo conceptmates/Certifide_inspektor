@@ -140,29 +140,26 @@ class _CarSpyCoreServicesSectionState extends State<CarSpyCoreServicesSection>
           ),
         ),
         const SizedBox(height: 18),
-        GridView.builder(
+        GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: carSpyServices.length,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 14,
-            mainAxisSpacing: 14,
-            childAspectRatio: 0.95,
-          ),
-          itemBuilder: (context, index) {
-            final service = carSpyServices[index];
-            return _ServiceItem(
-              key: ValueKey(service.title),
-              service: service,
-              isPressed: _pressedIndex == index,
-              scaleAnimation:
-                  _pressedIndex == index ? _scaleAnimation : null,
-              onTapDown: () => _onTapDown(index),
-              onTapUp: () => _onTapUp(index),
-              onTapCancel: _onTapCancel,
-            );
-          },
+          crossAxisCount: 2,
+          crossAxisSpacing: 14,
+          mainAxisSpacing: 14,
+          childAspectRatio: 0.95,
+          children: [
+            for (var index = 0; index < carSpyServices.length; index++)
+              _ServiceItem(
+                key: ValueKey(carSpyServices[index].title),
+                service: carSpyServices[index],
+                isPressed: _pressedIndex == index,
+                scaleAnimation:
+                    _pressedIndex == index ? _scaleAnimation : null,
+                onTapDown: () => _onTapDown(index),
+                onTapUp: () => _onTapUp(index),
+                onTapCancel: _onTapCancel,
+              ),
+          ],
         ),
       ],
     );
