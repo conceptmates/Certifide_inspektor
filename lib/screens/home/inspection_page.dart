@@ -5,6 +5,8 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -37,6 +39,44 @@ import 'inspection_page/components/inspection_reference_fullscreen.dart';
 import 'inspection_page/components/inspection_sections_drawer.dart';
 import 'inspection_page/components/inspection_video_player.dart';
 import 'inspection_success_page.dart';
+
+// Top-level function required by compute() — runs in a separate isolate.
+// Receives plain-data input, returns the serialized template + copied maps.
+Map<String, dynamic> _buildStoragePayload(Map<String, dynamic> input) {
+  final itemValues = Map<String, String>.from(
+      (input['itemValues'] as Map? ?? {}).map((k, v) => MapEntry(k.toString(), v.toString())));
+  final itemImages = Map<String, String?>.from(
+      (input['itemImages'] as Map? ?? {}).map((k, v) => MapEntry(k.toString(), v as String?)));
+  final itemVideos = Map<String, String?>.from(
+      (input['itemVideos'] as Map? ?? {}).map((k, v) => MapEntry(k.toString(), v as String?)));
+  final itemAudios = Map<String, String?>.from(
+      (input['itemAudios'] as Map? ?? {}).map((k, v) => MapEntry(k.toString(), v as String?)));
+  final itemFiles = Map<String, String?>.from(
+      (input['itemFiles'] as Map? ?? {}).map((k, v) => MapEntry(k.toString(), v as String?)));
+  final itemRemarks = Map<String, String>.from(
+      (input['itemRemarks'] as Map? ?? {}).map((k, v) => MapEntry(k.toString(), v.toString())));
+  final textFieldValues = Map<String, String>.from(
+      (input['textFieldValues'] as Map? ?? {}).map((k, v) => MapEntry(k.toString(), v.toString())));
+  final rawMultiImages = input['multiImages'] as Map?;
+  final multiImages = rawMultiImages == null
+      ? null
+      : Map<String, List<String>>.from(rawMultiImages.map((k, v) =>
+          MapEntry(k.toString(), (v as List).map((e) => e.toString()).toList())));
+  return {
+    'itemValues': itemValues,
+    'itemImages': itemImages,
+    'itemVideos': itemVideos,
+    'itemAudios': itemAudios,
+    'itemFiles': itemFiles,
+    'itemRemarks': itemRemarks,
+    'textFieldValues': textFieldValues,
+    'multiImages': multiImages,
+    'vehicleDetails': input['vehicleDetails'],
+    'inspectionTemplate': input['inspectionTemplate'],
+    'currentSection': input['currentSection'],
+    'inspectionId': input['inspectionId'],
+  };
+}
 
 class InspectionScreen extends ConsumerStatefulWidget {
   final bool isNewInspection;
@@ -377,38 +417,37 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
 
     try {
-      Map<String, String> currentRemarks = {};
-      remarksControllers.forEach((key, controller) {
-        currentRemarks[key] = controller.text;
-      });
-
-      Map<String, List<String>> currentMultiImages = {};
+      // Collect controller values on the main thread before spawning isolate.
+      final remarksSnapshot = Map<String, String>.fromEntries(
+        remarksControllers.entries.map((e) => MapEntry(e.key, e.value.text)),
+      );
+      final textFieldSnapshot = Map<String, String>.fromEntries(
+        textFieldControllers.entries.map((e) => MapEntry(e.key, e.value.text)),
+      );
+      final multiImagesSnapshot = <String, List<String>>{};
       itemMultiImages.forEach((key, images) {
         if (images != null && images.isNotEmpty) {
-          currentMultiImages[key] = images;
+          multiImagesSnapshot[key] = images;
         }
       });
 
-      final storageModel = InspectionStorageModel(
-        itemValues: Map<String, String>.from(itemValues),
-        itemImages: Map<String, String?>.from(itemImages),
-        itemVideos: Map<String, String?>.from(itemVideos),
-        itemAudios: Map<String, String?>.from(itemAudios),
-        itemFiles: Map<String, String?>.from(itemFiles),
-        itemRemarks: currentRemarks,
-        currentSection: _currentSection,
-        textFieldValues: Map<String, String>.from(
-          Map.fromEntries(
-            textFieldControllers.entries.map(
-              (e) => MapEntry(e.key, e.value.text),
-            ),
-          ),
-        ),
-        multiImages: currentMultiImages,
-        vehicleDetails: vehicleDetails,
-        inspectionTemplate: _inspectionTemplate?.toJson(),
-        inspectionId: _effectiveInspectionId,
-      );
+      // Heavy map-copy + toJson work moved off the main thread.
+      final payload = await compute(_buildStoragePayload, {
+        'itemValues': itemValues,
+        'itemImages': itemImages,
+        'itemVideos': itemVideos,
+        'itemAudios': itemAudios,
+        'itemFiles': itemFiles,
+        'itemRemarks': remarksSnapshot,
+        'textFieldValues': textFieldSnapshot,
+        'multiImages': multiImagesSnapshot,
+        'vehicleDetails': vehicleDetails,
+        'inspectionTemplate': _inspectionTemplate?.toJson(),
+        'currentSection': _currentSection,
+        'inspectionId': _effectiveInspectionId,
+      });
+
+      final storageModel = InspectionStorageModel.fromMap(payload);
 
       await _inspectionBox?.put(
         HiveConstants.CURRENT_INSPECTION_KEY,
