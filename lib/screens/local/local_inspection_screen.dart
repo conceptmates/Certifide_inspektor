@@ -120,7 +120,16 @@ class _LocalInspectionsScreenState
 
   @override
   Widget build(BuildContext context) {
-    final provider = ref.watch(inspectionNotifierProvider);
+    final provider = ref.watch(
+      inspectionNotifierProvider.select(
+        (s) => (
+          inspections: s.inspections,
+          isLoading: s.isLoading,
+          refreshCooldown: s.refreshCooldown,
+          submittingStates: s.submittingStates,
+        ),
+      ),
+    );
     return Builder(
       builder: (context) {
         // Check if initial load is in progress

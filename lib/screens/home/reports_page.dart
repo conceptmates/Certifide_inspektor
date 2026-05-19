@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/inspection_history_model.dart';
-import '../../models/inspection_state.dart';
 import '../../models/local_inspection.dart';
 import '../../models/pagination_data_model.dart';
 import '../../providers/inspection_provider.dart';
@@ -472,7 +471,12 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     );
   }
 
-  Widget _buildPendingTab(InspectionState provider) {
+  Widget _buildPendingTab(({
+    List<LocalInspection> inspections,
+    bool isLoading,
+    bool refreshCooldown,
+    Map<String, bool> submittingStates,
+  }) provider) {
     if (!_isPendingInitialLoadComplete) {
       return const Center(
         child: Column(
@@ -557,7 +561,16 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
 
   @override
   Widget build(BuildContext context) {
-    final inspectionState = ref.watch(inspectionNotifierProvider);
+    final inspectionState = ref.watch(
+      inspectionNotifierProvider.select(
+        (s) => (
+          inspections: s.inspections,
+          isLoading: s.isLoading,
+          refreshCooldown: s.refreshCooldown,
+          submittingStates: s.submittingStates,
+        ),
+      ),
+    );
     final isOnPendingTab = _tabController.index == 1;
 
     return Scaffold(
