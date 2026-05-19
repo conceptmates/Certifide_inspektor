@@ -22,7 +22,7 @@ class MainContent extends ConsumerStatefulWidget {
 class _MainContentState extends ConsumerState<MainContent>
     with TickerProviderStateMixin {
   final _storage = FlutterSecureStorage();
-  String _userName = 'User';
+  final _userName = ValueNotifier<String>('User');
   late AnimationController rippleController;
   late AnimationController scaleController;
   late Animation<double> rippleAnimation;
@@ -55,6 +55,7 @@ class _MainContentState extends ConsumerState<MainContent>
 
   @override
   void dispose() {
+    _userName.dispose();
     rippleController.dispose();
     scaleController.dispose();
     super.dispose();
@@ -63,13 +64,9 @@ class _MainContentState extends ConsumerState<MainContent>
   Future<void> _loadUserName() async {
     try {
       final userData = await _storage.read(key: 'user_data');
-      if (userData != null) {
+      if (userData != null && mounted) {
         final decodedData = json.decode(userData);
-        if (mounted) {
-          setState(() {
-            _userName = decodedData['name'] ?? 'User';
-          });
-        }
+        _userName.value = decodedData['name'] ?? 'User';
       }
     } catch (e) {
       print('Error loading user name: $e');
@@ -208,9 +205,7 @@ class _MainContentState extends ConsumerState<MainContent>
         Routes.vehicleDetails,
         arguments: {'isNew': isNew},
       ).then((_) {
-        if (mounted) {
-          setState(() {});
-        }
+        if (mounted) hasExistingInspection();
       });
     } else {
       Navigator.pushNamed(
@@ -218,9 +213,7 @@ class _MainContentState extends ConsumerState<MainContent>
         Routes.inspection,
         arguments: {'isNew': isNew},
       ).then((_) {
-        if (mounted) {
-          setState(() {});
-        }
+        if (mounted) hasExistingInspection();
       });
     }
   }
@@ -344,57 +337,61 @@ class _MainContentState extends ConsumerState<MainContent>
                 1.0,
                 Row(
                   children: [
-                    // Avatar
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF3B82F6), Color(0xFF6366F1)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Center(
-                        child: Text(
-                          _userName.isNotEmpty
-                              ? _userName[0].toUpperCase()
-                              : 'U',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    ValueListenableBuilder<String>(
+                      valueListenable: _userName,
+                      builder: (context, name, _) => Row(
                         children: [
-                          const Text(
-                            'Welcome back',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: _textSecondary,
-                              fontWeight: FontWeight.w400,
+                          // Avatar
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFF3B82F6), Color(0xFF6366F1)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Center(
+                              child: Text(
+                                name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            _userName,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: _textPrimary,
-                              letterSpacing: -0.4,
-                            ),
+                          const SizedBox(width: 14),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Welcome back',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: _textSecondary,
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                name,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  color: _textPrimary,
+                                  letterSpacing: -0.4,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
+                    const Spacer(),
                     // Notification bell
                     Stack(
                       clipBehavior: Clip.none,
