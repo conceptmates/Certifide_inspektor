@@ -47,6 +47,8 @@ class _NewCarsListPageState extends State<NewCarsListPage> {
     if (_loadingMore || _loading || _page >= _lastPage) return;
     final pos = _scrollController.position;
     if (pos.pixels > pos.maxScrollExtent - 280) {
+      // Block re-entry immediately — before _loadMore sets state.
+      _loadingMore = true;
       _loadMore();
     }
   }
