@@ -127,6 +127,39 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   int? get _effectiveInspectionId =>
       _sessionInspectionId ?? widget.inspectionId;
 
+  /// Folder label used for user-visible media storage: "yyyy-MM-dd_HH-mm-ss_{id}".
+  /// Computed once, then cached in vehicleDetails so resumed inspections reuse
+  /// the same folder instead of creating a new one.
+  String? _inspectionFolderLabel;
+
+  String get _folderLabelForStorage {
+    if (_inspectionFolderLabel != null) return _inspectionFolderLabel!;
+
+    // Restored from Hive / snapshot — reuse the previously created label.
+    final stored = vehicleDetails?['_folderLabel'];
+    if (stored is String && stored.isNotEmpty) {
+      _inspectionFolderLabel = stored;
+      return _inspectionFolderLabel!;
+    }
+
+    final id = _effectiveInspectionId;
+    final now = DateTime.now();
+    final ts =
+        '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}_'
+        '${now.hour.toString().padLeft(2, '0')}-'
+        '${now.minute.toString().padLeft(2, '0')}-'
+        '${now.second.toString().padLeft(2, '0')}';
+    _inspectionFolderLabel = id != null ? '${ts}_$id' : ts;
+
+    // Persist so the same label survives app resume.
+    vehicleDetails ??= {};
+    vehicleDetails!['_folderLabel'] = _inspectionFolderLabel;
+
+    return _inspectionFolderLabel!;
+  }
+
   int get _totalFields =>
       _sections.fold(0, (sum, s) => sum + (s['items'] as List).length);
 
@@ -2114,16 +2147,28 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   Future<void> _startAudioRecording(dynamic item) async {
     final uniqueId = _getItemUniqueId(item);
-    final hasMicPerm = await _ensureMediaPermission(
-      Permission.microphone,
-      permissionName: 'Microphone',
-    );
-    if (!hasMicPerm) return;
     try {
+      // Always create a fresh recorder — reusing a stopped instance crashes
+      // on Android (MediaRecorder state machine rejects re-start).
+      await _audioRecorder?.dispose();
+      _audioRecorder = AudioRecorder();
+
+      // Use record's own hasPermission() — it handles Android runtime
+      // permission requests correctly, unlike our iOS-only helper.
+      if (!await _audioRecorder!.hasPermission()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Microphone permission is required to record audio'),
+            ),
+          );
+        }
+        return;
+      }
+
       final dir = await getTemporaryDirectory();
       final path =
           '${dir.path}/audio_${uniqueId}_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      _audioRecorder ??= AudioRecorder();
       await _audioRecorder!.start(const RecordConfig(), path: path);
       _audioElapsed = Duration.zero;
       _audioTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -2468,6 +2513,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final fieldId = _getItemFieldId(item);
     final sectionTitle = _sections[_currentSection]['title'] as String;
     final savedPath = await LocalStorageService.saveImage(file.path);
+    unawaited(LocalStorageService.saveMediaToUserStorage(
+      savedPath,
+      MediaType.image,
+      inspectionId: _folderLabelForStorage,
+    ));
 
     setState(() {
       itemImages[uniqueId] = savedPath;
@@ -2515,6 +2565,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
       if (sectionTitle.isNotEmpty) break;
     }
+
+    unawaited(LocalStorageService.saveMediaToUserStorage(
+      file.path,
+      MediaType.video,
+      inspectionId: _folderLabelForStorage,
+    ));
 
     setState(() {
       _isReviewingVideo = false;
@@ -2567,6 +2623,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
       if (sectionTitle.isNotEmpty) break;
     }
+
+    unawaited(LocalStorageService.saveMediaToUserStorage(
+      path,
+      MediaType.audio,
+      inspectionId: _folderLabelForStorage,
+    ));
 
     setState(() {
       _isReviewingAudio = false;
@@ -2621,6 +2683,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
       if (sectionTitle.isNotEmpty) break;
     }
+
+    unawaited(LocalStorageService.saveMediaToUserStorage(
+      path,
+      MediaType.file,
+      inspectionId: _folderLabelForStorage,
+    ));
 
     final payload = json.encode({
       'filePath': path,

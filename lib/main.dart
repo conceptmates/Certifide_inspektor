@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:media_store_plus/media_store_plus.dart';
 
 import 'constants/hive_constants.dart';
 import 'data/inspection_storage_model.dart';
@@ -21,6 +24,10 @@ void main() async {
 
   await Hive.initFlutter();
   await LocalStorageService.init();
+
+  if (Platform.isAndroid) {
+    await MediaStore.ensureInitialized();
+  }
 
   if (!Hive.isAdapterRegistered(0)) {
     Hive.registerAdapter(InspectionStorageModelAdapter());

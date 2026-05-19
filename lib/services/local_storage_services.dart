@@ -1,15 +1,19 @@
 // lib/services/local_storage_service.dart
 import 'dart:convert';
+import 'dart:developer';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:media_store_plus/media_store_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/local_inspection.dart';
 import '../models/pending_image.dart';
+
+enum MediaType { image, video, audio, file }
 
 class LocalStorageService {
   static const String INSPECTIONS_BOX = 'inspections';
@@ -92,6 +96,64 @@ class LocalStorageService {
     } catch (e) {
       print('Error saving image: $e');
       rethrow;
+    }
+  }
+
+  /// Saves captured media to an organized folder tree visible to the user:
+  ///   Android  → Download/Certifide Inspections/{inspectionId}/{type}/
+  ///   iOS      → Documents/Certifide Inspections/{inspectionId}/{type}/
+  /// Each inspection keeps all its media in one place, split by media type.
+  /// Errors are non-fatal — the inspection continues even if this fails.
+  static Future<void> saveMediaToUserStorage(
+    String sourcePath,
+    MediaType type, {
+    String? inspectionId,
+  }) async {
+    try {
+      if (sourcePath.startsWith('http')) return;
+      if (!File(sourcePath).existsSync()) return;
+
+      final subfolder = _mediaSubfolder(type);
+      final idSegment =
+          (inspectionId != null && inspectionId.isNotEmpty) ? inspectionId : 'pending';
+      final relFolder = 'Certifide Inspections/$idSegment/$subfolder';
+      final ext = sourcePath.split('.').last;
+
+      if (Platform.isAndroid) {
+        // MediaStore Download — single accessible location on all Android versions.
+        // saveFile() deletes the temp file, so copy first to preserve the original.
+        MediaStore.appFolder = relFolder;
+        final tmpDir = await getTemporaryDirectory();
+        final copyPath = '${tmpDir.path}/ms_${const Uuid().v4()}.$ext';
+        await File(sourcePath).copy(copyPath);
+        await MediaStore().saveFile(
+          tempFilePath: copyPath,
+          dirType: DirType.download,
+          dirName: DirName.download,
+        );
+      } else {
+        // iOS — Documents/Certifide Inspections/{id}/{type}/ visible in Files app
+        // because UIFileSharingEnabled is set in Info.plist.
+        final docs = await getApplicationDocumentsDirectory();
+        final destDir = Directory('${docs.path}/$relFolder');
+        await destDir.create(recursive: true);
+        await File(sourcePath).copy('${destDir.path}/${const Uuid().v4()}.$ext');
+      }
+    } catch (e) {
+      log('saveMediaToUserStorage: $e');
+    }
+  }
+
+  static String _mediaSubfolder(MediaType type) {
+    switch (type) {
+      case MediaType.image:
+        return 'images';
+      case MediaType.video:
+        return 'videos';
+      case MediaType.audio:
+        return 'audio';
+      case MediaType.file:
+        return 'files';
     }
   }
 

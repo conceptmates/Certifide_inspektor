@@ -142,7 +142,7 @@ class ApiService {
           return {
             'success': true,
             'data': inspectionResponse ?? data,
-            'inspection_id': data['inspection_id'] ?? data['inspectionId'],
+            'inspection_id': data['inspection_id'] ?? data['inspectionId'] ?? data['id'],
             'message': responseData['message'] ??
                 'Inspection initialized successfully',
           };
