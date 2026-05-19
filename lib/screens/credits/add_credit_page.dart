@@ -285,7 +285,7 @@ class _AddCreditsPageState extends State<AddCreditsPage> {
           ),
         ],
       ),
-      backgroundColor: colorScheme.background,
+      backgroundColor: colorScheme.surface,
       body: Row(
         children: [
           // Left side - Inspector List (Desktop)
@@ -311,7 +311,7 @@ class _AddCreditsPageState extends State<AddCreditsPage> {
                               color: colorScheme.onSurfaceVariant),
                           filled: true,
                           fillColor:
-                              colorScheme.surfaceVariant.withOpacity(0.1),
+                              colorScheme.surfaceContainerHighest.withValues(alpha: 0.1),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none,
@@ -343,7 +343,7 @@ class _AddCreditsPageState extends State<AddCreditsPage> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: selectedInspector?.id == inspector.id
-                                        ? colorScheme.primary.withOpacity(0.1)
+                                        ? colorScheme.primary.withValues(alpha: 0.1)
                                         : null,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
@@ -381,7 +381,7 @@ class _AddCreditsPageState extends State<AddCreditsPage> {
                                       ),
                                       decoration: BoxDecoration(
                                         color: colorScheme.primary
-                                            .withOpacity(0.1),
+                                            .withValues(alpha: 0.1),
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                       child: Text(
@@ -615,7 +615,7 @@ class _AddCreditsPageState extends State<AddCreditsPage> {
                                 vertical: 8,
                               ),
                               decoration: BoxDecoration(
-                                color: colorScheme.primary.withOpacity(0.1),
+                                color: colorScheme.primary.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(

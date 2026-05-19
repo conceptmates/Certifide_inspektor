@@ -67,7 +67,6 @@ class AppThemes {
         primary: Colors.blueAccent.shade200,
         secondary: Colors.blueAccent.shade100,
         surface: const Color(0xFF1E1E1E),
-        background: const Color(0xFF121212),
         error: Colors.red[400]!,
         onPrimary: Colors.white,
         onSecondary: Colors.white,

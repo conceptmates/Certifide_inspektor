@@ -28,13 +28,19 @@ class InspectionStorageModelAdapter
       multiImages: (fields[7] as Map?)?.map((dynamic k, dynamic v) =>
           MapEntry(k as String, (v as List).cast<String>())),
       status: fields[8] == null ? 'draft' : fields[8] as String?,
+      itemVideos: (fields[9] as Map?)?.cast<String, String?>(),
+      itemAudios: (fields[10] as Map?)?.cast<String, String?>(),
+      itemFiles: (fields[11] as Map?)?.cast<String, String?>(),
+      vehicleDetails: (fields[12] as Map?)?.cast<String, dynamic>(),
+      inspectionTemplate: (fields[13] as Map?)?.cast<String, dynamic>(),
+      inspectionId: fields[14] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, InspectionStorageModel obj) {
     writer
-      ..writeByte(9)
+      ..writeByte(15)
       ..writeByte(0)
       ..write(obj.itemValues)
       ..writeByte(1)
@@ -52,7 +58,19 @@ class InspectionStorageModelAdapter
       ..writeByte(7)
       ..write(obj.multiImages)
       ..writeByte(8)
-      ..write(obj.status);
+      ..write(obj.status)
+      ..writeByte(9)
+      ..write(obj.itemVideos)
+      ..writeByte(10)
+      ..write(obj.itemAudios)
+      ..writeByte(11)
+      ..write(obj.itemFiles)
+      ..writeByte(12)
+      ..write(obj.vehicleDetails)
+      ..writeByte(13)
+      ..write(obj.inspectionTemplate)
+      ..writeByte(14)
+      ..write(obj.inspectionId);
   }
 
   @override

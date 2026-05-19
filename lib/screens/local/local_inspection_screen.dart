@@ -1,18 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/local_inspection.dart';
 import '../../providers/inspection_provider.dart';
 
-class LocalInspectionsScreen extends StatefulWidget {
+class LocalInspectionsScreen extends ConsumerStatefulWidget {
   const LocalInspectionsScreen({super.key});
 
   @override
-  State<LocalInspectionsScreen> createState() => _LocalInspectionsScreenState();
+  ConsumerState<LocalInspectionsScreen> createState() =>
+      _LocalInspectionsScreenState();
 }
 
-class _LocalInspectionsScreenState extends State<LocalInspectionsScreen> {
+class _LocalInspectionsScreenState
+    extends ConsumerState<LocalInspectionsScreen> {
   bool _isInitialLoadComplete = false;
 
   @override
@@ -25,7 +27,7 @@ class _LocalInspectionsScreenState extends State<LocalInspectionsScreen> {
     try {
       // Ensure the provider is ready before loading
       await Future.microtask(() {
-        context.read<InspectionProvider>().loadInspections();
+        ref.read(inspectionNotifierProvider.notifier).loadInspections();
       });
 
       // Set a flag to indicate initial load is complete
@@ -55,11 +57,12 @@ class _LocalInspectionsScreenState extends State<LocalInspectionsScreen> {
 
   Future<void> _handleSubmission(
     BuildContext context,
-    InspectionProvider provider,
     LocalInspection inspection,
   ) async {
     try {
-      final success = await provider.retrySubmission(inspection);
+      final success = await ref
+          .read(inspectionNotifierProvider.notifier)
+          .retrySubmission(inspection);
 
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -117,8 +120,18 @@ class _LocalInspectionsScreenState extends State<LocalInspectionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<InspectionProvider>(
-      builder: (context, provider, child) {
+    final provider = ref.watch(
+      inspectionNotifierProvider.select(
+        (s) => (
+          inspections: s.inspections,
+          isLoading: s.isLoading,
+          refreshCooldown: s.refreshCooldown,
+          submittingStates: s.submittingStates,
+        ),
+      ),
+    );
+    return Builder(
+      builder: (context) {
         // Check if initial load is in progress
         if (!_isInitialLoadComplete) {
           return Scaffold(
@@ -153,7 +166,9 @@ class _LocalInspectionsScreenState extends State<LocalInspectionsScreen> {
                     icon: const Icon(Icons.refresh),
                     onPressed: (provider.isLoading || provider.refreshCooldown)
                         ? () => _showCooldownMessage(context)
-                        : () => provider.loadInspections(),
+                        : () => ref
+                            .read(inspectionNotifierProvider.notifier)
+                            .loadInspections(),
                     color: provider.refreshCooldown ? Colors.grey : null,
                     tooltip: provider.refreshCooldown
                         ? 'Please wait before refreshing again'
@@ -239,7 +254,6 @@ class _LocalInspectionsScreenState extends State<LocalInspectionsScreen> {
                                             ? null
                                             : () => _handleSubmission(
                                                   context,
-                                                  provider,
                                                   inspection,
                                                 ),
                                         tooltip: isSubmitting

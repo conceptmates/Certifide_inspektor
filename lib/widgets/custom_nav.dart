@@ -1,7 +1,6 @@
-import 'package:flutter/material.dart';
 import 'dart:ui';
-import 'package:provider/provider.dart';
-import '../providers/user_provider.dart';
+
+import 'package:flutter/material.dart';
 
 class CustomBottomNavBar extends StatelessWidget {
   final int selectedIndex;
@@ -15,15 +14,10 @@ class CustomBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<UserProvider>(
-      builder: (context, userProvider, child) {
-        final navItems = _getUserNavItems();
-        return _buildNavBar(context, navItems);
-      },
-    );
+    return _buildNavBar(context, _getNavItems());
   }
 
-  List<_NavItem> _getUserNavItems() {
+  List<_NavItem> _getNavItems() {
     return [
       _NavItem(
         index: 0,
@@ -33,6 +27,12 @@ class CustomBottomNavBar extends StatelessWidget {
       ),
       _NavItem(
         index: 1,
+        icon: Icons.description_outlined,
+        selectedIcon: Icons.description,
+        label: 'Reports',
+      ),
+      _NavItem(
+        index: 2,
         icon: Icons.person_outline,
         selectedIcon: Icons.person,
         label: 'Profile',
@@ -43,44 +43,42 @@ class CustomBottomNavBar extends StatelessWidget {
   Widget _buildNavBar(BuildContext context, List<_NavItem> items) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+      padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPadding > 0 ? bottomPadding : 16),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(35),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
-            height: 90,
+            padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(35),
-              color: colorScheme.surface.withOpacity(0.9),
+              color: colorScheme.surface.withValues(alpha: 0.9),
               border: Border.all(
-                color: colorScheme.outline.withOpacity(0.1),
+                color: colorScheme.outline.withValues(alpha: 0.1),
                 width: 1.5,
               ),
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  colorScheme.surface.withOpacity(0.9),
-                  colorScheme.surfaceVariant.withOpacity(0.9),
+                  colorScheme.surface.withValues(alpha: 0.9),
+                  colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
                 ],
               ),
               boxShadow: [
                 BoxShadow(
-                  color: colorScheme.shadow.withOpacity(0.2),
+                  color: colorScheme.shadow.withValues(alpha: 0.2),
                   blurRadius: 15,
                   offset: const Offset(0, 5),
                 ),
               ],
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
               children: items
-                  .map((item) => Expanded(
-                        child: _buildNavItem(context, item),
-                      ))
+                  .map((item) => Expanded(child: _buildNavItem(context, item)))
                   .toList(),
             ),
           ),
@@ -97,10 +95,9 @@ class CustomBottomNavBar extends StatelessWidget {
     return GestureDetector(
       onTap: () => onItemSelected(item.index),
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: SizedBox(
+        height: 60,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
@@ -108,21 +105,12 @@ class CustomBottomNavBar extends StatelessWidget {
               decoration: BoxDecoration(
                 color: isSelected ? colorScheme.primary : Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
-                boxShadow: isSelected
-                    ? [
-                        BoxShadow(
-                          color: colorScheme.shadow.withOpacity(0.3),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        )
-                      ]
-                    : null,
               ),
               child: Icon(
                 isSelected ? item.selectedIcon : item.icon,
                 color: isSelected
                     ? colorScheme.onPrimary
-                    : colorScheme.onSurface.withOpacity(0.7),
+                    : colorScheme.onSurface.withValues(alpha: 0.7),
                 size: 24,
               ),
             ),
@@ -132,9 +120,10 @@ class CustomBottomNavBar extends StatelessWidget {
               style: TextStyle(
                 color: isSelected
                     ? colorScheme.primary
-                    : colorScheme.onSurface.withOpacity(0.7),
+                    : colorScheme.onSurface.withValues(alpha: 0.7),
                 fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                fontWeight:
+                    isSelected ? FontWeight.w600 : FontWeight.normal,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,

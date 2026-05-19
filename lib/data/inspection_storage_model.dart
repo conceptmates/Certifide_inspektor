@@ -33,6 +33,24 @@ class InspectionStorageModel extends HiveObject {
   @HiveField(8, defaultValue: 'draft')
   final String status;
 
+  @HiveField(9)
+  final Map<dynamic, dynamic> itemVideos;
+
+  @HiveField(10)
+  final Map<dynamic, dynamic> itemAudios;
+
+  @HiveField(11)
+  final Map<dynamic, dynamic> itemFiles;
+
+  @HiveField(12)
+  final Map<dynamic, dynamic>? vehicleDetails;
+
+  @HiveField(13)
+  final Map<dynamic, dynamic>? inspectionTemplate;
+
+  @HiveField(14)
+  final int? inspectionId;
+
   InspectionStorageModel({
     Map<String, String>? itemValues,
     Map<String, String?>? itemImages,
@@ -43,18 +61,33 @@ class InspectionStorageModel extends HiveObject {
     bool? isCompleted,
     Map<String, List<String>>? multiImages,
     String? status,
-  })  : this.itemValues = Map<dynamic, dynamic>.from(itemValues ?? {}),
-        this.itemImages = Map<dynamic, dynamic>.from(itemImages ?? {}),
-        this.itemRemarks = Map<dynamic, dynamic>.from(itemRemarks ?? {}),
-        this.currentSection = currentSection ?? 0,
-        this.textFieldValues =
+    Map<String, String?>? itemVideos,
+    Map<String, String?>? itemAudios,
+    Map<String, String?>? itemFiles,
+    Map<String, dynamic>? vehicleDetails,
+    Map<String, dynamic>? inspectionTemplate,
+    this.inspectionId,
+  })  : itemValues = Map<dynamic, dynamic>.from(itemValues ?? {}),
+        itemImages = Map<dynamic, dynamic>.from(itemImages ?? {}),
+        itemRemarks = Map<dynamic, dynamic>.from(itemRemarks ?? {}),
+        currentSection = currentSection ?? 0,
+        textFieldValues =
             Map<dynamic, dynamic>.from(textFieldValues ?? {}),
-        this.timestamp = timestamp ?? DateTime.now(),
-        this.isCompleted = isCompleted ?? false,
-        this.multiImages = multiImages != null
+        timestamp = timestamp ?? DateTime.now(),
+        isCompleted = isCompleted ?? false,
+        multiImages = multiImages != null
             ? Map<dynamic, dynamic>.from(multiImages)
             : null,
-        this.status = status ?? 'draft';
+        status = status ?? 'draft',
+        itemVideos = Map<dynamic, dynamic>.from(itemVideos ?? {}),
+        itemAudios = Map<dynamic, dynamic>.from(itemAudios ?? {}),
+        itemFiles = Map<dynamic, dynamic>.from(itemFiles ?? {}),
+        vehicleDetails = vehicleDetails != null
+            ? Map<dynamic, dynamic>.from(vehicleDetails)
+            : null,
+        inspectionTemplate = inspectionTemplate != null
+            ? Map<dynamic, dynamic>.from(inspectionTemplate)
+            : null;
 
   // Convert dynamic Maps back to strongly typed Maps
   Map<String, String> get typedItemValues {
@@ -81,6 +114,30 @@ class InspectionStorageModel extends HiveObject {
     }
   }
 
+  Map<String, String?> get typedItemVideos {
+    try {
+      return Map<String, String?>.from(itemVideos);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Map<String, String?> get typedItemAudios {
+    try {
+      return Map<String, String?>.from(itemAudios);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Map<String, String?> get typedItemFiles {
+    try {
+      return Map<String, String?>.from(itemFiles);
+    } catch (_) {
+      return {};
+    }
+  }
+
   Map<String, String> get typedTextFieldValues {
     try {
       return Map<String, String>.from(textFieldValues);
@@ -100,6 +157,24 @@ class InspectionStorageModel extends HiveObject {
     }
   }
 
+  Map<String, dynamic>? get typedVehicleDetails {
+    if (vehicleDetails == null) return null;
+    try {
+      return Map<String, dynamic>.from(vehicleDetails!);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? get typedInspectionTemplate {
+    if (inspectionTemplate == null) return null;
+    try {
+      return Map<String, dynamic>.from(inspectionTemplate!);
+    } catch (_) {
+      return null;
+    }
+  }
+
   factory InspectionStorageModel.fromMap(Map<String, dynamic> map) {
     return InspectionStorageModel(
       itemValues: _safeConvertMap<String>(map['itemValues']),
@@ -115,6 +190,16 @@ class InspectionStorageModel extends HiveObject {
           ? _safeConvertMultiImageMap(map['multiImages'])
           : null,
       status: map['status'] ?? 'draft',
+      itemVideos: _safeConvertMap<String?>(map['itemVideos']),
+      itemAudios: _safeConvertMap<String?>(map['itemAudios']),
+      itemFiles: _safeConvertMap<String?>(map['itemFiles']),
+      vehicleDetails: map['vehicleDetails'] != null
+          ? Map<String, dynamic>.from(map['vehicleDetails'])
+          : null,
+      inspectionTemplate: map['inspectionTemplate'] != null
+          ? Map<String, dynamic>.from(map['inspectionTemplate'])
+          : null,
+      inspectionId: map['inspectionId'],
     );
   }
 
@@ -154,6 +239,12 @@ class InspectionStorageModel extends HiveObject {
       'isCompleted': isCompleted,
       'multiImages': typedMultiImages,
       'status': status,
+      'itemVideos': typedItemVideos,
+      'itemAudios': typedItemAudios,
+      'itemFiles': typedItemFiles,
+      'vehicleDetails': typedVehicleDetails,
+      'inspectionTemplate': typedInspectionTemplate,
+      'inspectionId': inspectionId,
     };
   }
 
@@ -167,6 +258,12 @@ class InspectionStorageModel extends HiveObject {
     bool? isCompleted,
     Map<String, List<String>>? multiImages,
     String? status,
+    Map<String, String?>? itemVideos,
+    Map<String, String?>? itemAudios,
+    Map<String, String?>? itemFiles,
+    Map<String, dynamic>? vehicleDetails,
+    Map<String, dynamic>? inspectionTemplate,
+    int? inspectionId,
   }) {
     return InspectionStorageModel(
       itemValues: itemValues ?? typedItemValues,
@@ -178,6 +275,12 @@ class InspectionStorageModel extends HiveObject {
       isCompleted: isCompleted ?? this.isCompleted,
       multiImages: multiImages ?? typedMultiImages,
       status: status ?? this.status,
+      itemVideos: itemVideos ?? typedItemVideos,
+      itemAudios: itemAudios ?? typedItemAudios,
+      itemFiles: itemFiles ?? typedItemFiles,
+      vehicleDetails: vehicleDetails ?? typedVehicleDetails,
+      inspectionTemplate: inspectionTemplate ?? typedInspectionTemplate,
+      inspectionId: inspectionId ?? this.inspectionId,
     );
   }
 }

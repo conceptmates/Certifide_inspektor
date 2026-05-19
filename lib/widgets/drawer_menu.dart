@@ -1,5 +1,7 @@
 import 'dart:developer';
+
 import 'package:flutter/material.dart';
+
 import '../screens/history/history_page.dart';
 import '../services/api_services.dart';
 import '../utils/user_role.dart';
@@ -37,11 +39,13 @@ class _DrawerMenuState extends State<DrawerMenu> {
 
   Future<void> _checkUserRole() async {
     final roles = await UserRole.getUserRoles();
-    setState(() {
-      isInspector = roles.contains(UserRole.INSPECTOR);
-    });
-    if (isInspector) {
-      _loadTokenBalance();
+    if (mounted) {
+      setState(() {
+        isInspector = roles.contains(UserRole.INSPECTOR);
+      });
+      if (isInspector) {
+        _loadTokenBalance();
+      }
     }
   }
 
@@ -195,7 +199,7 @@ class _DrawerMenuState extends State<DrawerMenu> {
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.white.withOpacity(0.1),
+                                        color: Colors.white.withValues(alpha: 0.1),
                                         spreadRadius: 2,
                                         blurRadius: 10,
                                       ),
@@ -238,7 +242,7 @@ class _DrawerMenuState extends State<DrawerMenu> {
                                           boxShadow: [
                                             BoxShadow(
                                               color:
-                                                  Colors.white.withOpacity(0.1),
+                                                  Colors.white.withValues(alpha: 0.1),
                                               blurRadius: 15,
                                               spreadRadius: 5,
                                             ),

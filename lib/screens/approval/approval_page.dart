@@ -61,22 +61,28 @@ class _ApprovalPageState extends State<ApprovalPage> {
       );
 
       if (result['success']) {
-        setState(() {
-          _inspections.addAll(result['inspections']);
-          _paginationData = result['pagination'];
-          _isLoadingMore = false;
-        });
+        if (mounted) {
+          setState(() {
+            _inspections.addAll(result['inspections']);
+            _paginationData = result['pagination'];
+            _isLoadingMore = false;
+          });
+        }
       } else {
+        if (mounted) {
+          setState(() {
+            _error = result['message'];
+            _isLoadingMore = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
-          _error = result['message'];
+          _error = 'Failed to load more data';
           _isLoadingMore = false;
         });
       }
-    } catch (e) {
-      setState(() {
-        _error = 'Failed to load more data';
-        _isLoadingMore = false;
-      });
     }
   }
 
@@ -90,22 +96,28 @@ class _ApprovalPageState extends State<ApprovalPage> {
       final result = await ApiService.getInspectionHistory(context, page: 1);
 
       if (result['success']) {
-        setState(() {
-          _inspections = result['inspections'];
-          _paginationData = result['pagination'];
-          _isLoading = false;
-        });
+        if (mounted) {
+          setState(() {
+            _inspections = result['inspections'];
+            _paginationData = result['pagination'];
+            _isLoading = false;
+          });
+        }
       } else {
+        if (mounted) {
+          setState(() {
+            _error = result['message'];
+            _isLoading = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
-          _error = result['message'];
+          _error = 'Failed to load inspections';
           _isLoading = false;
         });
       }
-    } catch (e) {
-      setState(() {
-        _error = 'Failed to load inspections';
-        _isLoading = false;
-      });
     }
   }
 

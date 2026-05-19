@@ -1,74 +1,78 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
+
 import '../constants/hive_constants.dart';
 import '../data/inspection_storage_model.dart';
-import 'dart:convert';
+import '../models/user_state.dart';
 import '../services/api_services.dart';
 
-class UserProvider extends ChangeNotifier {
-  static const String USER_DATA_KEY = 'user_data';
-  static const String TOKEN_KEY = 'jwt_token';
+part 'user_provider.g.dart';
 
-  final _storage = FlutterSecureStorage();
-  Map<String, dynamic>? _userData;
-  bool _isLoading = true;
-  String? _error;
-  String? _token;
+@Riverpod(keepAlive: true)
+class UserNotifier extends _$UserNotifier {
+  static const String _userDataKey = 'user_data';
+  static const String _tokenKey = 'jwt_token';
 
-  // Getters
-  Map<String, dynamic>? get userData => _userData;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-  bool get isAuthenticated => _userData != null && _token != null;
+  final _storage = const FlutterSecureStorage();
+
+  @override
+  UserState build() => const UserState(isLoading: true);
 
   Future<void> initializeAuth(BuildContext context) async {
+    state = state.copyWith(isLoading: true, error: null);
+
     try {
-      _error = null;
-      _isLoading = true;
-      notifyListeners();
+      final token = await _storage.read(key: _tokenKey);
 
-      _token = await _storage.read(key: TOKEN_KEY);
+      if (token != null) {
+        state = state.copyWith(token: token);
 
-      if (_token != null) {
-        if (await isTokenExpired()) {
+        if (await _isTokenExpired(token)) {
           final refreshResult = await ApiService.refreshToken();
           if (!refreshResult['success']) {
             await clearUserData();
-            _error = 'Session expired';
-            notifyListeners();
+            state = state.copyWith(
+              isLoading: false,
+              error: 'Session expired',
+            );
             return;
           }
         }
 
+        if (!context.mounted) return;
         final result = await ApiService.getProfile(context);
         if (result['success']) {
-          _userData = result['data']['user'];
+          final userData = result['data']['user'] as Map<String, dynamic>;
           await _storage.write(
-            key: USER_DATA_KEY,
-            value: json.encode(_userData),
+            key: _userDataKey,
+            value: json.encode(userData),
           );
+          state = state.copyWith(userData: userData);
         } else {
-          _error = result['message'];
+          state = state.copyWith(error: result['message'] as String?);
         }
       }
     } catch (e) {
-      _error = 'Failed to initialize: ${e.toString()}';
+      state = state.copyWith(error: 'Failed to initialize: ${e.toString()}');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      state = state.copyWith(isLoading: false);
     }
   }
 
   Future<void> loadUserData() async {
     try {
-      final storedData = await _storage.read(key: USER_DATA_KEY);
+      final storedData = await _storage.read(key: _userDataKey);
       if (storedData != null) {
-        _userData = json.decode(storedData);
+        state = state.copyWith(
+          userData: json.decode(storedData) as Map<String, dynamic>,
+        );
       }
-      notifyListeners();
     } catch (e) {
-      print('Error loading user data: $e');
+      // Silent failure — user data simply stays null
     }
   }
 
@@ -76,79 +80,49 @@ class UserProvider extends ChangeNotifier {
     try {
       await _storage.deleteAll();
 
-      final inspectionBox = await Hive.openBox<InspectionStorageModel>(
-          HiveConstants.INSPECTION_BOX);
-      final historyBox = await Hive.openBox<InspectionStorageModel>(
-          HiveConstants.INSPECTION_HISTORY_BOX);
+      final inspectionBox = Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)
+          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX)
+          : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
+      final historyBox = Hive.isBoxOpen(HiveConstants.INSPECTION_HISTORY_BOX)
+          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX)
+          : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX);
       await inspectionBox.clear();
       await historyBox.clear();
+    } catch (_) {}
 
-      _userData = null;
-      _token = null;
-      _error = null;
-      notifyListeners();
-    } catch (e) {
-      print('Error clearing user data: $e');
-    }
+    state = const UserState(isLoading: false);
   }
 
   Future<String?> getToken() async {
-    if (_token != null) return _token;
-    _token = await _storage.read(key: TOKEN_KEY);
-    return _token;
+    if (state.token != null) return state.token;
+    final token = await _storage.read(key: _tokenKey);
+    if (token != null) state = state.copyWith(token: token);
+    return token;
   }
 
-  Future<bool> isTokenExpired() async {
-    try {
-      final token = await getToken();
-      if (token == null) return true;
+  Future<void> setUserData(
+    Map<String, dynamic> data,
+    String token,
+  ) async {
+    await _storage.write(key: _userDataKey, value: json.encode(data));
+    await _storage.write(key: _tokenKey, value: token);
+    state = state.copyWith(userData: data, token: token, isLoading: false);
+  }
 
+  Future<bool> _isTokenExpired(String token) async {
+    try {
       final parts = token.split('.');
       if (parts.length != 3) return true;
 
       final payload = json.decode(
-        utf8.decode(
-          base64Url.decode(
-            base64Url.normalize(parts[1]),
-          ),
-        ),
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
       );
 
       final exp = payload['exp'] as int;
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-
       return exp < now;
-    } catch (e) {
-      print('Error checking token expiration: $e');
+    } catch (_) {
       return true;
     }
-  }
-
-  Future<void> setUserData(Map<String, dynamic> data, String token) async {
-    if (data != null && token != null) {
-      _userData = data;
-      _token = token;
-      await _storage.write(
-        key: USER_DATA_KEY,
-        value: json.encode(_userData),
-      );
-      await _storage.write(
-        key: TOKEN_KEY,
-        value: token,
-      );
-      notifyListeners();
-    } else {
-      print('Error: Invalid user data or token');
-    }
-  }
-
-  bool isAdmin() {
-    final roles = _userData?['roles'] as List?;
-    return roles?.any((role) => role['name'] == 'admin') ?? false;
-  }
-
-  bool hasRole(String roleName) {
-    final roles = _userData?['roles'] as List?;
-    return roles?.any((role) => role['name'] == roleName) ?? false;
   }
 }

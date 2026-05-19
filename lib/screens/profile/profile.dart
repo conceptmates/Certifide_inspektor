@@ -8,6 +8,7 @@ import '../../data/inspection_storage_model.dart';
 import '../../routes/routes.dart';
 import '../../services/api_services.dart';
 import '../../utils/user_role.dart';
+import '../home/car_spy/car_spy_data.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -16,8 +17,9 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> {
-  final _storage = FlutterSecureStorage();
+class _ProfilePageState extends State<ProfilePage>
+    with TickerProviderStateMixin {
+  final _storage = const FlutterSecureStorage();
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
 
@@ -28,11 +30,13 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _loadUserData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
-      // First try to get data from storage
       final storedData = await _storage.read(key: 'user_data');
+      if (!mounted) return;
+
       if (storedData != null) {
         setState(() {
           _userData = json.decode(storedData);
@@ -40,18 +44,18 @@ class _ProfilePageState extends State<ProfilePage> {
         });
       }
 
-      // Check if we need to refresh the data
       final lastUpdateStr = await _storage.read(key: 'last_profile_update');
       final shouldRefresh = _shouldRefreshData(lastUpdateStr);
 
       if (shouldRefresh) {
-        // Fetch fresh data from API
+        if (!mounted) return;
         final result = await ApiService.getProfile(context);
+        if (!mounted) return;
+
         if (result['success']) {
           setState(() {
             _userData = result['data']['user'];
           });
-          // Update last refresh time
           await _storage.write(
             key: 'last_profile_update',
             value: DateTime.now().toIso8601String(),
@@ -59,17 +63,22 @@ class _ProfilePageState extends State<ProfilePage> {
         }
       }
     } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading profile: ${e.toString()}')),
+        SnackBar(
+          content: Text('Error loading profile: ${e.toString()}'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   bool _shouldRefreshData(String? lastUpdateStr) {
     if (lastUpdateStr == null) return true;
-
     try {
       final lastUpdate = DateTime.parse(lastUpdateStr);
       final now = DateTime.now();
@@ -89,230 +98,26 @@ class _ProfilePageState extends State<ProfilePage> {
     }
   }
 
-  Widget _buildProfileHeader(ThemeData theme) {
-    return FlexibleSpaceBar(
-      background: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topRight,
-            end: Alignment.bottomLeft,
-            colors: [
-              theme.colorScheme.primary,
-              theme.colorScheme.primaryContainer,
-            ],
-          ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const SizedBox(height: 40),
-            CircleAvatar(
-              radius: 50,
-              backgroundColor: Colors.white,
-              child: Text(
-                _userData?['name']?.substring(0, 1).toUpperCase() ?? 'U',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                  color: theme.colorScheme.primary,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _userData?['name'] ?? 'User',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatCard(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Expanded(
-      child: Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(
-            color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Icon(
-                icon,
-                color: Theme.of(context).colorScheme.primary,
-                size: 28,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileItem(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Row(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(
-            icon,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 14,
-                  color:
-                      Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildProfileCard(BuildContext context) {
-    return Card(
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: Theme.of(context).colorScheme.outline.withOpacity(0.1),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _buildProfileItem(
-              context,
-              icon: Icons.person_outline,
-              label: 'Full Name',
-              value: _userData?['name'] ?? 'N/A',
-            ),
-            const Divider(height: 24),
-            _buildProfileItem(
-              context,
-              icon: Icons.email_outlined,
-              label: 'Email Address',
-              value: _userData?['email'] ?? 'N/A',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLogoutButton(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 56,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Theme.of(context).colorScheme.error,
-            Theme.of(context).colorScheme.error.withOpacity(0.8),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: ElevatedButton(
-        onPressed: () => _showLogoutDialog(context),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            Icon(Icons.logout, color: Colors.white),
-            SizedBox(width: 8),
-            Text(
-              'Logout',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _showLogoutDialog(BuildContext context) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirm Logout'),
-        content: const Text('Are you sure you want to logout?'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Confirm Logout',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text('Are you sure you want to logout of your account?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child:
+                Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
           ),
-          TextButton(
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Logout'),
           ),
@@ -321,79 +126,366 @@ class _ProfilePageState extends State<ProfilePage> {
     );
 
     if (confirm == true) {
-      // Clear all storage
       await _storage.deleteAll();
       await UserRole.clearRoles();
 
-      // Clear Hive boxes
-      final inspectionBox = await Hive.openBox<InspectionStorageModel>(
-          HiveConstants.INSPECTION_BOX);
-      final historyBox = await Hive.openBox<InspectionStorageModel>(
-          HiveConstants.INSPECTION_HISTORY_BOX);
+      final inspectionBox = Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)
+          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX)
+          : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
+      final historyBox = Hive.isBoxOpen(HiveConstants.INSPECTION_HISTORY_BOX)
+          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX)
+          : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX);
       await inspectionBox.clear();
       await historyBox.clear();
 
-      if (!mounted) return;
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        Routes.login,
-        (route) => false,
-      );
+      if (!context.mounted) return;
+      Navigator.of(context)
+          .pushNamedAndRemoveUntil(Routes.login, (route) => false);
     }
+  }
+
+  Widget _buildProfileHeader() {
+    return FlexibleSpaceBar(
+      background: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF2563EB), // Sleeker top color
+              CarSpyColors.primary,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Stack(
+                alignment: Alignment.bottomRight,
+                children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: CircleAvatar(
+                      radius: 50,
+                      backgroundColor: Colors.white,
+                      child: Text(
+                        _userData?['name']?.substring(0, 1).toUpperCase() ??
+                            'U',
+                        style: const TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w800,
+                          color: CarSpyColors.primary,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _userData?['name'] ?? 'Loading...',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _userData?['email'] ?? 'Fetching email...',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatCard(
+      {required IconData icon, required String label, required String value}) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: CarSpyColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: CarSpyColors.primary, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: CarSpyColors.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSettingsGroup(
+      {required String title, required List<Widget> children}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 16, bottom: 8, top: 24),
+          child: Text(
+            title.toUpperCase(),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade500,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            children: children,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildListTile({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    Color? iconColor,
+    Color? textColor,
+    bool showTrailing = true,
+    VoidCallback? onTap,
+  }) {
+    return ListTile(
+      onTap: onTap,
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: (iconColor ?? CarSpyColors.primary).withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: iconColor ?? CarSpyColors.primary, size: 20),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          fontSize: 16,
+          color: textColor ?? CarSpyColors.onSurface,
+        ),
+      ),
+      subtitle: subtitle != null
+          ? Text(subtitle,
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600))
+          : null,
+      trailing: showTrailing
+          ? Icon(Icons.arrow_forward_ios_rounded,
+              size: 16, color: Colors.grey.shade400)
+          : null,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
+      backgroundColor:
+          const Color(0xFFF8FAFC), // A slightly off-white modern background
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(
+              child: CircularProgressIndicator(color: CarSpyColors.primary))
           : CustomScrollView(
               slivers: [
                 SliverAppBar(
-                  expandedHeight: 200.0,
+                  expandedHeight: 260.0,
                   floating: false,
                   pinned: true,
                   automaticallyImplyLeading: false,
-                  flexibleSpace: _buildProfileHeader(theme),
+                  backgroundColor: CarSpyColors.primary,
+                  elevation: 0,
+                  actions: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: GestureDetector(
+                        onTap: () => Navigator.of(context).pop(),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close, color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ),
+                  ],
+                  flexibleSpace: _buildProfileHeader(),
                 ),
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.all(16.0),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Stats Row
                         Row(
                           children: [
                             _buildStatCard(
-                              context,
-                              icon: Icons.calendar_today,
+                              icon: Icons.calendar_today_rounded,
                               label: 'Member Since',
                               value: _formatDate(_userData?['created_at']),
                             ),
                             const SizedBox(width: 16),
                             _buildStatCard(
-                              context,
-                              icon: Icons.verified_user,
+                              icon: Icons.verified_rounded,
                               label: 'Status',
                               value: 'Active',
                             ),
                           ],
                         ),
-                        const SizedBox(height: 24),
-                        Text(
-                          'Profile Details',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: theme.colorScheme.primary,
+
+                        // General Settings Group
+                        _buildSettingsGroup(
+                          title: 'General',
+                          children: [
+                            _buildListTile(
+                              icon: Icons.person_outline_rounded,
+                              title: 'Personal Information',
+                              subtitle: 'Update your name and details',
+                              onTap: () {
+                                // Add navigation later
+                              },
+                            ),
+                            Divider(
+                                height: 1,
+                                indent: 60,
+                                color: Colors.grey.shade200),
+                            _buildListTile(
+                              icon: Icons.shield_outlined,
+                              title: 'Security & Password',
+                              subtitle: 'Manage your credentials',
+                              onTap: () {},
+                            ),
+                          ],
+                        ),
+
+                        // Support & About Group
+                        _buildSettingsGroup(
+                          title: 'Support',
+                          children: [
+                            _buildListTile(
+                              icon: Icons.help_outline_rounded,
+                              title: 'Help Center',
+                              onTap: () {},
+                            ),
+                            Divider(
+                                height: 1,
+                                indent: 60,
+                                color: Colors.grey.shade200),
+                            _buildListTile(
+                              icon: Icons.info_outline_rounded,
+                              title: 'About App',
+                              onTap: () {},
+                            ),
+                          ],
+                        ),
+
+                        const SizedBox(height: 32),
+
+                        // Logout Button (Styled as a cleaner card)
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: Colors.red.shade100),
+                          ),
+                          child: _buildListTile(
+                            icon: Icons.logout_rounded,
+                            title: 'Log Out',
+                            iconColor: Colors.red,
+                            textColor: Colors.red,
+                            showTrailing: false,
+                            onTap: () => _showLogoutDialog(context),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        _buildProfileCard(context),
-                        const SizedBox(height: 24),
-                        _buildLogoutButton(context),
-                        const SizedBox(height: 24),
+
+                        const SizedBox(height: 40), // Bottom padding
                       ],
                     ),
                   ),

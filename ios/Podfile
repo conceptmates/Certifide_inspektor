@@ -39,5 +39,32 @@ end
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
+    target.build_configurations.each do |config|
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_MICROPHONE=1',
+        'PERMISSION_PHOTOS=1',
+        'PERMISSION_PHOTOS_ADD_ONLY=1',
+        'PERMISSION_MEDIA_LIBRARY=1',
+        'PERMISSION_LOCATION_WHENINUSE=1',
+        'PERMISSION_LOCATION_ALWAYS=1',
+      ]
+    end
+  end
+
+  # file_picker's FileUtils conflicts with Apple's private OSAnalytics.framework.
+  # Only run if files haven't been renamed yet (idempotent guard).
+  file_picker_dir = installer.sandbox.pod_dir('file_picker')
+  original_headers = Dir.glob("#{file_picker_dir}/**/FileUtils.{h,m}")
+  unless original_headers.empty?
+    Dir.glob("#{file_picker_dir}/**/*.{h,m}").each do |file|
+      content = File.read(file)
+      File.write(file, content.gsub('FileUtils', 'FPFileUtils')) if content.include?('FileUtils')
+    end
+    original_headers.each do |file|
+      new_path = file.gsub('/FileUtils.', '/FPFileUtils.')
+      File.rename(file, new_path) unless File.exist?(new_path)
+    end
   end
 end

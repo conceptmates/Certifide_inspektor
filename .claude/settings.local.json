@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter analyze:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(flutter pub *)",
+      "Bash(xargs ls *)",
+      "Bash(dart run *)",
+      "Bash(grep -E \"\\\\.dart$\")",
+      "Bash(pod install *)",
+      "Bash(python3 -m json.tool)",
+      "Bash(mv /Users/ryn/.pub-cache/hosted/pub.dev/file_picker-8.3.7/ios/file_picker/Sources/file_picker/FileUtils.m /Users/ryn/.pub-cache/hosted/pub.dev/file_picker-8.3.7/ios/file_picker/Sources/file_picker/FPFileUtils.m)",
+      "Bash(mv /Users/ryn/.pub-cache/hosted/pub.dev/file_picker-8.3.7/ios/file_picker/Sources/file_picker/include/file_picker/FileUtils.h /Users/ryn/.pub-cache/hosted/pub.dev/file_picker-8.3.7/ios/file_picker/Sources/file_picker/include/file_picker/FPFileUtils.h)",
+      "Bash(cp /Users/ryn/.pub-cache/hosted/pub.dev/file_picker-8.3.7/ios/file_picker/Sources/file_picker/include/file_picker/FPFileUtils.h /Users/ryn/.pub-cache/hosted/pub.dev/file_picker-8.3.7/ios/file_picker/Sources/file_picker/include/file_picker/FileUtils.h)",
+      "Bash(cp /Users/ryn/.pub-cache/hosted/pub.dev/file_picker-8.3.7/ios/file_picker/Sources/file_picker/FPFileUtils.m /Users/ryn/.pub-cache/hosted/pub.dev/file_picker-8.3.7/ios/file_picker/Sources/file_picker/FileUtils.m)",
+      "Bash(flutter clean *)",
+      "Bash(openssl rand *)",
+      "Bash(bash *)",
+      "Bash(flutter build *)",
+      "Bash(xargs cat *)",
+      "Bash(flutter run *)",
+      "Bash(echo \"Flutter started in background with PID $!\")",
+      "Read(//Users/ryn/.pub-cache/hosted/pub.dev/media_store_plus-0.1.3/lib/**)",
+      "Read(//Users/ryn/.pub-cache/**)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
