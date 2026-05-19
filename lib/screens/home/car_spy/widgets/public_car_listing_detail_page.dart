@@ -406,6 +406,8 @@ class _PublicCarListingDetailPageState
                             url,
                             fit: BoxFit.cover,
                             width: double.infinity,
+                            // PageView height is 260 dp; 2× for retina.
+                            cacheHeight: 520,
                             errorBuilder: (_, __, ___) => ColoredBox(
                               color: Colors.grey.shade200,
                               child: Icon(

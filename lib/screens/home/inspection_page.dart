@@ -3931,6 +3931,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               Image.network(
                                 refUrl,
                                 fit: BoxFit.cover,
+                                // 100×75 dp container; 2× for retina.
+                                cacheWidth: 200,
+                                cacheHeight: 150,
                                 errorBuilder: (_, __, ___) =>
                                     Container(color: Colors.grey[900]),
                               ),
