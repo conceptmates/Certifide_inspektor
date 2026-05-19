@@ -45,7 +45,7 @@ class ApiService {
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
     try {
-      log('Creating initial inspection with data: $vehicleData');
+      if (kDebugMode) log('Creating initial inspection with data: $vehicleData');
 
       final response = await http.post(
         Uri.parse('$baseUrl$initialInspectionEndPoint'),
@@ -54,7 +54,7 @@ class ApiService {
       );
 
       log('Initial inspection response status: ${response.statusCode}');
-      log('Initial inspection response body: ${response.body}');
+      if (kDebugMode) log('Initial inspection response body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(response.body);
@@ -119,7 +119,7 @@ class ApiService {
       );
 
       log('Initialize inspection response status: ${response.statusCode}');
-      log('Initialize inspection response body: ${response.body}');
+      if (kDebugMode) log('Initialize inspection response body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(response.body);
@@ -538,7 +538,7 @@ class ApiService {
           : sendDataEndPoint;
 
       log('Sending inspection data to: $baseUrl$endpoint');
-      log('Inspection data: $inspectionData');
+      if (kDebugMode) log('Inspection data: $inspectionData');
 
       final response = await http.put(
         Uri.parse('$baseUrl$endpoint'),
@@ -547,7 +547,7 @@ class ApiService {
       );
 
       log('Inspection submission response status: ${response.statusCode}');
-      log('Inspection submission response body: ${response.body}');
+      if (kDebugMode) log('Inspection submission response body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final responseData = json.decode(response.body);
@@ -560,7 +560,7 @@ class ApiService {
               responseData['message'] ?? 'Inspection data sent successfully',
         };
       } else {
-        log('Error response: ${response.body}');
+        if (kDebugMode) log('Error response: ${response.body}');
         return {
           'success': false,
           'message': _handleError(response),
@@ -819,7 +819,7 @@ class ApiService {
       Map<String, dynamic> body) async {
     try {
       log('Submitting dynamic inspection to: $baseUrl$submitDynamicInspectionEndPoint');
-      log('Submission body: $body');
+      if (kDebugMode) log('Submission body: $body');
 
       final response = await http.post(
         Uri.parse('$baseUrl$submitDynamicInspectionEndPoint'),
@@ -828,7 +828,7 @@ class ApiService {
       );
 
       log('Submit inspection response status: ${response.statusCode}');
-      log('Submit inspection response body: ${response.body}');
+      if (kDebugMode) log('Submit inspection response body: ${response.body}');
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         Map<String, dynamic> responseData;
