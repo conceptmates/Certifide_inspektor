@@ -13,10 +13,10 @@ class CarSpyPendingReportCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: CarSpyColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: CarSpyColors.outlineVariant.withOpacity(0.4)),
+        border: Border.all(color: CarSpyColors.outlineVariant.withValues(alpha: 0.4)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -30,7 +30,7 @@ class CarSpyPendingReportCard extends StatelessWidget {
             child: Icon(
               Icons.gpp_maybe_outlined,
               size: 150,
-              color: Colors.blue.shade900.withOpacity(0.05),
+              color: Colors.blue.shade900.withValues(alpha: 0.05),
             ),
           ),
           Column(
@@ -105,7 +105,7 @@ class CarSpyPendingReportCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       elevation: 4,
-                      shadowColor: CarSpyColors.primary.withOpacity(0.3),
+                      shadowColor: CarSpyColors.primary.withValues(alpha: 0.3),
                     ),
                     child: const Text(
                       'Resume',
@@ -141,7 +141,7 @@ class _AvatarIcon extends StatelessWidget {
         border: Border.all(color: Colors.white, width: 2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 4,
           ),
         ],

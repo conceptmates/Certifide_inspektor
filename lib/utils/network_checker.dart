@@ -25,7 +25,7 @@ class NetworkConnectivityHandler {
 
   Future<bool> hasInternetConnection() async {
     var connectivityResult = await (Connectivity().checkConnectivity());
-    if (connectivityResult == ConnectivityResult.none) {
+    if (connectivityResult.contains(ConnectivityResult.none)) {
       return false;
     }
     return await InternetConnectionChecker.createInstance().hasConnection;
@@ -34,6 +34,7 @@ class NetworkConnectivityHandler {
   Future<void> _initConnectivityListener(BuildContext context) async {
     // Check initial connectivity
     bool hasInternet = await hasInternetConnection();
+    if (!context.mounted) return;
     if (!hasInternet) {
       _showNoInternetSnackBar(context);
     }
@@ -44,9 +45,11 @@ class NetworkConnectivityHandler {
         .listen((List<ConnectivityResult> results) async {
       final result = results.first;
       if (result == ConnectivityResult.none) {
+        if (!context.mounted) return;
         _showNoInternetSnackBar(context);
       } else {
         bool hasInternet = await hasInternetConnection();
+        if (!context.mounted) return;
         if (!hasInternet) {
           _showNoInternetSnackBar(context);
         } else {
@@ -76,6 +79,7 @@ class NetworkConnectivityHandler {
             textColor: Colors.white,
             onPressed: () async {
               bool hasInternet = await hasInternetConnection();
+              if (!context.mounted) return;
               if (hasInternet) {
                 _hideNoInternetSnackBar(context);
                 // _showOnlineSnackBar(context);

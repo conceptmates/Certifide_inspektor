@@ -15,7 +15,7 @@ class CarSpyTopAppBar extends StatelessWidget implements PreferredSizeWidget {
       scrolledUnderElevation: 1,
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.white,
-      shadowColor: Colors.blueGrey.withOpacity(0.1),
+      shadowColor: Colors.blueGrey.withValues(alpha: 0.1),
       titleSpacing: 0,
       title: Padding(
         padding: const EdgeInsets.only(left: 4),

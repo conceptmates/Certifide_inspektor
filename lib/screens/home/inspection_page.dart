@@ -37,7 +37,6 @@ import 'inspection_page/components/inspection_reference_fullscreen.dart';
 import 'inspection_page/components/inspection_sections_drawer.dart';
 import 'inspection_page/components/inspection_video_player.dart';
 import 'inspection_success_page.dart';
-import '../../utils/ads manager/rewarded_interstitial_ad.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
   final bool isNewInspection;
@@ -146,9 +145,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
-
-  final RewardedInterstitialAdManager _rewardedAdManager =
-      RewardedInterstitialAdManager();
 
   // Get sections - either from dynamic template or default
   List<Map<String, dynamic>> get _sections {
@@ -303,9 +299,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           }
         }
       }
-
-      // Load rewarded interstitial ad
-      _rewardedAdManager.loadRewardedInterstitialAd();
 
       // Request camera + mic permissions while the loading screen is still
       // shown so the camera card renders with permissions already resolved.
@@ -1187,9 +1180,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final isRequired = _itemIsRequired(item);
     final referenceMedia = _getItemReferenceMedia(item);
     final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
-    final hasFlaggableOptions = _itemHasOptions(item) &&
-        !_itemHasImage(item) &&
-        !_itemHasVideo(item);
+    final hasFlaggableOptions =
+        _itemHasOptions(item) && !_itemHasImage(item) && !_itemHasVideo(item);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       clipBehavior: Clip.antiAlias,
@@ -1412,7 +1404,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     }
                   }
                 } else {
-                  if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+                  if (mounted)
+                    setState(() => _uploadingImages.remove(uniqueId));
                 }
               },
             ),
@@ -1452,8 +1445,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color:
-                              Theme.of(context).textTheme.bodyMedium?.color,
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
                         ),
                       ),
                       if (_uploadingImages.contains(uniqueId)) ...[
@@ -1466,8 +1458,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         const SizedBox(width: 4),
                         const Text(
                           'Uploading...',
-                          style:
-                              TextStyle(fontSize: 11, color: Colors.orange),
+                          style: TextStyle(fontSize: 11, color: Colors.orange),
                         ),
                       ],
                     ],
@@ -1515,8 +1506,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       scrollDirection: Axis.horizontal,
                       itemCount: itemMultiImages[uniqueId]!.length,
                       itemBuilder: (context, imgIndex) {
-                        final imagePath =
-                            itemMultiImages[uniqueId]![imgIndex];
+                        final imagePath = itemMultiImages[uniqueId]![imgIndex];
                         return Container(
                           margin: const EdgeInsets.only(right: 8),
                           width: 150,
@@ -2265,7 +2255,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
-                leading: const Icon(Icons.attach_file, color: Color(0xFF22C55E)),
+                leading:
+                    const Icon(Icons.attach_file, color: Color(0xFF22C55E)),
                 title: const Text('Browse Files'),
                 onTap: () {
                   Navigator.pop(context);
@@ -2553,12 +2544,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
-  void _acceptCapturedFile() {
+  Future<void> _acceptCapturedFile() async {
     final path = _pendingCapturedFilePath;
     final uniqueId = _pendingCapturedFileUniqueId;
     final name = _pendingCapturedFileName;
     final ext = _pendingCapturedFileExtension;
     if (path == null || uniqueId == null) return;
+
+    String sectionTitle = '';
+    String fieldId = '';
+    for (final section in _sections) {
+      for (final item in section['items'] as List<dynamic>) {
+        if (_getItemUniqueId(item) == uniqueId) {
+          sectionTitle = section['title'] as String;
+          fieldId = _getItemFieldId(item);
+          break;
+        }
+      }
+      if (sectionTitle.isNotEmpty) break;
+    }
 
     final payload = json.encode({
       'filePath': path,
@@ -2572,8 +2576,34 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _pendingCapturedFileName = null;
       _pendingCapturedFileExtension = null;
       itemFiles[uniqueId] = payload;
+      _uploadingImages.add(uniqueId);
     });
-    _autoSave();
+
+    await _saveDataLocally();
+
+    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    if (hasInternet && sectionTitle.isNotEmpty) {
+      final result = await ApiService.uploadImage(
+        path,
+        inspectionId: _effectiveInspectionId,
+        section: sectionTitle,
+        itemId: fieldId,
+        fieldName: 'image',
+      );
+      if (mounted) {
+        setState(() => _uploadingImages.remove(uniqueId));
+        if (result['success'] == true) {
+          setState(() => itemFiles[uniqueId] = json.encode({
+                'filePath': result['url'] as String,
+                'fileName': name ?? path.split('/').last,
+                'fileType': ext ?? '',
+              }));
+          await _saveDataLocally();
+        }
+      }
+    } else {
+      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+    }
   }
 
   bool _checkCurrentItemFlagIssue() {
@@ -2582,7 +2612,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (items.isEmpty) return true;
 
     final currentItem = items[_currentItemIndex];
-    if (!(_itemHasImage(currentItem) || _itemHasVideo(currentItem))) return true;
+    if (!(_itemHasImage(currentItem) || _itemHasVideo(currentItem)))
+      return true;
 
     final uniqueId = _getItemUniqueId(currentItem);
     final hasMedia = (itemImages[uniqueId] != null) ||
@@ -2859,7 +2890,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     ? null
                     : () {
                         Navigator.of(context).pop();
-                        _showRewardedAdAndSubmit();
+                        _handleSubmission();
                       },
                 child: _isSubmitting
                     ? const SizedBox(
@@ -2873,24 +2904,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           );
         },
       );
-    }
-  }
-
-  Future<void> _showRewardedAdAndSubmit() async {
-    try {
-      await _rewardedAdManager.showRewardedInterstitialAd(
-        onUserEarnedReward: (ad, rewardItem) {
-          _handleSubmission();
-        },
-        onAdClosed: () {
-          _handleSubmission();
-        },
-        onAdFailedToShow: () {
-          _handleSubmission();
-        },
-      );
-    } catch (e) {
-      _handleSubmission();
     }
   }
 
@@ -2911,7 +2924,17 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         final multiImages = itemMultiImages[uniqueId];
         final videoPath = itemVideos[uniqueId];
         final audioPath = itemAudios[uniqueId];
-        final filePath = itemFiles[uniqueId];
+        // Decode JSON file payload to extract the URL/path for submission.
+        final filePayload = itemFiles[uniqueId];
+        String? filePath;
+        if (filePayload != null) {
+          try {
+            final decoded = json.decode(filePayload) as Map<String, dynamic>;
+            filePath = decoded['filePath'] as String?;
+          } catch (_) {
+            filePath = filePayload;
+          }
+        }
 
         sectionItems.add({
           'id': uniqueId,
@@ -3053,6 +3076,45 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           }
         }
 
+        final filePayload = itemFiles[uniqueId];
+        if (filePayload != null) {
+          String? localPath;
+          String? fileName;
+          String? fileType;
+          try {
+            final decoded = json.decode(filePayload) as Map<String, dynamic>;
+            final p = decoded['filePath'] as String?;
+            if (p != null && !p.startsWith('http')) {
+              localPath = p;
+              fileName = decoded['fileName'] as String?;
+              fileType = decoded['fileType'] as String?;
+            }
+          } catch (_) {
+            if (!filePayload.startsWith('http')) localPath = filePayload;
+          }
+          if (localPath != null) {
+            if (mounted) setState(() => _uploadingImages.add(uniqueId));
+            final result = await ApiService.uploadImage(
+              localPath,
+              inspectionId: _effectiveInspectionId,
+              section: sectionTitle,
+              itemId: fieldId,
+              fieldName: 'image',
+            );
+            if (mounted) {
+              setState(() {
+                _uploadingImages.remove(uniqueId);
+                if (result['success'] == true) {
+                  itemFiles[uniqueId] = json.encode({
+                    'filePath': result['url'] as String,
+                    'fileName': fileName ?? localPath!.split('/').last,
+                    'fileType': fileType ?? '',
+                  });
+                }
+              });
+            }
+          }
+        }
       }
     }
     await _saveDataLocally();
@@ -3212,9 +3274,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     // For fields that are pure dropdowns (have options, no image/video capture),
     // don't overwrite the dropdown's selected value when flagging issues.
-    final isPureDropdownField = _itemHasOptions(item) &&
-        !_itemHasImage(item) &&
-        !_itemHasVideo(item);
+    final isPureDropdownField =
+        _itemHasOptions(item) && !_itemHasImage(item) && !_itemHasVideo(item);
 
     final List<String> availableIssues = [];
     final Map<String, Color> issueColors = {};
@@ -3230,10 +3291,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             final colorCode = opt['colorCode']?.toString() ?? '';
             if (colorCode.isNotEmpty) {
               try {
-                final hex =
-                    colorCode.startsWith('#') ? colorCode.substring(1) : colorCode;
-                issueColors[label] =
-                    Color(int.parse('FF$hex', radix: 16));
+                final hex = colorCode.startsWith('#')
+                    ? colorCode.substring(1)
+                    : colorCode;
+                issueColors[label] = Color(int.parse('FF$hex', radix: 16));
               } catch (_) {}
             }
           }
@@ -4332,68 +4393,70 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       onUseFile: _acceptCapturedFile,
                     )
                   : _isReviewingVideo && _pendingCapturedVideoFile != null
-                  ? InspectionVideoReview(
-                      capturedMediaPath: _pendingCapturedVideoFile!.path,
-                      fieldTitle:
-                          currentItem != null ? _getItemTitle(currentItem) : '',
-                      mediaLabel: 'Video',
-                      onRetake: () {
-                        setState(() {
-                          _isReviewingVideo = false;
-                          _pendingCapturedVideoFile = null;
-                          _pendingCapturedVideoUniqueId = null;
-                        });
-                      },
-                      onUseMedia: _acceptCapturedVideo,
-                    )
-                  : _isReviewingAudio && _pendingCapturedAudioPath != null
                       ? InspectionVideoReview(
-                          capturedMediaPath: _pendingCapturedAudioPath!,
+                          capturedMediaPath: _pendingCapturedVideoFile!.path,
                           fieldTitle: currentItem != null
                               ? _getItemTitle(currentItem)
                               : '',
-                          mediaLabel: 'Audio',
+                          mediaLabel: 'Video',
                           onRetake: () {
                             setState(() {
-                              _isReviewingAudio = false;
-                              _pendingCapturedAudioPath = null;
-                              _pendingCapturedAudioUniqueId = null;
+                              _isReviewingVideo = false;
+                              _pendingCapturedVideoFile = null;
+                              _pendingCapturedVideoUniqueId = null;
                             });
                           },
-                          onUseMedia: _acceptCapturedAudio,
+                          onUseMedia: _acceptCapturedVideo,
                         )
-                      : _isReviewingCapture && _pendingCapturedXFile != null
-                          ? InspectionImageReview(
-                              capturedImagePath: _pendingCapturedXFile!.path,
+                      : _isReviewingAudio && _pendingCapturedAudioPath != null
+                          ? InspectionVideoReview(
+                              capturedMediaPath: _pendingCapturedAudioPath!,
                               fieldTitle: currentItem != null
                                   ? _getItemTitle(currentItem)
                                   : '',
-                              referenceMedia: currentItem != null
-                                  ? _getItemReferenceMedia(currentItem)
-                                  : [],
+                              mediaLabel: 'Audio',
                               onRetake: () {
                                 setState(() {
-                                  _isReviewingCapture = false;
-                                  _pendingCapturedXFile = null;
-                                  _pendingCapturedUniqueId = null;
+                                  _isReviewingAudio = false;
+                                  _pendingCapturedAudioPath = null;
+                                  _pendingCapturedAudioUniqueId = null;
                                 });
                               },
-                              onUsePhoto: _acceptCapturedImage,
+                              onUseMedia: _acceptCapturedAudio,
                             )
-                          : currentItem != null &&
-                                  (_itemHasImage(currentItem) ||
-                                      _itemHasVideo(currentItem))
-                              ? _buildImageFieldView(currentItem)
-                              : ListView(
-                          key: PageStorageKey<int>(_currentSection),
-                          controller: _scrollController,
-                          children: [
-                            _buildInspectionSection(
-                              currentSection['title'],
-                              items,
-                            ),
-                          ],
-                        ),
+                          : _isReviewingCapture && _pendingCapturedXFile != null
+                              ? InspectionImageReview(
+                                  capturedImagePath:
+                                      _pendingCapturedXFile!.path,
+                                  fieldTitle: currentItem != null
+                                      ? _getItemTitle(currentItem)
+                                      : '',
+                                  referenceMedia: currentItem != null
+                                      ? _getItemReferenceMedia(currentItem)
+                                      : [],
+                                  onRetake: () {
+                                    setState(() {
+                                      _isReviewingCapture = false;
+                                      _pendingCapturedXFile = null;
+                                      _pendingCapturedUniqueId = null;
+                                    });
+                                  },
+                                  onUsePhoto: _acceptCapturedImage,
+                                )
+                              : currentItem != null &&
+                                      (_itemHasImage(currentItem) ||
+                                          _itemHasVideo(currentItem))
+                                  ? _buildImageFieldView(currentItem)
+                                  : ListView(
+                                      key: PageStorageKey<int>(_currentSection),
+                                      controller: _scrollController,
+                                      children: [
+                                        _buildInspectionSection(
+                                          currentSection['title'],
+                                          items,
+                                        ),
+                                      ],
+                                    ),
             ),
             _buildDarkNavBar(items),
           ],
@@ -4505,28 +4568,30 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _saveDebouncer?.cancel();
-    _flushPendingAutoSave();
+    if (!_sessionCompleted) {
+      _flushPendingAutoSave();
+    }
     if (!_sessionCompleted) {
       // ref is not guaranteed to be valid during dispose() in Riverpod — guard it.
       try {
         ref.read(inspectionSessionNotifierProvider.notifier).saveSnapshot(
-          InspectionSessionSnapshot(
-            itemImages: Map.from(itemImages),
-            itemVideos: Map.from(itemVideos),
-            itemAudios: Map.from(itemAudios),
-            itemFiles: Map.from(itemFiles),
-            itemRemarks: Map.from(itemRemarks),
-            itemValues: Map.from(itemValues),
-            itemMultiImages: Map.from(itemMultiImages),
-            itemFlaggedIssues: Map.from(itemFlaggedIssues),
-            currentSection: _currentSection,
-            currentItemIndex: _currentItemIndex,
-            vehicleDetails: vehicleDetails,
-            inspectionTemplate: _inspectionTemplate,
-            useDynamicTemplate: _useDynamicTemplate,
-            sessionInspectionId: _sessionInspectionId,
-          ),
-        );
+              InspectionSessionSnapshot(
+                itemImages: Map.from(itemImages),
+                itemVideos: Map.from(itemVideos),
+                itemAudios: Map.from(itemAudios),
+                itemFiles: Map.from(itemFiles),
+                itemRemarks: Map.from(itemRemarks),
+                itemValues: Map.from(itemValues),
+                itemMultiImages: Map.from(itemMultiImages),
+                itemFlaggedIssues: Map.from(itemFlaggedIssues),
+                currentSection: _currentSection,
+                currentItemIndex: _currentItemIndex,
+                vehicleDetails: vehicleDetails,
+                inspectionTemplate: _inspectionTemplate,
+                useDynamicTemplate: _useDynamicTemplate,
+                sessionInspectionId: _sessionInspectionId,
+              ),
+            );
       } catch (_) {
         // ref was already invalidated; session data persisted to Hive via _flushPendingAutoSave.
       }
@@ -4534,7 +4599,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _scrollController.dispose();
     _cleanupControllers();
     _isSubmitting = false;
-    _rewardedAdManager.dispose();
     _audioTimer?.cancel();
     _audioRecorder?.dispose();
     super.dispose();

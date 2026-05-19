@@ -257,7 +257,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
               left: -MediaQuery.of(context).size.width * 0.1,
               child: _GlowBlob(
                 size: MediaQuery.of(context).size.width * 0.7,
-                color: AppColors.primary.withOpacity(0.05),
+                color: AppColors.primary.withValues(alpha: 0.05),
               ),
             ),
             Positioned(
@@ -265,7 +265,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
               right: -MediaQuery.of(context).size.width * 0.1,
               child: _GlowBlob(
                 size: MediaQuery.of(context).size.width * 0.7,
-                color: AppColors.secondary.withOpacity(0.05),
+                color: AppColors.secondary.withValues(alpha: 0.05),
               ),
             ),
             SafeArea(
@@ -345,7 +345,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.4),
+                color: Colors.black.withValues(alpha: 0.4),
                 blurRadius: 24,
                 offset: const Offset(0, 8),
               ),
@@ -363,7 +363,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          AppColors.primary.withOpacity(0.2),
+                          AppColors.primary.withValues(alpha: 0.2),
                           Colors.transparent,
                         ],
                       ),
@@ -540,7 +540,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         borderRadius: BorderRadius.circular(999),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primaryContainer.withOpacity(0.4),
+            color: AppColors.primaryContainer.withValues(alpha: 0.4),
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -583,7 +583,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
       children: [
         Expanded(
           child: Divider(
-            color: AppColors.outlineVariant.withOpacity(0.3),
+            color: AppColors.outlineVariant.withValues(alpha: 0.3),
             thickness: 1,
           ),
         ),
@@ -594,13 +594,13 @@ class _LoginPageState extends ConsumerState<LoginPage>
             style: TextStyle(
               fontSize: 10,
               letterSpacing: 1.6,
-              color: AppColors.onSurfaceVariant.withOpacity(0.7),
+              color: AppColors.onSurfaceVariant.withValues(alpha: 0.7),
             ),
           ),
         ),
         Expanded(
           child: Divider(
-            color: AppColors.outlineVariant.withOpacity(0.3),
+            color: AppColors.outlineVariant.withValues(alpha: 0.3),
             thickness: 1,
           ),
         ),
@@ -666,7 +666,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
         Icon(
           Icons.shield_outlined,
           size: 14,
-          color: AppColors.outline.withOpacity(0.4),
+          color: AppColors.outline.withValues(alpha: 0.4),
         ),
         const SizedBox(width: 6),
         Text(
@@ -674,7 +674,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           style: TextStyle(
             fontSize: 9,
             letterSpacing: 2.0,
-            color: AppColors.outline.withOpacity(0.4),
+            color: AppColors.outline.withValues(alpha: 0.4),
           ),
         ),
       ],
@@ -695,15 +695,15 @@ class _GlassCard extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(32),
           decoration: BoxDecoration(
-            color: const Color(0xFF2A2A2A).withOpacity(0.8),
+            color: const Color(0xFF2A2A2A).withValues(alpha: 0.8),
             borderRadius: BorderRadius.circular(24),
             border: Border.all(
-              color: const Color(0xFF424753).withOpacity(0.15),
+              color: const Color(0xFF424753).withValues(alpha: 0.15),
               width: 1,
             ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF0E0E0E).withOpacity(0.6),
+                color: const Color(0xFF0E0E0E).withValues(alpha: 0.6),
                 blurRadius: 40,
                 offset: const Offset(0, 20),
               ),
@@ -755,7 +755,7 @@ class _StyledTextFormField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: hintText,
         hintStyle: TextStyle(
-          color: AppColors.outline.withOpacity(0.5),
+          color: AppColors.outline.withValues(alpha: 0.5),
           fontSize: 15,
         ),
         filled: true,
@@ -779,14 +779,14 @@ class _StyledTextFormField extends StatelessWidget {
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
-            color: AppColors.outlineVariant.withOpacity(0.15),
+            color: AppColors.outlineVariant.withValues(alpha: 0.15),
             width: 1,
           ),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(
-            color: AppColors.outlineVariant.withOpacity(0.15),
+            color: AppColors.outlineVariant.withValues(alpha: 0.15),
             width: 1,
           ),
         ),
@@ -842,7 +842,7 @@ class _AltAuthButton extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: AppColors.outlineVariant.withOpacity(0.15),
+              color: AppColors.outlineVariant.withValues(alpha: 0.15),
               width: 1,
             ),
           ),

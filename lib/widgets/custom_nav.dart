@@ -55,22 +55,22 @@ class CustomBottomNavBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(35),
-              color: colorScheme.surface.withOpacity(0.9),
+              color: colorScheme.surface.withValues(alpha: 0.9),
               border: Border.all(
-                color: colorScheme.outline.withOpacity(0.1),
+                color: colorScheme.outline.withValues(alpha: 0.1),
                 width: 1.5,
               ),
               gradient: LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
                 colors: [
-                  colorScheme.surface.withOpacity(0.9),
-                  colorScheme.surfaceContainerHighest.withOpacity(0.9),
+                  colorScheme.surface.withValues(alpha: 0.9),
+                  colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
                 ],
               ),
               boxShadow: [
                 BoxShadow(
-                  color: colorScheme.shadow.withOpacity(0.2),
+                  color: colorScheme.shadow.withValues(alpha: 0.2),
                   blurRadius: 15,
                   offset: const Offset(0, 5),
                 ),
@@ -110,7 +110,7 @@ class CustomBottomNavBar extends StatelessWidget {
                 isSelected ? item.selectedIcon : item.icon,
                 color: isSelected
                     ? colorScheme.onPrimary
-                    : colorScheme.onSurface.withOpacity(0.7),
+                    : colorScheme.onSurface.withValues(alpha: 0.7),
                 size: 24,
               ),
             ),
@@ -120,7 +120,7 @@ class CustomBottomNavBar extends StatelessWidget {
               style: TextStyle(
                 color: isSelected
                     ? colorScheme.primary
-                    : colorScheme.onSurface.withOpacity(0.7),
+                    : colorScheme.onSurface.withValues(alpha: 0.7),
                 fontSize: 11,
                 fontWeight:
                     isSelected ? FontWeight.w600 : FontWeight.normal,

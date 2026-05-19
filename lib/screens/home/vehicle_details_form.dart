@@ -4,7 +4,6 @@ import '../../models/vehicle_model.dart';
 import '../../routes/routes.dart';
 import '../../services/api_services.dart';
 import '../../widgets/fade_animation.dart';
-import '../../utils/ads manager/interstitial_ad.dart';
 import 'vehicle_details_form/components/vehicle_form_continue_button.dart';
 import 'vehicle_details_form/components/vehicle_form_header_card.dart';
 import 'vehicle_details_form/components/vehicle_form_text_field.dart';
@@ -43,8 +42,6 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
-  final InterstitialAdManager _interstitialAdManager = InterstitialAdManager();
-
   final List<String> _transmissionTypes = [
     'Manual',
     'Automatic',
@@ -68,9 +65,6 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
       curve: Curves.easeInOut,
     ));
     _animationController.forward();
-
-    // Load interstitial ad
-    _interstitialAdManager.loadAd();
 
     // Load vehicle models from API
     _loadModels();
@@ -143,7 +137,6 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
     _yearController.dispose();
     _variantController.dispose();
     _colourController.dispose();
-    _interstitialAdManager.dispose();
     super.dispose();
   }
 

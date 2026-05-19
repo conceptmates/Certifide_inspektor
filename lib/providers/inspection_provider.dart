@@ -212,10 +212,11 @@ class InspectionNotifier extends _$InspectionNotifier {
             entry.value,
             section: '',
             itemId: entry.key,
-            fieldName: 'video',
+            fieldName: 'image',
           );
           if (result['success'] == true) {
-            videoReplacements[entry.value] = result['url'] as String;
+            // Key by itemId so we can find the item in the data by ID.
+            videoReplacements[entry.key] = result['url'] as String;
           }
         }
       }
@@ -226,10 +227,10 @@ class InspectionNotifier extends _$InspectionNotifier {
             entry.value,
             section: '',
             itemId: entry.key,
-            fieldName: 'audio',
+            fieldName: 'image',
           );
           if (result['success'] == true) {
-            audioReplacements[entry.value] = result['url'] as String;
+            audioReplacements[entry.key] = result['url'] as String;
           }
         }
       }
@@ -240,10 +241,10 @@ class InspectionNotifier extends _$InspectionNotifier {
             entry.value,
             section: '',
             itemId: entry.key,
-            fieldName: 'file',
+            fieldName: 'image',
           );
           if (result['success'] == true) {
-            fileReplacements[entry.value] = result['url'] as String;
+            fileReplacements[entry.key] = result['url'] as String;
           }
         }
       }
@@ -281,13 +282,13 @@ class InspectionNotifier extends _$InspectionNotifier {
         }
       }
       for (var entry in videoReplacements.entries) {
-        _replaceValueInData(inspectionData, entry.key, entry.value);
+        _updateMediaFieldInData(inspectionData, entry.key, 'videoPath', entry.value);
       }
       for (var entry in audioReplacements.entries) {
-        _replaceValueInData(inspectionData, entry.key, entry.value);
+        _updateMediaFieldInData(inspectionData, entry.key, 'audioPath', entry.value);
       }
       for (var entry in fileReplacements.entries) {
-        _replaceValueInData(inspectionData, entry.key, entry.value);
+        _updateMediaFieldInData(inspectionData, entry.key, 'filePath', entry.value);
       }
 
       final result = await ApiService.sendInspectionData(inspectionData);
@@ -386,23 +387,23 @@ class InspectionNotifier extends _$InspectionNotifier {
   ) {
     if (data.containsKey('inspection_data')) {
       final inspectionData = data['inspection_data'];
-      if (inspectionData is List) {
-        for (var section in inspectionData) {
-          if (section is Map<String, dynamic> &&
-              section.containsKey('items')) {
-            for (var item in section['items'] as List<dynamic>) {
-              if (item is Map<String, dynamic>) {
-                if (item['id'] == key && item.containsKey('imagePath')) {
+      // inspection_data is a Map<sectionName, {title, items}> from _buildSubmissionBody.
+      if (inspectionData is Map<String, dynamic>) {
+        for (final section in inspectionData.values) {
+          if (section is Map<String, dynamic>) {
+            final items = section['items'];
+            if (items is List) {
+              for (var item in items) {
+                if (item is Map<String, dynamic> && item['id'] == key) {
                   item['imagePath'] = url;
-                }
-                if (item.containsKey('multiImages') &&
-                    item['multiImages'] is List) {
-                  for (var img in item['multiImages'] as List<dynamic>) {
-                    if (img is Map<String, dynamic> &&
-                        img.containsKey('imagePath')) {
-                      final p = img['imagePath'];
-                      if (p is String && !p.startsWith('http')) {
-                        img['imagePath'] = url;
+                  if (item['multiImages'] is List) {
+                    for (var img in item['multiImages'] as List<dynamic>) {
+                      if (img is Map<String, dynamic> &&
+                          img.containsKey('imagePath')) {
+                        final p = img['imagePath'];
+                        if (p is String && !p.startsWith('http')) {
+                          img['imagePath'] = url;
+                        }
                       }
                     }
                   }
@@ -422,6 +423,30 @@ class InspectionNotifier extends _$InspectionNotifier {
               img['key'] == key &&
               img.containsKey('imagePath')) {
             img['imagePath'] = url;
+          }
+        }
+      }
+    }
+  }
+
+  // Finds an item by ID in the Map-structured inspection_data and sets [field] to [url].
+  void _updateMediaFieldInData(
+    Map<String, dynamic> data,
+    String itemId,
+    String field,
+    String url,
+  ) {
+    final inspectionData = data['inspection_data'];
+    if (inspectionData is Map<String, dynamic>) {
+      for (final section in inspectionData.values) {
+        if (section is Map<String, dynamic>) {
+          final items = section['items'];
+          if (items is List) {
+            for (final item in items) {
+              if (item is Map<String, dynamic> && item['id'] == itemId) {
+                item[field] = url;
+              }
+            }
           }
         }
       }

@@ -304,7 +304,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(history.status).withOpacity(0.2),
+                    color: _getStatusColor(history.status).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(

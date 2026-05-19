@@ -54,10 +54,10 @@ class CarSpyHeroSection extends StatelessWidget {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: CarSpyColors.primary.withOpacity(0.15),
+                        color: CarSpyColors.primary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: CarSpyColors.primary.withOpacity(0.3),
+                          color: CarSpyColors.primary.withValues(alpha: 0.3),
                         ),
                       ),
                       child: const Text(
@@ -112,7 +112,7 @@ class CarSpyHeroSection extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         elevation: 8,
-                        shadowColor: CarSpyColors.primary.withOpacity(0.4),
+                        shadowColor: CarSpyColors.primary.withValues(alpha: 0.4),
                       ),
                     ),
                   ],

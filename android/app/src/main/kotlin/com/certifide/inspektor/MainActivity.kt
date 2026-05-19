@@ -1,4 +1,4 @@
-package com.example.certifide_openapp
+package com.certifide.inspektor
 
 import io.flutter.embedding.android.FlutterActivity
 
