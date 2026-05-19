@@ -21,7 +21,9 @@
       "Bash(flutter run *)",
       "Bash(echo \"Flutter started in background with PID $!\")",
       "Read(//Users/ryn/.pub-cache/hosted/pub.dev/media_store_plus-0.1.3/lib/**)",
-      "Read(//Users/ryn/.pub-cache/**)"
+      "Read(//Users/ryn/.pub-cache/**)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
     ]
   }
 }
