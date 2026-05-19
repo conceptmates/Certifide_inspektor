@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import 'local_inspection.dart';
 
 class InspectionState {
@@ -35,4 +37,30 @@ class InspectionState {
           uploadingImagesStates ?? this.uploadingImagesStates,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is InspectionState &&
+        listEquals(other.inspections, inspections) &&
+        other.isLoading == isLoading &&
+        other.refreshCooldown == refreshCooldown &&
+        other.isDirty == isDirty &&
+        mapEquals(other.submittingStates, submittingStates) &&
+        mapEquals(other.uploadingImagesStates, uploadingImagesStates);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        Object.hashAll(inspections),
+        isLoading,
+        refreshCooldown,
+        isDirty,
+        Object.hashAll(
+          submittingStates.entries.map((e) => Object.hash(e.key, e.value)),
+        ),
+        Object.hashAll(
+          uploadingImagesStates.entries.map((e) => Object.hash(e.key, e.value)),
+        ),
+      );
 }

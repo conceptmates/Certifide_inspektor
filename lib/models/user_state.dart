@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 class UserState {
   final Map<String, dynamic>? userData;
   final bool isLoading;
@@ -38,6 +40,19 @@ class UserState {
       token: token == _sentinel ? this.token : token as String?,
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is UserState &&
+        mapEquals(other.userData, userData) &&
+        other.isLoading == isLoading &&
+        other.error == error &&
+        other.token == token;
+  }
+
+  @override
+  int get hashCode => Object.hash(userData, isLoading, error, token);
 }
 
 const _sentinel = Object();
