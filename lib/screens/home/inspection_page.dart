@@ -2225,6 +2225,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _audioTimer = null;
     try {
       final path = await _audioRecorder?.stop();
+      // Release microphone as soon as the file path is captured.
+      await _audioRecorder?.dispose();
+      _audioRecorder = null;
       if (mounted) {
         setState(() {
           _isRecordingAudio = false;
@@ -2236,6 +2239,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
       }
     } catch (e) {
+      await _audioRecorder?.dispose();
+      _audioRecorder = null;
       if (mounted) {
         setState(() => _isRecordingAudio = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2243,6 +2248,17 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         );
       }
     }
+  }
+
+  Future<void> _cancelAudioRecording() async {
+    _audioTimer?.cancel();
+    _audioTimer = null;
+    try {
+      await _audioRecorder?.stop();
+    } catch (_) {}
+    await _audioRecorder?.dispose();
+    _audioRecorder = null;
+    if (mounted) setState(() => _isRecordingAudio = false);
   }
 
   Future<void> _pickAudio(dynamic item) async {
@@ -2834,7 +2850,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (_currentItemIndex < items.length - 1) {
       _audioTimer?.cancel();
       _audioTimer = null;
-      _audioRecorder?.stop();
+      _audioRecorder?.stop().then((_) {
+        _audioRecorder?.dispose();
+        _audioRecorder = null;
+      });
       final nextItem = items[_currentItemIndex + 1];
       setState(() {
         _currentItemIndex++;
@@ -2880,7 +2899,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (_currentItemIndex > 0) {
       _audioTimer?.cancel();
       _audioTimer = null;
-      _audioRecorder?.stop();
+      _audioRecorder?.stop().then((_) {
+        _audioRecorder?.dispose();
+        _audioRecorder = null;
+      });
       final currentItems = _sections[_currentSection]['items'] as List<dynamic>;
       final prevItem = currentItems[_currentItemIndex - 1];
       setState(() {
@@ -2990,7 +3012,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (_currentSection < _sections.length - 1) {
       _audioTimer?.cancel();
       _audioTimer = null;
-      _audioRecorder?.stop();
+      _audioRecorder?.stop().then((_) {
+        _audioRecorder?.dispose();
+        _audioRecorder = null;
+      });
       final nextSectionItems =
           _sections[_currentSection + 1]['items'] as List<dynamic>;
       final firstNextItem =
@@ -4191,7 +4216,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           if (!isSelected) {
                             _audioTimer?.cancel();
                             _audioTimer = null;
-                            _audioRecorder?.stop();
+                            _audioRecorder?.stop().then((_) {
+                              _audioRecorder?.dispose();
+                              _audioRecorder = null;
+                            });
                             setState(() {
                               _currentCaptureMode = mode;
                               _triggerPhotoCapture = null;
