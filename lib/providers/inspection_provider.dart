@@ -273,22 +273,60 @@ class InspectionNotifier extends _$InspectionNotifier {
         );
       }
 
-      // Build final submission payload with all uploaded URLs applied
+      // Build final submission payload with all uploaded URLs applied.
+      // Build a single item-ID index first to avoid O(n²) traversal per file.
       final inspectionData = Map<String, dynamic>.from(currentInspection.data);
+      final itemIndex = <String, Map<String, dynamic>>{};
+      List<dynamic>? summaryImages;
+
+      final inspDataRaw = inspectionData['inspection_data'];
+      if (inspDataRaw is Map<String, dynamic>) {
+        for (final section in inspDataRaw.values) {
+          if (section is Map<String, dynamic>) {
+            final items = section['items'];
+            if (items is List) {
+              for (final item in items) {
+                if (item is Map<String, dynamic> && item['id'] != null) {
+                  itemIndex[item['id'].toString()] = item;
+                }
+              }
+            }
+          }
+        }
+      }
+      final summaryRaw = inspectionData['summaryImages'];
+      if (summaryRaw is List) summaryImages = summaryRaw;
 
       for (var entry in currentInspection.images.entries) {
-        if (entry.value.startsWith('http')) {
-          _updateNestedImagePath(inspectionData, entry.key, entry.value);
+        if (!entry.value.startsWith('http')) continue;
+        final item = itemIndex[entry.key];
+        if (item != null) {
+          item['imagePath'] = entry.value;
+          if (item['multiImages'] is List) {
+            for (final img in item['multiImages'] as List<dynamic>) {
+              if (img is Map<String, dynamic> && img.containsKey('imagePath')) {
+                final p = img['imagePath'];
+                if (p is String && !p.startsWith('http')) img['imagePath'] = entry.value;
+              }
+            }
+          }
+        }
+        if (summaryImages != null) {
+          for (final img in summaryImages) {
+            if (img is Map<String, dynamic> && img['key'] == entry.key) {
+              img['imagePath'] = entry.value;
+            }
+          }
         }
       }
       for (var entry in videoReplacements.entries) {
-        _updateMediaFieldInData(inspectionData, entry.key, 'videoPath', entry.value);
+        itemIndex[entry.key]?['videoPath'] = entry.value;
       }
       for (var entry in audioReplacements.entries) {
-        _updateMediaFieldInData(inspectionData, entry.key, 'audioPath', entry.value);
+        itemIndex[entry.key]?['audioPath'] = entry.value;
       }
       for (var entry in fileReplacements.entries) {
-        _updateMediaFieldInData(inspectionData, entry.key, 'filePath', entry.value);
+        itemIndex[entry.key]?['filePath'] = entry.value;
       }
 
       final result = await ApiService.sendInspectionData(inspectionData);
@@ -346,110 +384,4 @@ class InspectionNotifier extends _$InspectionNotifier {
     state = state.copyWith(isDirty: true);
   }
 
-  void _replaceValueInData(
-    Map<String, dynamic> data,
-    String oldValue,
-    String newValue,
-  ) {
-    for (final key in data.keys.toList()) {
-      final val = data[key];
-      if (val is String && val == oldValue) {
-        data[key] = newValue;
-      } else if (val is Map<String, dynamic>) {
-        _replaceValueInData(val, oldValue, newValue);
-      } else if (val is List) {
-        _replaceValueInList(val, oldValue, newValue);
-      }
-    }
-  }
-
-  void _replaceValueInList(
-    List<dynamic> list,
-    String oldValue,
-    String newValue,
-  ) {
-    for (var i = 0; i < list.length; i++) {
-      final item = list[i];
-      if (item is String && item == oldValue) {
-        list[i] = newValue;
-      } else if (item is Map<String, dynamic>) {
-        _replaceValueInData(item, oldValue, newValue);
-      } else if (item is List) {
-        _replaceValueInList(item, oldValue, newValue);
-      }
-    }
-  }
-
-  void _updateNestedImagePath(
-    Map<String, dynamic> data,
-    String key,
-    String url,
-  ) {
-    if (data.containsKey('inspection_data')) {
-      final inspectionData = data['inspection_data'];
-      // inspection_data is a Map<sectionName, {title, items}> from _buildSubmissionBody.
-      if (inspectionData is Map<String, dynamic>) {
-        for (final section in inspectionData.values) {
-          if (section is Map<String, dynamic>) {
-            final items = section['items'];
-            if (items is List) {
-              for (var item in items) {
-                if (item is Map<String, dynamic> && item['id'] == key) {
-                  item['imagePath'] = url;
-                  if (item['multiImages'] is List) {
-                    for (var img in item['multiImages'] as List<dynamic>) {
-                      if (img is Map<String, dynamic> &&
-                          img.containsKey('imagePath')) {
-                        final p = img['imagePath'];
-                        if (p is String && !p.startsWith('http')) {
-                          img['imagePath'] = url;
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-
-    if (data.containsKey('summaryImages')) {
-      final summaryImages = data['summaryImages'];
-      if (summaryImages is List) {
-        for (var img in summaryImages) {
-          if (img is Map<String, dynamic> &&
-              img['key'] == key &&
-              img.containsKey('imagePath')) {
-            img['imagePath'] = url;
-          }
-        }
-      }
-    }
-  }
-
-  // Finds an item by ID in the Map-structured inspection_data and sets [field] to [url].
-  void _updateMediaFieldInData(
-    Map<String, dynamic> data,
-    String itemId,
-    String field,
-    String url,
-  ) {
-    final inspectionData = data['inspection_data'];
-    if (inspectionData is Map<String, dynamic>) {
-      for (final section in inspectionData.values) {
-        if (section is Map<String, dynamic>) {
-          final items = section['items'];
-          if (items is List) {
-            for (final item in items) {
-              if (item is Map<String, dynamic> && item['id'] == itemId) {
-                item[field] = url;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
 }
