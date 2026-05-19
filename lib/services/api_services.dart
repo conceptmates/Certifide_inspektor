@@ -94,17 +94,28 @@ class ApiService {
   static Future<Map<String, dynamic>> initializeInspection({
     required int vehicleBrandId,
     required int vehicleModelId,
+    String? year,
+    String? variant,
+    String? colour,
+    String? transmission,
   }) async {
     try {
       log('Initializing inspection for brand_id: $vehicleBrandId, model_id: $vehicleModelId');
 
+      final body = <String, dynamic>{
+        'vehicle_brand_id': vehicleBrandId,
+        'vehicle_model_id': vehicleModelId,
+        if (year != null && year.isNotEmpty) 'year': year,
+        if (variant != null && variant.isNotEmpty) 'variant': variant,
+        if (colour != null && colour.isNotEmpty) 'colour': colour,
+        if (transmission != null && transmission.isNotEmpty)
+          'transmission': transmission,
+      };
+
       final response = await http.post(
         Uri.parse('$baseUrl$initializeDynamicInspectionEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-        body: json.encode({
-          'vehicle_brand_id': vehicleBrandId,
-          'vehicle_model_id': vehicleModelId,
-        }),
+        body: json.encode(body),
       );
 
       log('Initialize inspection response status: ${response.statusCode}');

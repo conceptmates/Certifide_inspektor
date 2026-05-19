@@ -47,9 +47,11 @@ class _InspectionFlagIssuesSheetState extends State<InspectionFlagIssuesSheet> {
   void _toggle(String issue) {
     setState(() {
       if (_selected.contains(issue)) {
-        _selected.remove(issue);
+        _selected.clear();
       } else {
-        _selected.add(issue);
+        _selected
+          ..clear()
+          ..add(issue);
       }
     });
   }
@@ -215,70 +217,49 @@ class _InspectionFlagIssuesSheetState extends State<InspectionFlagIssuesSheet> {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.white12),
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _notesController,
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 14),
-                          maxLines: 3,
-                          minLines: 2,
-                          decoration: const InputDecoration(
-                            hintText: 'Add a note about what you noticed...',
-                            hintStyle:
-                                TextStyle(color: Colors.white38, fontSize: 13),
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.fromLTRB(14, 12, 8, 12),
-                          ),
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(right: 10, bottom: 10),
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFF4D9EFF).withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: const Icon(Icons.mic_outlined,
-                              color: Color(0xFF4D9EFF), size: 18),
-                        ),
-                      ),
-                    ],
+                  child: TextField(
+                    controller: _notesController,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    maxLines: 3,
+                    minLines: 2,
+                    decoration: const InputDecoration(
+                      hintText: 'Add a note about what you noticed...',
+                      hintStyle:
+                          TextStyle(color: Colors.white38, fontSize: 13),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.fromLTRB(14, 12, 8, 12),
+                    ),
                   ),
                 ),
               ),
               const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4D9EFF),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
+              if (_selected.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4D9EFF),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
                       ),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      widget.onConfirm([], _notesController.text, true);
-                    },
-                    child: const Text(
-                      'Mark as no issues',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        widget.onConfirm([], _notesController.text, true);
+                      },
+                      child: const Text(
+                        'Mark as no issues',
+                        style:
+                            TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
                 ),
-              ),
               if (_selected.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Padding(

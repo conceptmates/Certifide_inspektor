@@ -245,6 +245,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           _useDynamicTemplate = true;
         }
         _initializeValues();
+        _prefillVehicleDetails();
         _initializeControllers();
       } else {
         // Resume path: prefer in-memory snapshot over Hive to avoid I/O.
@@ -823,6 +824,49 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
+  void _prefillVehicleDetails() {
+    final vd = vehicleDetails;
+    if (vd == null) return;
+
+    // Build keyword → value lookup from vehicle details
+    final lookup = <String, String>{};
+
+    void add(List<String> keywords, String? value) {
+      if (value == null || value.isEmpty) return;
+      for (final k in keywords) {
+        lookup[k] = value;
+      }
+    }
+
+    add(['make', 'brand'], vd['make']?.toString());
+    add(['model'], vd['model']?.toString());
+    add(['year'], vd['year']?.toString());
+    add(['variant'], vd['variant']?.toString());
+    add(['colour', 'color'], vd['colour']?.toString());
+    add(['transmission'], vd['transmission']?.toString());
+
+    for (final section in _sections) {
+      for (final item in section['items'] as List<dynamic>) {
+        if (!_itemUsesTextField(item)) continue;
+
+        final uniqueId = _getItemUniqueId(item);
+
+        // Don't overwrite a value already set (e.g. resumed inspection)
+        if ((itemValues[uniqueId] ?? '').isNotEmpty) continue;
+
+        final fieldId = _getItemFieldId(item).toLowerCase();
+        final title = _getItemTitle(item).toLowerCase();
+
+        for (final entry in lookup.entries) {
+          if (fieldId.contains(entry.key) || title.contains(entry.key)) {
+            itemValues[uniqueId] = entry.value;
+            break;
+          }
+        }
+      }
+    }
+  }
+
   // Helper methods for handling both dynamic and regular items
   String _getItemUniqueId(dynamic item) {
     if (item is InspectionItem) {
@@ -1374,6 +1418,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 ImageSource.gallery,
                 uniqueId,
                 _getItemFieldId(item),
+                item: item,
               ),
               onCapture: (XFile file) async {
                 final fieldId = _getItemFieldId(item);
@@ -1385,6 +1430,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   itemImages[uniqueId] = savedPath;
                   _uploadingImages.add(uniqueId);
                 });
+                if (mounted) _showFlagIssuesSheet(item);
                 await _saveDataLocally();
                 final bool hasInternet =
                     await ConnectivityChecker.hasInternetConnection();
@@ -1785,7 +1831,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 title: const Text('Take Photo'),
                 onTap: () {
                   Navigator.pop(context);
-                  _pickImage(ImageSource.camera, uniqueId, fieldId);
+                  _pickImage(ImageSource.camera, uniqueId, fieldId, item: item);
                 },
               ),
               ListTile(
@@ -1793,7 +1839,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 title: const Text('Choose from Gallery'),
                 onTap: () {
                   Navigator.pop(context);
-                  _pickImage(ImageSource.gallery, uniqueId, fieldId);
+                  _pickImage(ImageSource.gallery, uniqueId, fieldId, item: item);
                 },
               ),
             ],
@@ -1851,7 +1897,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   }
 
   Future<void> _pickImage(
-      ImageSource source, String uniqueId, String fieldId) async {
+      ImageSource source, String uniqueId, String fieldId,
+      {dynamic item}) async {
     try {
       final hasPermission = source == ImageSource.camera
           ? await _ensureMediaPermission(
@@ -1880,6 +1927,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           itemImages[uniqueId] = savedPath;
           _uploadingImages.add(uniqueId);
         });
+        if (item != null && mounted) _showFlagIssuesSheet(item);
 
         await _saveDataLocally();
 
@@ -2424,6 +2472,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       itemImages[uniqueId] = savedPath;
       _uploadingImages.add(uniqueId);
     });
+    if (mounted) _showFlagIssuesSheet(item);
     await _saveDataLocally();
 
     final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
@@ -2982,6 +3031,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       'template_type': 'default',
       'vehicle_brand_id': vehicleDetails?['brand_id'],
       'vehicle_model_id': vehicleDetails?['model_id'],
+      if ((vehicleDetails?['year'] ?? '').toString().isNotEmpty)
+        'year': vehicleDetails!['year'],
+      if ((vehicleDetails?['variant'] ?? '').toString().isNotEmpty)
+        'variant': vehicleDetails!['variant'],
+      if ((vehicleDetails?['colour'] ?? '').toString().isNotEmpty)
+        'colour': vehicleDetails!['colour'],
+      if ((vehicleDetails?['transmission'] ?? '').toString().isNotEmpty)
+        'transmission': vehicleDetails!['transmission'],
       'registration_number': registrationNumber,
       'inspection_data': inspectionData,
     };

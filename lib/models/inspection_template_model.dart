@@ -48,18 +48,37 @@ class VehicleInfo {
   final String brand;
   final String model;
   final String category;
+  final String? year;
+  final String? variant;
+  final String? colour;
+  final String? transmission;
 
   VehicleInfo({
     required this.brand,
     required this.model,
     required this.category,
+    this.year,
+    this.variant,
+    this.colour,
+    this.transmission,
   });
 
   factory VehicleInfo.fromJson(Map<String, dynamic> json) {
+    // Server may return "color" or "colour"
+    final colourRaw = (json['colour'] ?? json['color'])?.toString();
+    // Normalise transmission to title-case (e.g. "MANUAL" → "Manual")
+    final txRaw = json['transmission']?.toString();
+    final transmission = txRaw != null && txRaw.isNotEmpty
+        ? txRaw[0].toUpperCase() + txRaw.substring(1).toLowerCase()
+        : null;
     return VehicleInfo(
       brand: json['brand'] ?? '',
       model: json['model'] ?? '',
       category: json['category'] ?? '',
+      year: json['year']?.toString(),
+      variant: json['variant']?.toString(),
+      colour: colourRaw,
+      transmission: transmission,
     );
   }
 
@@ -68,6 +87,10 @@ class VehicleInfo {
       'brand': brand,
       'model': model,
       'category': category,
+      if (year != null) 'year': year,
+      if (variant != null) 'variant': variant,
+      if (colour != null) 'colour': colour,
+      if (transmission != null) 'transmission': transmission,
     };
   }
 }

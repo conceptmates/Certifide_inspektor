@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../models/inspection_template_model.dart';
 import '../../models/vehicle_model.dart';
 import '../../routes/routes.dart';
 import '../../services/api_services.dart';
@@ -178,10 +179,13 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         _isLoading = true;
       });
 
-      // Call the new initializeInspection API with vehicle_brand_id and vehicle_model_id
       final result = await ApiService.initializeInspection(
         vehicleBrandId: _selectedMake!.id,
         vehicleModelId: _selectedModel!.id,
+        year: _yearController.text.trim(),
+        variant: _variantController.text.trim().toUpperCase(),
+        colour: _colourController.text.trim().toUpperCase(),
+        transmission: _selectedTransmission,
       );
 
       setState(() {
@@ -189,14 +193,34 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
       });
 
       if (result['success']) {
-        // Show interstitial ad before proceeding to inspection
-        // _interstitialAdManager.showAdIfReady();
+        final inspectionData = result['data'];
 
-        // Navigate after a short delay to allow ad to show
+        // Merge server-returned vehicle_info into form fields and vehicleData
+        if (inspectionData is InspectionInitializationResponse) {
+          final vi = inspectionData.vehicleInfo;
+          if (vi.year != null && vi.year!.isNotEmpty) {
+            vehicleData['year'] = vi.year!;
+            _yearController.text = vi.year!;
+          }
+          if (vi.variant != null && vi.variant!.isNotEmpty) {
+            vehicleData['variant'] = vi.variant!.toUpperCase();
+            _variantController.text = vi.variant!.toUpperCase();
+          }
+          if (vi.colour != null && vi.colour!.isNotEmpty) {
+            vehicleData['colour'] = vi.colour!.toUpperCase();
+            _colourController.text = vi.colour!.toUpperCase();
+          }
+          if (vi.transmission != null && vi.transmission!.isNotEmpty) {
+            vehicleData['transmission'] = vi.transmission!;
+            if (_transmissionTypes.contains(vi.transmission)) {
+              setState(() => _selectedTransmission = vi.transmission!);
+            }
+          }
+        }
+
         if (mounted) {
           Future.delayed(const Duration(milliseconds: 500), () {
             if (mounted) {
-              final inspectionData = result['data'];
               Navigator.pushReplacementNamed(
                 context,
                 Routes.inspection,

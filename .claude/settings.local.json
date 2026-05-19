@@ -16,7 +16,8 @@
       "Bash(flutter clean *)",
       "Bash(openssl rand *)",
       "Bash(bash *)",
-      "Bash(flutter build *)"
+      "Bash(flutter build *)",
+      "Bash(xargs cat *)"
     ]
   }
 }
