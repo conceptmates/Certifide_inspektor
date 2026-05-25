@@ -396,24 +396,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   Future<void> _initHive() async {
     try {
-      if (!Hive.isBoxOpen(INSPECTION_BOX)) {
-        final appDocumentDir = await getApplicationDocumentsDirectory();
-        await Hive.initFlutter(appDocumentDir.path);
-
-        if (!Hive.isAdapterRegistered(0)) {
-          Hive.registerAdapter(InspectionStorageModelAdapter());
-        }
-
+      if (Hive.isBoxOpen(INSPECTION_BOX)) {
+        _inspectionBox = Hive.box<InspectionStorageModel>(INSPECTION_BOX);
+      } else {
         _inspectionBox =
             await Hive.openBox<InspectionStorageModel>(INSPECTION_BOX);
-      } else {
-        _inspectionBox = Hive.box<InspectionStorageModel>(INSPECTION_BOX);
       }
     } catch (e) {
       print('Error initializing Hive: $e');
       await Hive.deleteBoxFromDisk(INSPECTION_BOX);
-      final appDocumentDir = await getApplicationDocumentsDirectory();
-      await Hive.initFlutter(appDocumentDir.path);
       _inspectionBox =
           await Hive.openBox<InspectionStorageModel>(INSPECTION_BOX);
     }
