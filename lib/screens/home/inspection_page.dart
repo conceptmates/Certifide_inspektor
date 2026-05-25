@@ -4928,6 +4928,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _cleanupControllers();
     _isSubmitting = false;
     _audioTimer?.cancel();
+    if (_isRecordingAudio) {
+      _audioRecorder?.stop();
+    }
     _audioRecorder?.dispose();
     super.dispose();
   }
