@@ -99,11 +99,19 @@ class LocalStorageService {
         final tmpDir = await getTemporaryDirectory();
         final copyPath = '${tmpDir.path}/ms_${const Uuid().v4()}.$ext';
         await File(sourcePath).copy(copyPath);
-        await MediaStore().saveFile(
-          tempFilePath: copyPath,
-          dirType: DirType.download,
-          dirName: DirName.download,
-        );
+        try {
+          await MediaStore().saveFile(
+            tempFilePath: copyPath,
+            dirType: DirType.download,
+            dirName: DirName.download,
+          );
+        } finally {
+          // saveFile() normally deletes the temp copy, but clean up defensively
+          // in case it throws before completing.
+          try {
+            await File(copyPath).delete();
+          } catch (_) {}
+        }
       } else {
         // iOS — Documents/Certifide Inspections/{id}/{type}/ visible in Files app
         // because UIFileSharingEnabled is set in Info.plist.
