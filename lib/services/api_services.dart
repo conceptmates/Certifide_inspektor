@@ -469,9 +469,9 @@ class ApiService {
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
 
-        if (responseData['status'] == 'success' &&
-            responseData['data'] != null) {
-          List<Inspector> inspectors = (responseData['data'] as List)
+        final rawData = responseData['data'];
+        if (responseData['status'] == 'success' && rawData is List) {
+          List<Inspector> inspectors = rawData
               .map((inspectorData) => Inspector.fromJson(inspectorData))
               .toList();
 
