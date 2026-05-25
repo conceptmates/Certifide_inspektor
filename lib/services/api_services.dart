@@ -689,6 +689,13 @@ class ApiService {
             'message': responseData['message'] ?? 'Failed to upload',
           };
         }
+      } else if (response.statusCode == 401) {
+        final refreshResult = await refreshToken();
+        if (!refreshResult['success']) {
+          await _storage.deleteAll();
+          return {'success': false, 'message': 'Session expired. Please login again.'};
+        }
+        return {'success': false, 'message': 'Authentication refreshed — please retry upload.'};
       } else {
         log('Error response: $responseBody');
         return {
