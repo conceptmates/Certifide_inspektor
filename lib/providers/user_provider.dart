@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -88,7 +89,9 @@ class UserNotifier extends _$UserNotifier {
           : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX);
       await inspectionBox.clear();
       await historyBox.clear();
-    } catch (_) {}
+    } catch (e) {
+      log('logout: failed to clear Hive boxes — $e');
+    }
 
     state = const UserState(isLoading: false);
   }
