@@ -676,11 +676,17 @@ class ApiService {
             responseData['filePath'];
 
         if (responseData['status'] == 'success' && mediaPath != null) {
-          log('Upload successful. URL: ${mediaPath['url']}');
+          final String? url = mediaPath is Map
+              ? mediaPath['url']?.toString()
+              : mediaPath?.toString();
+          final String? path = mediaPath is Map
+              ? mediaPath['path']?.toString()
+              : null;
+          log('Upload successful. URL: $url');
           return {
             'success': true,
-            'url': mediaPath['url'],
-            'path': mediaPath['path'],
+            'url': url,
+            'path': path,
             'message': responseData['message'] ?? 'Uploaded successfully',
           };
         } else {
