@@ -230,8 +230,12 @@ class ApiService {
   static Future<String?> getUserId() async {
     final userData = await _storage.read(key: 'user_data');
     if (userData != null) {
-      final user = json.decode(userData);
-      return user['id']?.toString();
+      try {
+        final user = json.decode(userData);
+        return user['id']?.toString();
+      } catch (e) {
+        log('getUserId: malformed user_data in storage — $e');
+      }
     }
     return null;
   }
