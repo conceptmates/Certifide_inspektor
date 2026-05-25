@@ -1524,9 +1524,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   );
                   if (mounted) {
                     setState(() => _uploadingImages.remove(uniqueId));
-                    if (result['success']) {
-                      setState(
-                          () => itemImages[uniqueId] = result['url'] as String);
+                    final url = result['url']?.toString();
+                    if (result['success'] == true && url != null && url.isNotEmpty) {
+                      setState(() => itemImages[uniqueId] = url);
                       await _saveDataLocally();
                     }
                   }
@@ -2027,9 +2027,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               _uploadingImages.remove(uniqueId);
             });
 
-            if (result['success']) {
+            final url = result['url']?.toString();
+            if (result['success'] == true && url != null && url.isNotEmpty) {
               setState(() {
-                itemImages[uniqueId] = result['url'] as String;
+                itemImages[uniqueId] = url;
               });
               await _saveDataLocally();
             } else {
@@ -2117,11 +2118,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 itemId: fieldId,
               );
 
-              if (result['success']) {
-                uploadedUrls.add(result['url'] as String);
-              } else {
-                uploadedUrls.add(path);
-              }
+              uploadedUrls.add(
+                result['success'] == true
+                    ? (result['url']?.toString() ?? path)
+                    : path,
+              );
             } else {
               uploadedUrls.add(path);
             }
@@ -2596,8 +2597,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (mounted) {
         setState(() => _uploadingImages.remove(uniqueId));
-        if (result['success']) {
-          setState(() => itemImages[uniqueId] = result['url'] as String);
+        final url = result['url']?.toString();
+        if (result['success'] == true && url != null && url.isNotEmpty) {
+          setState(() => itemImages[uniqueId] = url);
           await _saveDataLocally();
         }
       }
@@ -2654,8 +2656,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (mounted) {
         setState(() => _uploadingImages.remove(uniqueId));
-        if (result['success']) {
-          setState(() => itemVideos[uniqueId] = result['url'] as String);
+        final url = result['url']?.toString();
+        if (result['success'] == true && url != null && url.isNotEmpty) {
+          setState(() => itemVideos[uniqueId] = url);
           await _saveDataLocally();
         }
       }
@@ -2712,8 +2715,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (mounted) {
         setState(() => _uploadingImages.remove(uniqueId));
-        if (result['success']) {
-          setState(() => itemAudios[uniqueId] = result['url'] as String);
+        final url = result['url']?.toString();
+        if (result['success'] == true && url != null && url.isNotEmpty) {
+          setState(() => itemAudios[uniqueId] = url);
           await _saveDataLocally();
         }
       }
@@ -2779,9 +2783,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (mounted) {
         setState(() => _uploadingImages.remove(uniqueId));
-        if (result['success'] == true) {
+        final url = result['url']?.toString();
+        if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemFiles[uniqueId] = json.encode({
-                'filePath': result['url'] as String,
+                'filePath': url,
                 'fileName': name ?? path.split('/').last,
                 'fileType': ext ?? '',
               }));
@@ -3273,8 +3278,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (mounted) {
             setState(() {
               _uploadingImages.remove(uniqueId);
-              if (result['success'] == true) {
-                itemImages[uniqueId] = result['url'] as String;
+              final url = result['url']?.toString();
+              if (result['success'] == true && url != null && url.isNotEmpty) {
+                itemImages[uniqueId] = url;
               }
             });
           }
@@ -3292,7 +3298,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 itemId: fieldId,
               );
               updated.add(
-                result['success'] == true ? result['url'] as String : path,
+                result['success'] == true
+                    ? (result['url']?.toString() ?? path)
+                    : path,
               );
             } else {
               updated.add(path);
@@ -3314,8 +3322,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (mounted) {
             setState(() {
               _uploadingImages.remove(uniqueId);
-              if (result['success'] == true) {
-                itemVideos[uniqueId] = result['url'] as String;
+              final url = result['url']?.toString();
+              if (result['success'] == true && url != null && url.isNotEmpty) {
+                itemVideos[uniqueId] = url;
               }
             });
           }
@@ -3334,8 +3343,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (mounted) {
             setState(() {
               _uploadingImages.remove(uniqueId);
-              if (result['success'] == true) {
-                itemAudios[uniqueId] = result['url'] as String;
+              final url = result['url']?.toString();
+              if (result['success'] == true && url != null && url.isNotEmpty) {
+                itemAudios[uniqueId] = url;
               }
             });
           }
@@ -3369,9 +3379,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             if (mounted) {
               setState(() {
                 _uploadingImages.remove(uniqueId);
-                if (result['success'] == true) {
+                final url = result['url']?.toString();
+                if (result['success'] == true && url != null && url.isNotEmpty) {
                   itemFiles[uniqueId] = json.encode({
-                    'filePath': result['url'] as String,
+                    'filePath': url,
                     'fileName': fileName ?? localPath!.split('/').last,
                     'fileType': fileType ?? '',
                   });
