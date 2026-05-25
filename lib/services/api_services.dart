@@ -230,7 +230,7 @@ class ApiService {
     final userData = await _storage.read(key: 'user_data');
     if (userData != null) {
       final user = json.decode(userData);
-      return user['id'].toString();
+      return user['id']?.toString();
     }
     return null;
   }
