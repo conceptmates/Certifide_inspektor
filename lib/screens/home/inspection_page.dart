@@ -216,7 +216,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     for (int i = 0; i < _currentSection; i++) {
       count += (_sections[i]['items'] as List).length;
     }
-    return count + _currentItemIndex + 1;
+    return count + _currentItemIndex;
   }
 
   int get _progressPercent {
