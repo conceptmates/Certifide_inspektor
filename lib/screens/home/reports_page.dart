@@ -228,8 +228,6 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 _infoRow('Make & Model', vehicleInfo['make_model']),
                 _infoRow('Variant', vehicleInfo['variant']),
                 _infoRow('Year', vehicleInfo['manufacturing_year']),
-                _infoRow('Fuel', vehicleInfo['fuel_type']),
-                _infoRow('Inspector', inspection.inspectorName),
                 _infoRow('Date', _formatDate(inspection.date)),
                 if (canView) ...[
                   const SizedBox(height: 10),
@@ -311,7 +309,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     _safeSetState(() => _isLoadingMore = true);
 
     try {
-      final result = await ApiService.getInspectionHistory(
+      final result = await ApiService.getDynamicInspectionMyHistory(
         context,
         page: _paginationData.currentPage + 1,
       );
@@ -342,7 +340,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       _historyError = '';
     });
     try {
-      final result = await ApiService.getInspectionHistory(context, page: 1);
+      final result = await ApiService.getDynamicInspectionMyHistory(context, page: 1);
       if (_isCancelled) return;
       if (result['success']) {
         _safeSetState(() {
@@ -650,6 +648,16 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                               : () => ref
                                   .read(inspectionNotifierProvider.notifier)
                                   .loadInspections(),
+                    ),
+                  if (!isOnPendingTab)
+                    IconButton(
+                      icon: Icon(
+                        Icons.refresh,
+                        color: _isHistoryLoading
+                            ? Colors.grey
+                            : CarSpyColors.primary,
+                      ),
+                      onPressed: _isHistoryLoading ? null : _loadHistory,
                     ),
                 ],
               ),

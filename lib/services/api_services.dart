@@ -43,6 +43,8 @@ class ApiService {
   static const String userCarsEndPoint = '/cars/old';
   static const String carFiltersEndpoint = '/cars/filters';
   static const String vehicleDetailsEndPoint = '/ulip/vehicle-details';
+  static const String getDynamicMyHistoryEndPoint =
+      '/dynamic-inspections/my-history';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -823,6 +825,76 @@ class ApiService {
       };
     } catch (e) {
       log('getInspectionHistory error: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> getDynamicInspectionMyHistory(
+      BuildContext context,
+      {int page = 1}) async {
+    final url = '$baseUrl$getDynamicMyHistoryEndPoint?page=$page';
+    log('getDynamicInspectionMyHistory → GET $url');
+    try {
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: await _getHeaders(requiresAuth: true),
+          )
+          .timeout(_requestTimeout);
+
+      log('getDynamicInspectionMyHistory status: ${response.statusCode}');
+      log('getDynamicInspectionMyHistory body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+
+        if (responseData['status'] == 'success') {
+          final data = responseData['data'];
+          final rawList = data['inspections'] ?? data['data'] ?? [];
+          final inspections = (rawList as List)
+              .map((item) => InspectionHistory.fromJson(item))
+              .toList();
+          final pagination = data['pagination'] != null
+              ? PaginationData.fromJson(data['pagination'])
+              : PaginationData(
+                  currentPage: data['current_page'] ?? 1,
+                  lastPage: data['last_page'] ?? 1,
+                  perPage: data['per_page'] ?? 10,
+                  total: data['total'] ?? 0,
+                );
+
+          log('getDynamicInspectionMyHistory parsed ${inspections.length} items, page ${pagination.currentPage}/${pagination.lastPage}');
+
+          return {
+            'success': true,
+            'inspections': inspections,
+            'pagination': pagination,
+            'message': 'History retrieved successfully',
+          };
+        }
+      } else if (response.statusCode == 401) {
+        await handleUnauthorizedResponse(context);
+        return {
+          'success': false,
+          'message': 'Unauthorized access',
+        };
+      }
+
+      return {
+        'success': false,
+        'message': _handleError(response),
+      };
+    } on UnauthorizedException {
+      await handleUnauthorizedResponse(context);
+      return {
+        'success': false,
+        'message': 'Session expired. Please login again.',
+      };
+    } catch (e) {
+      log('getDynamicInspectionMyHistory error: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',
