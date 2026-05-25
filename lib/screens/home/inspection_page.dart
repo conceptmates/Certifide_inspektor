@@ -529,7 +529,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
-      _flushPendingAutoSave();
+      // didChangeAppLifecycleState is void — we can't await here.
+      // Hive keeps data in memory, so the write succeeds even if the OS
+      // suspends the process before the disk flush completes.
+      unawaited(_flushPendingAutoSave());
     }
   }
 
