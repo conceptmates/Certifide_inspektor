@@ -259,6 +259,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     // Check if this is an image field type or has hasImage flag
     final isImageField = fieldType == 'image' || field.hasImage;
+    // hasMultipleImages takes over image handling; suppress single-image card
+    final useMultiImage = field.hasMultipleImages;
 
     return {
       'id': field.fieldId,
@@ -267,11 +269,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       'fieldType': fieldType,
       'isRequired': field.isRequired,
       'hasRemarks': field.hasRemarks,
-      'hasImage':
-          isImageField, // Override hasImage based on field_type or hasImage flag
+      'hasImage': useMultiImage ? false : isImageField,
       'hasVideo': field.hasVideo,
       'hasFile': field.hasFile,
-      'useTextField': fieldType == 'text' || fieldType == 'date',
+      'allowMultiImage': useMultiImage,
+      'useTextField': fieldType == 'text' || fieldType == 'date' || useMultiImage,
       'options': field.options
           .map((opt) => {
                 'id': opt.id,
@@ -1399,7 +1401,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             ),
                             onPressed: () {
                               if (allowMultiImage) {
-                                _pickMultiImages(item);
+                                _showMultiImagePickerOptions(item);
                               } else {
                                 _showImagePickerOptions(item);
                               }
@@ -1528,6 +1530,41 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     setState(() => _uploadingImages.remove(uniqueId));
                 }
               },
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          // ── Multi-image placeholder ────────────────────────────
+          if (allowMultiImage &&
+              (itemMultiImages[uniqueId] == null ||
+                  itemMultiImages[uniqueId]!.isEmpty)) ...[
+            GestureDetector(
+              onTap: () => _showMultiImagePickerOptions(item),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.grey.shade300,
+                    style: BorderStyle.solid,
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.add_photo_alternate_outlined,
+                        size: 32, color: Colors.grey.shade500),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Tap to add images',
+                      style: TextStyle(
+                          color: Colors.grey.shade600, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: 8),
           ],
@@ -1836,6 +1873,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             controller: textFieldControllers[uniqueId],
             decoration: inputDecoration,
             keyboardType: TextInputType.multiline,
+            minLines: _itemHasMultiImage(item) ? 4 : 1,
+            maxLines: _itemHasMultiImage(item) ? null : 1,
             onChanged: (value) {
               setState(() {
                 itemValues[uniqueId] = value;
@@ -1921,6 +1960,105 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         );
       },
     );
+  }
+
+  void _showMultiImagePickerOptions(dynamic item) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Colors.blue),
+                title: const Text('Take Photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _addCameraImageToMulti(item);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Colors.blue),
+                title: const Text('Choose from Gallery'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickMultiImages(item);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _addCameraImageToMulti(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    final fieldId = _getItemFieldId(item);
+
+    try {
+      final hasPermission = await _ensureMediaPermission(
+        Permission.camera,
+        permissionName: 'Camera',
+      );
+      if (!hasPermission) return;
+
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 100,
+      );
+
+      if (image == null || !mounted) return;
+
+      final String sectionTitle =
+          _sections[_currentSection]['title'] as String;
+      final savedPath = await LocalStorageService.saveImage(image.path);
+      final currentImages = itemMultiImages[uniqueId] ?? [];
+      final updatedPaths =
+          [...currentImages, savedPath].take(11).toList();
+
+      setState(() {
+        itemMultiImages[uniqueId] = updatedPaths;
+        _uploadingImages.add(uniqueId);
+      });
+      await _saveDataLocally();
+
+      final bool hasInternet =
+          await ConnectivityChecker.hasInternetConnection();
+      if (!mounted) return;
+
+      if (hasInternet) {
+        final result = await ApiService.uploadImage(
+          savedPath,
+          inspectionId: _effectiveInspectionId,
+          section: sectionTitle,
+          itemId: fieldId,
+        );
+        if (mounted) {
+          setState(() => _uploadingImages.remove(uniqueId));
+          final url = result['url']?.toString();
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            final current =
+                List<String>.from(itemMultiImages[uniqueId] ?? []);
+            final idx = current.indexOf(savedPath);
+            if (idx != -1) current[idx] = url;
+            setState(() => itemMultiImages[uniqueId] = current);
+            await _saveDataLocally();
+          }
+        }
+      } else {
+        if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _uploadingImages.remove(_getItemUniqueId(item)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to capture image: $e')),
+        );
+      }
+    }
   }
 
   Future<bool> _ensureMediaPermission(
