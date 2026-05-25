@@ -539,7 +539,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   /// Requests camera and microphone permissions while the loading screen is
   /// shown so the camera card never races with a permission dialog.
   Future<void> _requestInspectionPermissions() async {
-    if (!Platform.isIOS) return;
     final camStatus = await Permission.camera.status;
     if (!camStatus.isGranted &&
         !camStatus.isPermanentlyDenied &&
