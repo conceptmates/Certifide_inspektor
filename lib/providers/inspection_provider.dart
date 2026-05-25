@@ -30,6 +30,7 @@ class InspectionNotifier extends _$InspectionNotifier {
   }
 
   void _startConnectivityListener() {
+    _connectivitySubscription?.cancel();
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
         .listen((List<ConnectivityResult> results) {
