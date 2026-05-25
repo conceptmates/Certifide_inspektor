@@ -1401,7 +1401,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             ),
                             onPressed: () {
                               if (allowMultiImage) {
-                                _showMultiImagePickerOptions(item);
+                                _pickMultiImages(item);
                               } else {
                                 _showImagePickerOptions(item);
                               }
@@ -1539,7 +1539,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               (itemMultiImages[uniqueId] == null ||
                   itemMultiImages[uniqueId]!.isEmpty)) ...[
             GestureDetector(
-              onTap: () => _showMultiImagePickerOptions(item),
+              onTap: () => _pickMultiImages(item),
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 16),
                 height: 120,
@@ -1924,6 +1924,31 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               _autoSave();
             },
           ),
+        if (_itemHasRemarks(item) && remarksControllers[uniqueId] != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Remarks',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: remarksControllers[uniqueId],
+            decoration: inputDecoration.copyWith(
+              hintText: 'Add remarks...',
+            ),
+            keyboardType: TextInputType.multiline,
+            minLines: 2,
+            maxLines: null,
+            onChanged: (value) {
+              itemRemarks[uniqueId] = value;
+              _autoSave();
+            },
+          ),
+        ],
       ],
     );
   }
@@ -1960,105 +1985,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         );
       },
     );
-  }
-
-  void _showMultiImagePickerOptions(dynamic item) {
-    showModalBottomSheet(
-      context: context,
-      builder: (BuildContext context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.camera_alt, color: Colors.blue),
-                title: const Text('Take Photo'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _addCameraImageToMulti(item);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library, color: Colors.blue),
-                title: const Text('Choose from Gallery'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _pickMultiImages(item);
-                },
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Future<void> _addCameraImageToMulti(dynamic item) async {
-    final uniqueId = _getItemUniqueId(item);
-    final fieldId = _getItemFieldId(item);
-
-    try {
-      final hasPermission = await _ensureMediaPermission(
-        Permission.camera,
-        permissionName: 'Camera',
-      );
-      if (!hasPermission) return;
-
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 100,
-      );
-
-      if (image == null || !mounted) return;
-
-      final String sectionTitle =
-          _sections[_currentSection]['title'] as String;
-      final savedPath = await LocalStorageService.saveImage(image.path);
-      final currentImages = itemMultiImages[uniqueId] ?? [];
-      final updatedPaths =
-          [...currentImages, savedPath].take(11).toList();
-
-      setState(() {
-        itemMultiImages[uniqueId] = updatedPaths;
-        _uploadingImages.add(uniqueId);
-      });
-      await _saveDataLocally();
-
-      final bool hasInternet =
-          await ConnectivityChecker.hasInternetConnection();
-      if (!mounted) return;
-
-      if (hasInternet) {
-        final result = await ApiService.uploadImage(
-          savedPath,
-          inspectionId: _effectiveInspectionId,
-          section: sectionTitle,
-          itemId: fieldId,
-        );
-        if (mounted) {
-          setState(() => _uploadingImages.remove(uniqueId));
-          final url = result['url']?.toString();
-          if (result['success'] == true && url != null && url.isNotEmpty) {
-            final current =
-                List<String>.from(itemMultiImages[uniqueId] ?? []);
-            final idx = current.indexOf(savedPath);
-            if (idx != -1) current[idx] = url;
-            setState(() => itemMultiImages[uniqueId] = current);
-            await _saveDataLocally();
-          }
-        }
-      } else {
-        if (mounted) setState(() => _uploadingImages.remove(uniqueId));
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _uploadingImages.remove(_getItemUniqueId(item)));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to capture image: $e')),
-        );
-      }
-    }
   }
 
   Future<bool> _ensureMediaPermission(
