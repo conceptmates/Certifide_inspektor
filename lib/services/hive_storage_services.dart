@@ -14,6 +14,13 @@ class HiveStorageService {
     await Hive.openBox<InspectionStorageModel>(boxName);
   }
 
+  static Future<Box<InspectionStorageModel>> _openBox() async {
+    if (Hive.isBoxOpen(boxName)) {
+      return Hive.box<InspectionStorageModel>(boxName);
+    }
+    return Hive.openBox<InspectionStorageModel>(boxName);
+  }
+
   static Future<void> saveInspectionData({
     required Map<String, String> itemValues,
     required Map<String, String?> itemImages,
@@ -21,7 +28,7 @@ class HiveStorageService {
     required int currentSection,
     required Map<String, String> textFieldValues,
   }) async {
-    final box = Hive.box<InspectionStorageModel>(boxName);
+    final box = await _openBox();
 
     final inspectionData = InspectionStorageModel(
       itemValues: itemValues,
@@ -35,12 +42,12 @@ class HiveStorageService {
   }
 
   static Future<InspectionStorageModel?> getInspectionData() async {
-    final box = Hive.box<InspectionStorageModel>(boxName);
+    final box = await _openBox();
     return box.get(inspectionKey);
   }
 
   static Future<void> clearInspectionData() async {
-    final box = Hive.box<InspectionStorageModel>(boxName);
+    final box = await _openBox();
     await box.delete(inspectionKey);
   }
 }
