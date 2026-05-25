@@ -2828,6 +2828,56 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     return true;
   }
 
+  bool _checkCurrentItemRequired() {
+    final currentSection = _sections[_currentSection];
+    final items = currentSection['items'] as List<dynamic>;
+    if (items.isEmpty) return true;
+
+    final currentItem = items[_currentItemIndex];
+    if (!_itemIsRequired(currentItem)) return true;
+
+    final uniqueId = _getItemUniqueId(currentItem);
+    final title = _getItemTitle(currentItem);
+    final errors = <String>[];
+
+    if (_itemUsesTextField(currentItem)) {
+      final value = itemValues[uniqueId]?.trim() ?? '';
+      if (value.isEmpty) errors.add(title);
+    } else if (_itemHasOptions(currentItem)) {
+      final value = itemValues[uniqueId] ?? 'N/A';
+      if (value == 'N/A' || value.isEmpty) errors.add(title);
+    }
+
+    if (_itemHasImage(currentItem)) {
+      if (itemImages[uniqueId] == null || itemImages[uniqueId]!.isEmpty) {
+        errors.add('$title (image)');
+      }
+    }
+    if (_itemHasVideo(currentItem)) {
+      if (itemVideos[uniqueId] == null || itemVideos[uniqueId]!.isEmpty) {
+        errors.add('$title (video)');
+      }
+    }
+    if (_itemHasFile(currentItem)) {
+      if (itemFiles[uniqueId] == null || itemFiles[uniqueId]!.isEmpty) {
+        errors.add('$title (file)');
+      }
+    }
+
+    if (errors.isNotEmpty) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('"$title" is required and must be filled before proceeding'),
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return false;
+    }
+    return true;
+  }
+
   void _nextItem() {
     if (_isReviewingCapture) {
       setState(() {
@@ -2854,6 +2904,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       return;
     }
     if (!_checkCurrentItemFlagIssue()) return;
+    if (!_checkCurrentItemRequired()) return;
     setState(() => _highlightFlagIssues = false);
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
