@@ -2,7 +2,6 @@
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -20,8 +19,12 @@ class LocalStorageService {
   static const String IMAGES_DIR = 'inspection_images';
   static const String PENDING_IMAGES_BOX = 'pending_images';
 
-  static Box<LocalInspection> get _box =>
-      Hive.box<LocalInspection>(INSPECTIONS_BOX);
+  static Future<Box<LocalInspection>> _getBox() async {
+    if (Hive.isBoxOpen(INSPECTIONS_BOX)) {
+      return Hive.box<LocalInspection>(INSPECTIONS_BOX);
+    }
+    return Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+  }
 
   static Future<void> init() async {
     await Hive.initFlutter();
@@ -47,50 +50,20 @@ class LocalStorageService {
       final String imagesDir = '${appDir.path}/$IMAGES_DIR';
       await Directory(imagesDir).create(recursive: true);
 
-      // Step 1: Bake EXIF orientation into pixels so the stored file is always
-      // visually correct regardless of the capture angle.
-      final String step1Path = '$imagesDir/${const Uuid().v4()}.jpg';
-      final step1Result = await FlutterImageCompress.compressAndGetFile(
+      // Bake EXIF orientation into pixels so the stored file displays correctly
+      // in whatever orientation it was captured (landscape or portrait).
+      final String finalPath = '$imagesDir/${const Uuid().v4()}.jpg';
+      final result = await FlutterImageCompress.compressAndGetFile(
         filePath,
-        step1Path,
+        finalPath,
         quality: 100,
         autoCorrectionAngle: true,
         keepExif: false,
       );
       // Fall back to copying the raw file if compression fails.
-      if (step1Result == null) {
-        await imageFile.copy(step1Path);
+      if (result == null) {
+        await imageFile.copy(finalPath);
       }
-
-      // Step 2: Force portrait — if the image is still landscape (width > height)
-      // after EXIF correction, rotate it 90° so it is portrait when uploaded
-      // and displayed in the report.
-      final Uint8List step1Bytes = await File(step1Path).readAsBytes();
-      final size = _parseJpegSize(step1Bytes);
-      final bool isLandscape = size != null && size.$1 > size.$2;
-
-      final String finalPath = '$imagesDir/${const Uuid().v4()}.jpg';
-
-      if (isLandscape) {
-        final rotatedResult = await FlutterImageCompress.compressAndGetFile(
-          step1Path,
-          finalPath,
-          quality: 100,
-          rotate: 90,
-          keepExif: false,
-        );
-        // If rotation failed, keep the step-1 result.
-        if (rotatedResult == null) {
-          await File(step1Path).copy(finalPath);
-        }
-      } else {
-        await File(step1Path).copy(finalPath);
-      }
-
-      // Remove the intermediate file.
-      try {
-        await File(step1Path).delete();
-      } catch (_) {}
 
       return finalPath;
     } catch (e) {
@@ -168,7 +141,7 @@ class LocalStorageService {
     Map<String, List<String>>? multiImages,
   }) async {
     try {
-      final box = _box;
+      final box = await _getBox();
 
       // Save images to local storage
       Map<String, String> savedImages = {};
@@ -379,7 +352,7 @@ class LocalStorageService {
   }
 
   static Future<List<LocalInspection>> getPendingInspections() async {
-    final box = _box;
+    final box = await _getBox();
     return box.values
         .where(
           (inspection) =>
@@ -389,7 +362,7 @@ class LocalStorageService {
   }
 
   static Future<List<LocalInspection>> getInspectionsWithPendingImages() async {
-    final box = _box;
+    final box = await _getBox();
     return box.values
         .where(
           (inspection) =>
@@ -401,7 +374,7 @@ class LocalStorageService {
   }
 
   static Future<void> markInspectionAsSubmitted(String id) async {
-    final box = _box;
+    final box = await _getBox();
     final inspection = box.get(id);
 
     if (inspection != null) {
@@ -413,7 +386,7 @@ class LocalStorageService {
   }
 
   static Future<void> deleteInspection(String id) async {
-    final box = _box;
+    final box = await _getBox();
     final inspection = box.get(id);
 
     if (inspection != null) {
@@ -623,7 +596,7 @@ class LocalStorageService {
     required String inspectionId,
     required Map<String, String> uploadedImages,
   }) async {
-    final box = _box;
+    final box = await _getBox();
     final inspection = box.get(inspectionId);
 
     if (inspection != null) {
@@ -663,7 +636,7 @@ class LocalStorageService {
     Map<String, String> uploadedAudios = const {},
     Map<String, String> uploadedFiles = const {},
   }) async {
-    final box = _box;
+    final box = await _getBox();
     final inspection = box.get(inspectionId);
     if (inspection == null) return;
 
@@ -698,7 +671,7 @@ class LocalStorageService {
     required String section,
     required String itemId,
   }) async {
-    final box = _box;
+    final box = await _getBox();
     final inspection = box.get(inspectionId);
 
     if (inspection != null) {
@@ -727,54 +700,4 @@ class LocalStorageService {
     }
   }
 
-  /// Walks the JPEG segment structure to find the SOF (Start-of-Frame) marker
-  /// and returns (width, height). Returns null if the file is not a valid JPEG
-  /// or the SOF marker is not found.
-  ///
-  /// Unlike a naive byte scan, this method skips segment payloads using the
-  /// length fields so it cannot hit false positives in EXIF/thumbnail data.
-  static (int, int)? _parseJpegSize(Uint8List bytes) {
-    // Must start with SOI marker 0xFF 0xD8
-    if (bytes.length < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8) {
-      return null;
-    }
-
-    int i = 2;
-    while (i + 3 < bytes.length) {
-      // Every marker starts with 0xFF; skip padding bytes.
-      if (bytes[i] != 0xFF) {
-        i++;
-        continue;
-      }
-      final int marker = bytes[i + 1];
-
-      // SOF markers that encode image dimensions:
-      // C0–C3 (baseline/extended), C5–C7 (differential), C9–CB (arithmetic)
-      if ((marker >= 0xC0 && marker <= 0xC3) ||
-          (marker >= 0xC5 && marker <= 0xC7) ||
-          (marker >= 0xC9 && marker <= 0xCB)) {
-        if (i + 9 < bytes.length) {
-          final int height = (bytes[i + 5] << 8) | bytes[i + 6];
-          final int width = (bytes[i + 7] << 8) | bytes[i + 8];
-          return (width, height);
-        }
-        return null;
-      }
-
-      // Skip markers with no payload (SOI, EOI, standalone markers).
-      if (marker == 0xD8 || marker == 0xD9 || marker == 0x01) {
-        i += 2;
-        continue;
-      }
-
-      // All other markers are followed by a 2-byte length that includes
-      // the length field itself but not the 0xFF marker byte.
-      if (i + 3 >= bytes.length) break;
-      final int segLen = (bytes[i + 2] << 8) | bytes[i + 3];
-      if (segLen < 2) break;
-      i += 2 + segLen;
-    }
-
-    return null;
-  }
 }
