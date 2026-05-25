@@ -19,6 +19,7 @@ import '../screens/auth/login_page.dart';
 class ApiService {
   // static const String baseUrl = 'https://api.estelledarcy.com/api';
   static const String baseUrl = 'https://api.certifide.in/api';
+  static const Duration _requestTimeout = Duration(seconds: 30);
 
   static final _storage = FlutterSecureStorage();
 
@@ -52,7 +53,7 @@ class ApiService {
         Uri.parse('$baseUrl$initialInspectionEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(vehicleData),
-      );
+      ).timeout(_requestTimeout);
 
       log('Initial inspection response status: ${response.statusCode}');
       if (kDebugMode) log('Initial inspection response body: ${response.body}');
@@ -117,7 +118,7 @@ class ApiService {
         Uri.parse('$baseUrl$initializeDynamicInspectionEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(body),
-      );
+      ).timeout(_requestTimeout);
 
       log('Initialize inspection response status: ${response.statusCode}');
       if (kDebugMode) log('Initialize inspection response body: ${response.body}');
@@ -245,7 +246,7 @@ class ApiService {
           'email': email,
           'password': password,
         }),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -305,7 +306,7 @@ class ApiService {
           'password': password,
           'password_confirmation': passwordConfirmation,
         }),
-      );
+      ).timeout(_requestTimeout);
 
       final responseData = json.decode(response.body);
 
@@ -346,7 +347,7 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$baseUrl$refreshTokenEndpoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -387,7 +388,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$profileEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       return response.statusCode == 200;
     } catch (e) {
@@ -417,7 +418,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$profileEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -464,7 +465,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$getInspectorEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -507,7 +508,7 @@ class ApiService {
           'user_id': userId,
           'tokens': tokens,
         }),
-      );
+      ).timeout(_requestTimeout);
 
       final responseData = json.decode(response.body);
 
@@ -549,7 +550,7 @@ class ApiService {
         Uri.parse('$baseUrl$endpoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(inspectionData),
-      );
+      ).timeout(_requestTimeout);
 
       log('Inspection submission response status: ${response.statusCode}');
       if (kDebugMode) log('Inspection submission response body: ${response.body}');
@@ -719,7 +720,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$getBalanceTokensEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -756,7 +757,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$getHistoryEndPoint?page=$page'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
       log('getInspectionHistory status: ${response.statusCode}');
       log('getInspectionHistory body: ${response.body}');
 
@@ -819,7 +820,7 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$baseUrl/inspections/$inspectionId/approve-api'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -849,7 +850,7 @@ class ApiService {
         Uri.parse('$baseUrl$submitDynamicInspectionEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(body),
-      );
+      ).timeout(_requestTimeout);
 
       log('Submit inspection response status: ${response.statusCode}');
       if (kDebugMode) log('Submit inspection response body: ${response.body}');
@@ -922,7 +923,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$getModelsEndpoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       log('Get models response status: ${response.statusCode}');
       log('Get models response body: ${response.body}');
@@ -1037,7 +1038,7 @@ class ApiService {
       final response = await http.get(
         uri,
         headers: await _getHeaders(requiresAuth: false),
-      );
+      ).timeout(_requestTimeout);
 
       log('Car filters status: ${response.statusCode}');
 
@@ -1121,7 +1122,7 @@ class ApiService {
       final response = await http.get(
         uri,
         headers: await _getHeaders(requiresAuth: false),
-      );
+      ).timeout(_requestTimeout);
 
       log('New cars status: ${response.statusCode}');
 
@@ -1207,7 +1208,7 @@ class ApiService {
       final response = await http.get(
         uri,
         headers: await _getHeaders(requiresAuth: false),
-      );
+      ).timeout(_requestTimeout);
 
       log('Used cars status: ${response.statusCode}');
 
@@ -1247,7 +1248,7 @@ class ApiService {
         body: json.encode({
           'vehiclenumber': vehicleNumber,
         }),
-      );
+      ).timeout(_requestTimeout);
 
       log('Vehicle details response status: ${response.statusCode}');
       log('Vehicle details response body: ${response.body}');
