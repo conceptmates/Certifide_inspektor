@@ -17,6 +17,7 @@ part 'inspection_provider.g.dart';
 class InspectionNotifier extends _$InspectionNotifier {
   Timer? _cooldownTimer;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _isAutoSubmitting = false;
 
   @override
   InspectionState build() {
@@ -49,6 +50,8 @@ class InspectionNotifier extends _$InspectionNotifier {
   }
 
   Future<void> _autoSubmitPending() async {
+    if (_isAutoSubmitting) return;
+    _isAutoSubmitting = true;
     try {
       final pending = await LocalStorageService.getPendingInspections();
       if (pending.isEmpty) return;
@@ -60,6 +63,8 @@ class InspectionNotifier extends _$InspectionNotifier {
       state = state.copyWith(isDirty: true);
     } catch (e) {
       log('Error auto-submitting pending inspections: $e');
+    } finally {
+      _isAutoSubmitting = false;
     }
   }
 
