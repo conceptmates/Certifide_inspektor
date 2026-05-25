@@ -212,6 +212,10 @@ class ApiService {
           }
           // Get new token after refresh
           final newToken = await _storage.read(key: 'jwt_token');
+          if (newToken == null) {
+            await _storage.deleteAll();
+            throw UnauthorizedException('Token missing after refresh');
+          }
           headers['Authorization'] = 'Bearer $newToken';
         } else {
           headers['Authorization'] = 'Bearer $token';
@@ -621,6 +625,9 @@ class ApiService {
       }
 
       final newToken = await _storage.read(key: 'jwt_token');
+      if (newToken == null) {
+        return {'success': false, 'message': 'Session expired. Please login again.'};
+      }
 
       final request = http.MultipartRequest(
         'POST',
