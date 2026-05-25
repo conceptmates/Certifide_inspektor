@@ -62,6 +62,11 @@ Map<String, dynamic> _buildStoragePayload(Map<String, dynamic> input) {
       ? null
       : Map<String, List<String>>.from(rawMultiImages.map((k, v) =>
           MapEntry(k.toString(), (v as List).map((e) => e.toString()).toList())));
+  final rawFlaggedIssues = input['itemFlaggedIssues'] as Map?;
+  final itemFlaggedIssues = rawFlaggedIssues == null
+      ? <String, List<String>>{}
+      : Map<String, List<String>>.from(rawFlaggedIssues.map((k, v) =>
+          MapEntry(k.toString(), (v as List).map((e) => e.toString()).toList())));
   return {
     'itemValues': itemValues,
     'itemImages': itemImages,
@@ -71,6 +76,7 @@ Map<String, dynamic> _buildStoragePayload(Map<String, dynamic> input) {
     'itemRemarks': itemRemarks,
     'textFieldValues': textFieldValues,
     'multiImages': multiImages,
+    'itemFlaggedIssues': itemFlaggedIssues,
     'vehicleDetails': input['vehicleDetails'],
     'inspectionTemplate': input['inspectionTemplate'],
     'currentSection': input['currentSection'],
@@ -148,6 +154,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   // Bound to SectionCameraCard when showControls:false; resets on item change.
   VoidCallback? _triggerPhotoCapture;
   VoidCallback? _triggerEnlarge;
+  VoidCallback? _triggerFlashToggle;
+  bool _cameraFlashOn = false;
   VoidCallback? _triggerVideoToggle;
   bool _isVideoRecording = false;
   AudioRecorder? _audioRecorder;
@@ -441,6 +449,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         'itemRemarks': remarksSnapshot,
         'textFieldValues': textFieldSnapshot,
         'multiImages': multiImagesSnapshot,
+        'itemFlaggedIssues': Map<String, List<String>>.from(itemFlaggedIssues),
         'vehicleDetails': vehicleDetails,
         'inspectionTemplate': _inspectionTemplate?.toJson(),
         'currentSection': _currentSection,
@@ -781,6 +790,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           itemRemarks = storedData.typedItemRemarks;
           _currentSection = storedData.currentSection;
           itemMultiImages = storedData.typedMultiImages;
+          itemFlaggedIssues = storedData.typedItemFlaggedIssues;
         });
         _initializeControllers();
       } else {
@@ -1985,6 +1995,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: source,
+        imageQuality: 100,
       );
 
       if (image != null && mounted) {
@@ -2860,6 +2871,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _currentCaptureMode = _defaultCaptureModeForItem(nextItem);
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
+        _triggerFlashToggle = null;
+        _cameraFlashOn = false;
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
@@ -2910,6 +2923,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _currentCaptureMode = _defaultCaptureModeForItem(prevItem);
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
+        _triggerFlashToggle = null;
+        _cameraFlashOn = false;
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
@@ -3030,6 +3045,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             : 'PHOTO';
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
+        _triggerFlashToggle = null;
+        _cameraFlashOn = false;
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
@@ -3103,7 +3120,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       for (var item in section['items'] as List<dynamic>) {
         final uniqueId = _getItemUniqueId(item);
         final title = _getItemTitle(item);
-        final value = itemValues[uniqueId] ?? '';
+        // Guard: 'flagged' without recorded issues means stale Hive data — clear it so the server's value wins.
+        String value = itemValues[uniqueId] ?? '';
+        if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
+          value = '';
+        }
         final remarks = itemRemarks[uniqueId];
         final imagePath = itemImages[uniqueId];
         final multiImages = itemMultiImages[uniqueId];
@@ -3721,6 +3742,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             showControls: false,
             onCaptureReady: (fn) => setState(() => _triggerPhotoCapture = fn),
             onEnlargeReady: (fn) => setState(() => _triggerEnlarge = fn),
+            onFlashReady: (fn) => setState(() => _triggerFlashToggle = fn),
             onPickFromGallery: () =>
                 _pickImage(ImageSource.gallery, uniqueId, fieldId),
             onCapture: (XFile file) {
@@ -3750,6 +3772,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             showControls: false,
             onRecordingToggleReady: (fn) =>
                 setState(() => _triggerVideoToggle = fn),
+            onFlashToggleReady: (fn) => setState(() => _triggerFlashToggle = fn),
             onRecordingChanged: (recording) =>
                 setState(() => _isVideoRecording = recording),
             onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
@@ -4016,6 +4039,32 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   ),
                 ),
 
+              // Enlarge button (PHOTO, camera active, top-right)
+              if (!hasCapturedPhoto && _currentCaptureMode == 'PHOTO')
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: GestureDetector(
+                    onTap: _triggerEnlarge,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Icon(
+                        Icons.open_in_full,
+                        color: _triggerEnlarge != null
+                            ? Colors.white70
+                            : Colors.white24,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+
               // Retake badge (PHOTO captured, top-right)
               if (hasCapturedPhoto && _currentCaptureMode == 'PHOTO')
                 Positioned(
@@ -4224,6 +4273,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               _currentCaptureMode = mode;
                               _triggerPhotoCapture = null;
                               _triggerEnlarge = null;
+                              _triggerFlashToggle = null;
+                              _cameraFlashOn = false;
                               _triggerVideoToggle = null;
                               _isVideoRecording = false;
                               _isRecordingAudio = false;
@@ -4407,24 +4458,38 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           ),
                         ),
 
-                      // Right slot: enlarge (PHOTO) or spacer
-                      if (_currentCaptureMode == 'PHOTO')
+                      // Right slot: flash (PHOTO / VIDEO) or spacer
+                      if (_currentCaptureMode == 'PHOTO' ||
+                          _currentCaptureMode == 'VIDEO')
                         GestureDetector(
-                          onTap: _triggerEnlarge,
+                          onTap: _triggerFlashToggle != null
+                              ? () {
+                                  _triggerFlashToggle!();
+                                  setState(() => _cameraFlashOn = !_cameraFlashOn);
+                                }
+                              : null,
                           child: Container(
                             width: 46,
                             height: 46,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
+                              color: _cameraFlashOn
+                                  ? const Color(0xFFFFC107)
+                                  : Colors.white.withValues(alpha: 0.1),
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white24),
+                              border: Border.all(
+                                color: _cameraFlashOn
+                                    ? const Color(0xFFFFC107)
+                                    : Colors.white24,
+                              ),
                             ),
                             child: Icon(
-                              Icons.open_in_full,
-                              color: _triggerEnlarge != null
-                                  ? Colors.white70
-                                  : Colors.white24,
-                              size: 20,
+                              _cameraFlashOn ? Icons.flash_on : Icons.flash_off,
+                              color: _cameraFlashOn
+                                  ? Colors.black87
+                                  : (_triggerFlashToggle != null
+                                      ? Colors.white70
+                                      : Colors.white24),
+                              size: 22,
                             ),
                           ),
                         )
@@ -4723,6 +4788,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _isRecordingAudio = false;
       _triggerPhotoCapture = null;
       _triggerEnlarge = null;
+      _triggerFlashToggle = null;
+      _cameraFlashOn = false;
       _triggerVideoToggle = null;
       if (targetItem != null) {
         _currentCaptureMode = _defaultCaptureModeForItem(targetItem);

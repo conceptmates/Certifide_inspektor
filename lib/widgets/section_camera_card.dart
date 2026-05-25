@@ -32,6 +32,13 @@ class SectionCameraCard extends StatefulWidget {
   /// the fullscreen preview. Only useful when [showControls] is false.
   final void Function(VoidCallback enlarge)? onEnlargeReady;
 
+  /// Called once the camera is initialized, passing a function that cycles
+  /// flash mode. Only useful when [showControls] is false.
+  final void Function(VoidCallback toggleFlash)? onFlashReady;
+
+  /// Called whenever the flash mode changes so the parent can update its UI.
+  final void Function(FlashMode mode)? onFlashModeChanged;
+
   const SectionCameraCard({
     super.key,
     this.height = 220,
@@ -42,6 +49,8 @@ class SectionCameraCard extends StatefulWidget {
     this.showControls = true,
     this.onCaptureReady,
     this.onEnlargeReady,
+    this.onFlashReady,
+    this.onFlashModeChanged,
   });
 
   @override
@@ -63,6 +72,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
   String _errorMessage = '';
   bool _isCapturing = false;
   int _currentCameraIndex = 0;
+  FlashMode _flashMode = FlashMode.off;
   // Incremented on every inactive/paused transition to cancel in-flight inits.
   int _initGeneration = 0;
 
@@ -247,6 +257,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
         });
         widget.onCaptureReady?.call(_captureImage);
         widget.onEnlargeReady?.call(_openFullscreenPreview);
+        widget.onFlashReady?.call(_toggleFlash);
       }
       return true;
     } on CameraException {
@@ -296,6 +307,19 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     } finally {
       if (mounted) setState(() => _isCapturing = false);
     }
+  }
+
+  Future<void> _toggleFlash() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    final next =
+        _flashMode == FlashMode.off ? FlashMode.torch : FlashMode.off;
+    try {
+      await _controller!.setFlashMode(next);
+      if (mounted) {
+        setState(() => _flashMode = next);
+        widget.onFlashModeChanged?.call(next);
+      }
+    } catch (_) {}
   }
 
   void _openFullscreenPreview() {

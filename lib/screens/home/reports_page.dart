@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/inspection_history_model.dart';
 import '../../models/local_inspection.dart';
@@ -10,7 +11,6 @@ import '../../services/api_services.dart';
 import '../../utils/loading_animation.dart';
 import '../../widgets/error_widget.dart';
 import 'car_spy/car_spy_data.dart';
-import 'inspection_webview_screen.dart';
 
 class ReportsPage extends ConsumerStatefulWidget {
   const ReportsPage({super.key});
@@ -105,6 +105,55 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     return DateFormat('MMM d, yyyy, h:mm a').format(date);
   }
 
+  Future<void> _launchURL(String url) async {
+    try {
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Center(child: LoadingAnimation());
+          },
+        );
+      }
+
+      final Uri uri = Uri.parse(url);
+
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      await _launchInBrowser(uri);
+    } catch (e) {
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Error'),
+              content: Text(_getReadableErrorMessage(e)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    }
+  }
+
+  Future<void> _launchInBrowser(Uri url) async {
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch $url');
+    }
+  }
+
   Widget _buildHistoryCard(InspectionHistory inspection) {
     final vehicleInfo = inspection.vehicleInfo;
     final statusColor = _getStatusColor(inspection.status);
@@ -133,15 +182,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
           splashColor: CarSpyColors.primary.withValues(alpha: 0.08),
           highlightColor: CarSpyColors.primary.withValues(alpha: 0.04),
           onTap: canView
-              ? () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => InspectionWebViewScreen(
-                        url: inspection.links!['view']!,
-                        title: 'Inspection #${inspection.id}',
-                      ),
-                    ),
-                  )
+              ? () => _launchURL(inspection.links!['view']!)
               : null,
           child: Padding(
             padding: const EdgeInsets.all(16),

@@ -51,6 +51,9 @@ class InspectionStorageModel extends HiveObject {
   @HiveField(14)
   final int? inspectionId;
 
+  @HiveField(15)
+  final Map<dynamic, dynamic> itemFlaggedIssues;
+
   InspectionStorageModel({
     Map<String, String>? itemValues,
     Map<String, String?>? itemImages,
@@ -67,7 +70,11 @@ class InspectionStorageModel extends HiveObject {
     Map<String, dynamic>? vehicleDetails,
     Map<String, dynamic>? inspectionTemplate,
     this.inspectionId,
-  })  : itemValues = Map<dynamic, dynamic>.from(itemValues ?? {}),
+    Map<String, List<String>>? itemFlaggedIssues,
+  })  : itemFlaggedIssues = itemFlaggedIssues != null
+            ? Map<dynamic, dynamic>.from(itemFlaggedIssues)
+            : {},
+        itemValues = Map<dynamic, dynamic>.from(itemValues ?? {}),
         itemImages = Map<dynamic, dynamic>.from(itemImages ?? {}),
         itemRemarks = Map<dynamic, dynamic>.from(itemRemarks ?? {}),
         currentSection = currentSection ?? 0,
@@ -175,6 +182,17 @@ class InspectionStorageModel extends HiveObject {
     }
   }
 
+  Map<String, List<String>> get typedItemFlaggedIssues {
+    try {
+      return Map<String, List<String>>.from(
+        itemFlaggedIssues.map((k, v) =>
+            MapEntry(k.toString(), (v as List).map((e) => e.toString()).toList())),
+      );
+    } catch (_) {
+      return {};
+    }
+  }
+
   factory InspectionStorageModel.fromMap(Map<String, dynamic> map) {
     return InspectionStorageModel(
       itemValues: _safeConvertMap<String>(map['itemValues']),
@@ -200,6 +218,9 @@ class InspectionStorageModel extends HiveObject {
           ? Map<String, dynamic>.from(map['inspectionTemplate'])
           : null,
       inspectionId: map['inspectionId'],
+      itemFlaggedIssues: map['itemFlaggedIssues'] != null
+          ? _safeConvertMultiImageMap(map['itemFlaggedIssues'])
+          : null,
     );
   }
 
@@ -245,6 +266,7 @@ class InspectionStorageModel extends HiveObject {
       'vehicleDetails': typedVehicleDetails,
       'inspectionTemplate': typedInspectionTemplate,
       'inspectionId': inspectionId,
+      'itemFlaggedIssues': typedItemFlaggedIssues,
     };
   }
 
@@ -264,6 +286,7 @@ class InspectionStorageModel extends HiveObject {
     Map<String, dynamic>? vehicleDetails,
     Map<String, dynamic>? inspectionTemplate,
     int? inspectionId,
+    Map<String, List<String>>? itemFlaggedIssues,
   }) {
     return InspectionStorageModel(
       itemValues: itemValues ?? typedItemValues,
@@ -281,6 +304,7 @@ class InspectionStorageModel extends HiveObject {
       vehicleDetails: vehicleDetails ?? typedVehicleDetails,
       inspectionTemplate: inspectionTemplate ?? typedInspectionTemplate,
       inspectionId: inspectionId ?? this.inspectionId,
+      itemFlaggedIssues: itemFlaggedIssues ?? typedItemFlaggedIssues,
     );
   }
 }

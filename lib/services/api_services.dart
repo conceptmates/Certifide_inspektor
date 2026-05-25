@@ -24,14 +24,14 @@ class ApiService {
 
   static const String loginEndpoint = '/auth/login';
   static const String registerEndpoint = '/auth/register';
-  static const String refreshTokenEndpoint = 'auth/refresh';
+  static const String refreshTokenEndpoint = '/auth/refresh';
   static const String profileEndPoint = '/auth/me';
   static const String getInspectorEndPoint = '/tokens/inspectors';
   static const String allocateTokensEndPoint = '/tokens/allocate';
   static const String sendDataEndPoint = '/inspections';
   static const String uploadImageEndPoint = '/inspection/upload-image';
   static const String getBalanceTokensEndPoint = '/tokens/balance';
-  static const String getHistoryEndPoint = '/inspections';
+  static const String getHistoryEndPoint = '/dynamic-inspections';
   static const String initialInspectionEndPoint = '/inspections/initial';
   static const String initializeInspectionEndPoint = '/inspections/initialize';
   static const String initializeDynamicInspectionEndPoint =
@@ -747,20 +747,29 @@ class ApiService {
       {int page = 1}) async {
     try {
       final response = await http.get(
-        Uri.parse(
-            '$baseUrl$getHistoryEndPoint?page=$page'), // Add page parameter
+        Uri.parse('$baseUrl$getHistoryEndPoint?page=$page'),
         headers: await _getHeaders(requiresAuth: true),
       );
-      log('Response status: ${response.statusCode} ${response.body}');
+      log('getInspectionHistory status: ${response.statusCode}');
+      log('getInspectionHistory body: ${response.body}');
+
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
 
         if (responseData['status'] == 'success') {
           final data = responseData['data'];
-          final inspections = (data['inspections'] as List)
+          final rawList = data['inspections'] ?? data['data'] ?? [];
+          final inspections = (rawList as List)
               .map((item) => InspectionHistory.fromJson(item))
               .toList();
-          final pagination = PaginationData.fromJson(data['pagination']);
+          final pagination = data['pagination'] != null
+              ? PaginationData.fromJson(data['pagination'])
+              : PaginationData(
+                  currentPage: data['current_page'] ?? 1,
+                  lastPage: data['last_page'] ?? 1,
+                  perPage: data['per_page'] ?? 10,
+                  total: data['total'] ?? 0,
+                );
 
           return {
             'success': true,
@@ -781,7 +790,14 @@ class ApiService {
         'success': false,
         'message': _handleError(response),
       };
+    } on UnauthorizedException {
+      await handleUnauthorizedResponse(context);
+      return {
+        'success': false,
+        'message': 'Session expired. Please login again.',
+      };
     } catch (e) {
+      log('getInspectionHistory error: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',

@@ -53,7 +53,7 @@ class LocalStorageService {
       final step1Result = await FlutterImageCompress.compressAndGetFile(
         filePath,
         step1Path,
-        quality: 92,
+        quality: 100,
         autoCorrectionAngle: true,
         keepExif: false,
       );
@@ -75,7 +75,7 @@ class LocalStorageService {
         final rotatedResult = await FlutterImageCompress.compressAndGetFile(
           step1Path,
           finalPath,
-          quality: 92,
+          quality: 100,
           rotate: 90,
           keepExif: false,
         );
