@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -287,8 +288,9 @@ class InspectionNotifier extends _$InspectionNotifier {
       }
 
       // Build final submission payload with all uploaded URLs applied.
-      // Build a single item-ID index first to avoid O(n²) traversal per file.
-      final inspectionData = Map<String, dynamic>.from(currentInspection.data);
+      // Deep-copy so mutations to nested item maps don't affect Riverpod state.
+      final inspectionData =
+          json.decode(json.encode(currentInspection.data)) as Map<String, dynamic>;
       final itemIndex = <String, Map<String, dynamic>>{};
       List<dynamic>? summaryImages;
 
