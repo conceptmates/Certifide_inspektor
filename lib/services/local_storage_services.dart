@@ -436,12 +436,11 @@ class LocalStorageService {
   }
 
   static Future<void> _deleteFile(String filePath) async {
+    if (filePath.startsWith('http')) return;
     try {
-      if (filePath.startsWith('http')) return; // Skip URLs
-      final file = File(filePath);
-      if (await file.exists()) {
-        await file.delete();
-      }
+      await File(filePath).delete();
+    } on PathNotFoundException {
+      // File already gone — nothing to do.
     } catch (e) {
       print('Error deleting file: $e');
     }
