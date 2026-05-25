@@ -35,9 +35,9 @@ class InspectionNotifier extends _$InspectionNotifier {
         .onConnectivityChanged
         .listen((List<ConnectivityResult> results) {
       if (results.isNotEmpty && results.first != ConnectivityResult.none) {
-        // Schedule async work without propagating the Future to the listener,
-        // and catch any errors explicitly so they don't become unhandled.
-        Future(() async {
+        // Stream listeners must be synchronous; async work is scheduled via
+        // unawaited() and all errors are caught explicitly inside.
+        unawaited(Future(() async {
           try {
             final hasInternet =
                 await ConnectivityChecker.hasInternetConnection();
@@ -45,7 +45,7 @@ class InspectionNotifier extends _$InspectionNotifier {
           } catch (e) {
             log('Connectivity listener error: $e');
           }
-        });
+        }));
       }
     });
   }
