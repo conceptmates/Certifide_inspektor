@@ -4913,8 +4913,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 sessionInspectionId: _sessionInspectionId,
               ),
             );
-      } catch (_) {
-        // ref was already invalidated; session data persisted to Hive via _flushPendingAutoSave.
+      } on StateError catch (_) {
+        // ref was already invalidated (Riverpod container disposed);
+        // session data persisted to Hive via _flushPendingAutoSave.
       }
     }
     _scrollController.dispose();
