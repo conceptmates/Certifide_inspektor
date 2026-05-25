@@ -121,8 +121,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             itemId: entry.value.itemId,
           );
 
-          if (result['success'] == true) {
-            uploadedImages[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            uploadedImages[entry.key] = url;
           }
         }
 
@@ -184,8 +185,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             section: entry.value.section,
             itemId: entry.value.itemId,
           );
-          if (result['success'] == true) {
-            uploadedImages[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            uploadedImages[entry.key] = url;
           }
         }
 
@@ -223,9 +225,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             itemId: entry.key,
             fieldName: 'image',
           );
-          if (result['success'] == true) {
-            // Key by itemId so we can find the item in the data by ID.
-            videoReplacements[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            videoReplacements[entry.key] = url;
           }
         }
       }
@@ -238,8 +240,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             itemId: entry.key,
             fieldName: 'image',
           );
-          if (result['success'] == true) {
-            audioReplacements[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            audioReplacements[entry.key] = url;
           }
         }
       }
@@ -252,8 +255,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             itemId: entry.key,
             fieldName: 'image',
           );
-          if (result['success'] == true) {
-            fileReplacements[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            fileReplacements[entry.key] = url;
           }
         }
       }
