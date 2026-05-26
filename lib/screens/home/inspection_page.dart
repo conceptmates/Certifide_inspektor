@@ -259,8 +259,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     // Check if this is an image field type or has hasImage flag
     final isImageField = fieldType == 'image' || field.hasImage;
-    // hasMultipleImages takes over image handling; suppress single-image card
-    final useMultiImage = field.hasMultipleImages;
+    // Multi-image when explicitly flagged OR when it's a text+image field
+    // (summary-style fields: write text and attach multiple photos).
+    final useMultiImage =
+        field.hasMultipleImages || (fieldType == 'text' && field.hasImage);
 
     return {
       'id': field.fieldId,
@@ -1296,7 +1298,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final uniqueId = _getItemUniqueId(item);
     final title = _getItemTitle(item);
     final allowImage = _itemHasImage(item);
-    final allowMultiImage = _itemHasMultiImage(item);
     final isRequired = _itemIsRequired(item);
     final referenceMedia = _getItemReferenceMedia(item);
     final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
@@ -1389,8 +1390,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if ((allowImage && !_isImageFieldType(item)) ||
-                            allowMultiImage)
+                        if (allowImage && !_isImageFieldType(item))
                           IconButton(
                             icon: const Icon(Icons.camera_alt, size: 22),
                             color: const Color(0xFF4D9EFF),
@@ -1399,13 +1399,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               minWidth: 36,
                               minHeight: 36,
                             ),
-                            onPressed: () {
-                              if (allowMultiImage) {
-                                _pickMultiImages(item);
-                              } else {
-                                _showImagePickerOptions(item);
-                              }
-                            },
+                            onPressed: () => _showImagePickerOptions(item),
                           ),
                         if (_itemHasVideo(item))
                           IconButton(
@@ -1534,40 +1528,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             const SizedBox(height: 8),
           ],
 
-          // ── Multi-image placeholder ────────────────────────────
-          if (allowMultiImage &&
-              (itemMultiImages[uniqueId] == null ||
-                  itemMultiImages[uniqueId]!.isEmpty)) ...[
-            GestureDetector(
-              onTap: () => _pickMultiImages(item),
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 120,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.grey.shade300,
-                    style: BorderStyle.solid,
-                  ),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.add_photo_alternate_outlined,
-                        size: 32, color: Colors.grey.shade500),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Tap to add images',
-                      style: TextStyle(
-                          color: Colors.grey.shade600, fontSize: 13),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
 
           // ── Full-width video card ───────────────────────────────
           if (_itemHasVideo(item) && itemVideos[uniqueId] == null) ...[
@@ -1641,79 +1601,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           child: _buildImageWidget(itemImages[uniqueId]!),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                if (allowMultiImage &&
-                    itemMultiImages[uniqueId] != null &&
-                    itemMultiImages[uniqueId]!.isNotEmpty) ...[
-                  Text(
-                    'Captured Images:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 150,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: itemMultiImages[uniqueId]!.length,
-                      itemBuilder: (context, imgIndex) {
-                        final imagePath = itemMultiImages[uniqueId]![imgIndex];
-                        return Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          width: 150,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: Colors.grey.shade300, width: 1),
-                          ),
-                          child: Stack(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: SizedBox(
-                                  width: 150,
-                                  height: 150,
-                                  child: _buildImageWidget(imagePath,
-                                      fit: BoxFit.cover),
-                                ),
-                              ),
-                              Positioned(
-                                top: 4,
-                                right: 4,
-                                child: GestureDetector(
-                                  onTap: () {
-                                    final updatedPaths = List<String>.from(
-                                        itemMultiImages[uniqueId]!)
-                                      ..removeAt(imgIndex);
-                                    setState(() {
-                                      itemMultiImages[uniqueId] =
-                                          updatedPaths.isEmpty
-                                              ? null
-                                              : updatedPaths;
-                                    });
-                                    _autoSave();
-                                  },
-                                  child: Container(
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.cancel,
-                                        size: 18, color: Colors.red),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -2118,95 +2005,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to pick image: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _pickMultiImages(dynamic item) async {
-    final uniqueId = _getItemUniqueId(item);
-    final fieldId = _getItemFieldId(item);
-
-    try {
-      final hasGalleryPermission = await _ensureMediaPermission(
-        Permission.photos,
-        permissionName: 'Gallery',
-      );
-      if (!hasGalleryPermission) return;
-
-      final ImagePicker picker = ImagePicker();
-      final List<XFile> images = await picker.pickMultiImage();
-
-      if (images.isNotEmpty && mounted) {
-        final String sectionTitle =
-            _sections[_currentSection]['title'] as String;
-        final currentImages = itemMultiImages[uniqueId] ?? [];
-        final List<String> savedPaths = [];
-
-        for (var image in images) {
-          final savedPath = await LocalStorageService.saveImage(image.path);
-          savedPaths.add(savedPath);
-        }
-
-        final updatedPaths =
-            [...currentImages, ...savedPaths].take(11).toList();
-
-        setState(() {
-          itemMultiImages[uniqueId] = updatedPaths;
-          _uploadingImages.add(uniqueId);
-        });
-        if (mounted) _showFlagIssuesSheet(item);
-
-        await _saveDataLocally();
-
-        final bool hasInternet =
-            await ConnectivityChecker.hasInternetConnection();
-
-        if (hasInternet) {
-          final List<String> uploadedUrls = [];
-
-          for (int i = 0; i < updatedPaths.length; i++) {
-            final path = updatedPaths[i];
-            if (!path.startsWith('http')) {
-              final result = await ApiService.uploadImage(
-                path,
-                inspectionId: _effectiveInspectionId,
-                section: sectionTitle,
-                itemId: fieldId,
-              );
-
-              uploadedUrls.add(
-                result['success'] == true
-                    ? (result['url']?.toString() ?? path)
-                    : path,
-              );
-            } else {
-              uploadedUrls.add(path);
-            }
-          }
-
-          if (mounted) {
-            setState(() {
-              _uploadingImages.remove(uniqueId);
-              itemMultiImages[uniqueId] = uploadedUrls;
-            });
-            await _saveDataLocally();
-          }
-        } else {
-          if (mounted) {
-            setState(() {
-              _uploadingImages.remove(uniqueId);
-            });
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _uploadingImages.remove(uniqueId);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick images: $e')),
         );
       }
     }
@@ -3237,6 +3035,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         String value = itemValues[uniqueId] ?? '';
         if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
           value = '';
+        } else if (value == 'flagged') {
+          // Map the selected issue label back to its option value for server submission.
+          final selectedLabel = itemFlaggedIssues[uniqueId]!.first;
+          String? optionValue;
+          if (item is Map) {
+            final opts = item['options'] as List?;
+            if (opts != null) {
+              for (final opt in opts) {
+                final lbl = opt['label']?.toString() ?? '';
+                final val = opt['value']?.toString() ?? '';
+                final label = lbl.isNotEmpty ? lbl : val;
+                if (label == selectedLabel) {
+                  optionValue = val.isNotEmpty ? val : label;
+                  break;
+                }
+              }
+            }
+          }
+          value = optionValue ?? selectedLabel;
         }
         final remarks = itemRemarks[uniqueId];
         final imagePath = itemImages[uniqueId];

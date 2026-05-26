@@ -54,6 +54,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
   bool _isInitializing = false;
+  bool _isDisposePending = false;
   bool _hasError = false;
   String _errorMessage = '';
   int _currentCameraIndex = 0;
@@ -63,7 +64,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   bool _flashOn = false;
   Duration _elapsed = Duration.zero;
   Timer? _timer;
-  // Incremented on every inactive/paused transition to cancel in-flight inits.
+  // Incremented on every inactive/paused and widget-dispose to cancel in-flight inits.
   int _initGeneration = 0;
 
   @override
@@ -90,6 +91,11 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   }
 
   void _disposeController() {
+    if (_isInitializing) {
+      _isDisposePending = true;
+      return;
+    }
+    _isDisposePending = false;
     final controller = _controller;
     _controller = null;
     if (controller != null) {
@@ -236,21 +242,27 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
 
     try {
       await controller.initialize();
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-          _hasError = false;
-          _flashOn = false;
-        });
-        widget.onRecordingToggleReady?.call(_toggleRecording);
-        widget.onFlashToggleReady?.call(_toggleFlash);
+      if (_isDisposePending || !mounted || _controller != controller) {
+        _isDisposePending = false;
+        _pendingDisposal = controller.dispose();
+        _controller = null;
+        return false;
       }
+      setState(() {
+        _isInitialized = true;
+        _hasError = false;
+        _flashOn = false;
+      });
+      widget.onRecordingToggleReady?.call(_toggleRecording);
+      widget.onFlashToggleReady?.call(_toggleFlash);
       return true;
     } on CameraException {
+      _isDisposePending = false;
       _pendingDisposal = _controller?.dispose();
       _controller = null;
       return false;
     } catch (_) {
+      _isDisposePending = false;
       _pendingDisposal = _controller?.dispose();
       _controller = null;
       return false;
@@ -401,6 +413,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _initGeneration++;
     _timer?.cancel();
     _disposeController();
     super.dispose();
