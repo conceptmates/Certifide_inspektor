@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -157,8 +159,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   Widget _buildHistoryCard(InspectionHistory inspection) {
     final vehicleInfo = inspection.vehicleInfo;
     final statusColor = _getStatusColor(inspection.status);
-    final canView = inspection.status == 'approved' &&
-        inspection.links != null &&
+    final canView = inspection.links != null &&
         inspection.links!['view'] != null;
 
     return Container(
@@ -181,9 +182,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
           borderRadius: BorderRadius.circular(20),
           splashColor: CarSpyColors.primary.withValues(alpha: 0.08),
           highlightColor: CarSpyColors.primary.withValues(alpha: 0.04),
-          onTap: canView
-              ? () => _launchURL(inspection.links!['view']!)
-              : null,
+          onTap: null,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -233,21 +232,32 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                   const SizedBox(height: 10),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.visibility_outlined,
-                            size: 14, color: CarSpyColors.primary),
-                        const SizedBox(width: 4),
-                        Text(
-                          'View Report',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: CarSpyColors.primary,
-                          ),
+                    child: GestureDetector(
+                      onTap: () => _launchURL(inspection.links!['view']!),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: CarSpyColors.primary,
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.visibility_outlined,
+                                size: 14, color: Colors.white),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'View Report',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -343,8 +353,12 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       final result = await ApiService.getDynamicInspectionMyHistory(context, page: 1);
       if (_isCancelled) return;
       if (result['success']) {
+        final items = result['inspections'] as List<InspectionHistory>;
+        for (final item in items) {
+          log('[ReportsPage] id=${item.id} status=${item.status} links=${item.links}');
+        }
         _safeSetState(() {
-          _historyItems = result['inspections'];
+          _historyItems = items;
           _paginationData = result['pagination'];
           _isHistoryLoading = false;
         });

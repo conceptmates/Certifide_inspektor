@@ -1,3 +1,5 @@
+import 'dart:developer';
+
 class InspectionHistory {
   final String id;
   final String inspectorName;
@@ -31,11 +33,9 @@ class InspectionHistory {
     final inspectorName = json['inspector']?['name'] ?? json['user']?['name'] ?? '';
 
     Map<String, String>? links;
-    if (json['links'] != null) {
-      links = Map<String, String>.from(json['links']);
-    } else if (json['redirect_url'] != null &&
-        (json['redirect_url'] as String).isNotEmpty) {
-      links = {'view': json['redirect_url'] as String};
+    if (json['report_url'] != null &&
+        (json['report_url'] as String).isNotEmpty) {
+      links = {'view': json['report_url'] as String};
     }
 
     // /dynamic-inspections uses is_approved; map it to status when status is missing
@@ -43,6 +43,8 @@ class InspectionHistory {
     if (status.isEmpty) {
       status = (json['is_approved'] == true) ? 'approved' : 'pending';
     }
+
+    log('[InspectionHistory] id=${json['id']} status=$status links=$links | raw keys: ${json.keys.toList()} | links_raw=${json['links']} | redirect_url=${json['redirect_url']}');
 
     return InspectionHistory(
       id: json['id'].toString(),
