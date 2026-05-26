@@ -227,35 +227,17 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 _infoRow('Year', vehicleInfo['manufacturing_year']),
                 _infoRow('Date', _formatDate(inspection.date)),
                 if (canView) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 4),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: GestureDetector(
-                      onTap: () => _launchURL(inspection.links!['view']!),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: CarSpyColors.primary,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.visibility_outlined,
-                                size: 14, color: Colors.white),
-                            const SizedBox(width: 4),
-                            const Text(
-                              'View Report',
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ],
-                        ),
+                    child: IconButton(
+                      onPressed: () => _launchURL(inspection.links!['view']!),
+                      icon: Icon(
+                        Icons.visibility_outlined,
+                        color: CarSpyColors.primary,
                       ),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
                     ),
                   ),
                 ],
@@ -497,7 +479,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       color: CarSpyColors.primary,
       child: ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: EdgeInsets.fromLTRB(
+            16, 8, 16, MediaQuery.of(context).padding.bottom + 24),
         itemCount: _historyItems.length +
             (_isLoadingMore &&
                     _paginationData.currentPage < _paginationData.lastPage
@@ -562,6 +545,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                       ),
                     )
                   : ListView.builder(
+                      padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).padding.bottom + 16),
                       itemCount: provider.inspections.length,
                       itemBuilder: (context, index) {
                         final inspection = provider.inspections[index];
@@ -620,9 +605,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     );
     final isOnPendingTab = _tabController.index == 1;
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
+    return ColoredBox(
+      color: Colors.white,
+      child: SafeArea(
+        bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -695,3 +681,4 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     );
   }
 }
+
