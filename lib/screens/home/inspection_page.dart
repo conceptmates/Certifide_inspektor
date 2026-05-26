@@ -132,6 +132,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   bool _isScrollable = false;
   bool _isSubmitting = false;
   final Set<String> _uploadingImages = {};
+  final Set<String> _uploadingMultiImagePaths = {};
   String? _verifyingRegNoUniqueId;
   final Map<String, String> _regNoVerifyMessage = {};
   final Map<String, bool> _regNoVerifyIsError = {};
@@ -1769,6 +1770,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               _autoSave();
             },
           ),
+        if (_itemHasMultiImage(item)) ...[
+          const SizedBox(height: 10),
+          _buildInlineMultiImageGallery(item, uniqueId),
+        ],
         if (!useTextField && _itemHasOptions(item))
           DropdownButtonFormField<String>(
             initialValue:
@@ -1872,6 +1877,226 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         );
       },
     );
+  }
+
+  Widget _buildInlineMultiImageGallery(dynamic item, String uniqueId) {
+    final images = itemMultiImages[uniqueId] ?? [];
+    const maxImages = 11;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Photos (${images.length}/$maxImages)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).textTheme.bodyMedium?.color,
+              ),
+            ),
+            const Spacer(),
+            if (images.length < maxImages)
+              GestureDetector(
+                onTap: () => _pickMultiImagesForItem(item),
+                child: Row(
+                  children: [
+                    Icon(Icons.add_photo_alternate,
+                        size: 18, color: Theme.of(context).primaryColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Add Photos',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).primaryColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        if (images.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 80,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: images.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final imagePath = images[index];
+                final isUploading = _uploadingMultiImagePaths.contains(imagePath);
+                return Stack(
+                  children: [
+                    GestureDetector(
+                      onTap: isUploading ? null : () => _showImagePreview(imagePath),
+                      child: Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: _buildImageWidget(imagePath),
+                        ),
+                      ),
+                    ),
+                    if (isUploading)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (!isUploading)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: GestureDetector(
+                          onTap: () {
+                            final updated = List<String>.from(images)
+                              ..removeAt(index);
+                            setState(() {
+                              itemMultiImages[uniqueId] =
+                                  updated.isEmpty ? null : updated;
+                            });
+                            _autoSave();
+                          },
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.cancel,
+                                size: 18, color: Colors.red),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _pickMultiImagesForItem(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    final fieldId = _getItemFieldId(item);
+    const maxImages = 11;
+    final current = itemMultiImages[uniqueId] ?? [];
+
+    if (current.length >= maxImages) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Maximum of 11 images already added'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final hasPermission = await _ensureMediaPermission(
+      Permission.photos,
+      permissionName: 'Gallery',
+    );
+    if (!hasPermission) return;
+
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickMultiImage(imageQuality: 100);
+      if (picked.isEmpty || !mounted) return;
+
+      final remainingSlots = maxImages - current.length;
+      final toAdd = picked.take(remainingSlots).toList();
+
+      if (toAdd.length < picked.length && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Only ${toAdd.length} image(s) added. Maximum is $maxImages.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      // Save locally and show in UI immediately
+      final savedPaths = <String>[];
+      for (final xFile in toAdd) {
+        final saved = await LocalStorageService.saveImage(xFile.path);
+        savedPaths.add(saved);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        itemMultiImages[uniqueId] = [...current, ...savedPaths];
+        _uploadingMultiImagePaths.addAll(savedPaths);
+      });
+      await _saveDataLocally();
+
+      // Upload each image immediately, replacing local path with URL on success
+      final sectionTitle = _sections[_currentSection]['title'] as String;
+      final hasInternet = await ConnectivityChecker.hasInternetConnection();
+
+      if (!hasInternet) {
+        if (mounted) {
+          setState(() => _uploadingMultiImagePaths.removeAll(savedPaths));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Images saved locally. Will upload when online.')),
+          );
+        }
+        return;
+      }
+
+      for (final savedPath in savedPaths) {
+        final result = await ApiService.uploadImage(
+          savedPath,
+          inspectionId: _effectiveInspectionId,
+          section: sectionTitle,
+          itemId: fieldId,
+        );
+        if (!mounted) return;
+
+        final url = result['url']?.toString();
+        setState(() {
+          _uploadingMultiImagePaths.remove(savedPath);
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            final imgs = List<String>.from(itemMultiImages[uniqueId] ?? []);
+            final idx = imgs.indexOf(savedPath);
+            if (idx != -1) imgs[idx] = url;
+            itemMultiImages[uniqueId] = imgs;
+          }
+        });
+      }
+      await _saveDataLocally();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick images: $e')),
+        );
+      }
+    }
   }
 
   Future<bool> _ensureMediaPermission(
