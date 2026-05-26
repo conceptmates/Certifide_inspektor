@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../models/inspection_history_model.dart';
+import '../models/inspection_stats_model.dart';
 import '../models/inspection_template_model.dart';
 import '../models/inspector.dart';
 import '../models/pagination_data_model.dart';
@@ -45,6 +46,7 @@ class ApiService {
   static const String vehicleDetailsEndPoint = '/ulip/vehicle-details';
   static const String getDynamicMyHistoryEndPoint =
       '/dynamic-inspections/my-history';
+  static const String inspectionStatsEndPoint = '/dynamic-inspections/stats';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -836,7 +838,6 @@ class ApiService {
       BuildContext context,
       {int page = 1}) async {
     final url = '$baseUrl$getDynamicMyHistoryEndPoint?page=$page';
-    log('getDynamicInspectionMyHistory → GET $url');
     try {
       final response = await http
           .get(
@@ -844,9 +845,6 @@ class ApiService {
             headers: await _getHeaders(requiresAuth: true),
           )
           .timeout(_requestTimeout);
-
-      log('getDynamicInspectionMyHistory status: ${response.statusCode}');
-      log('getDynamicInspectionMyHistory body: ${response.body}');
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -865,8 +863,6 @@ class ApiService {
                   perPage: data['per_page'] ?? 10,
                   total: data['total'] ?? 0,
                 );
-
-          log('getDynamicInspectionMyHistory parsed ${inspections.length} items, page ${pagination.currentPage}/${pagination.lastPage}');
 
           return {
             'success': true,
@@ -894,7 +890,6 @@ class ApiService {
         'message': 'Session expired. Please login again.',
       };
     } catch (e) {
-      log('getDynamicInspectionMyHistory error: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',
@@ -1322,6 +1317,48 @@ class ApiService {
         'success': false,
         'message': 'Network error: ${e.toString()}',
       };
+    }
+  }
+
+  static Future<Map<String, dynamic>> getInspectionStats({
+    String period = 'daily',
+    String? from,
+    String? to,
+    String? status,
+    int? userId,
+  }) async {
+    try {
+      final params = <String, String>{'period': period};
+      if (from != null) params['from'] = from;
+      if (to != null) params['to'] = to;
+      if (status != null) params['status'] = status;
+      if (userId != null) params['user_id'] = userId.toString();
+
+      final uri = Uri.parse('$baseUrl$inspectionStatsEndPoint')
+          .replace(queryParameters: params);
+
+      final response = await http.get(
+        uri,
+        headers: await _getHeaders(requiresAuth: true),
+      ).timeout(_requestTimeout);
+
+      if (response.statusCode == 200) {
+        final responseData =
+            json.decode(response.body) as Map<String, dynamic>;
+        if (responseData['status'] == 'success') {
+          return {
+            'success': true,
+            'data': InspectionStats.fromJson(responseData),
+          };
+        }
+      } else if (response.statusCode == 401) {
+        return {'success': false, 'message': 'Unauthorized'};
+      }
+
+      return {'success': false, 'message': _handleError(response)};
+    } catch (e) {
+      log('getInspectionStats error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
 
