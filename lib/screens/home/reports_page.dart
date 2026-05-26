@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -353,12 +351,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       final result = await ApiService.getDynamicInspectionMyHistory(context, page: 1);
       if (_isCancelled) return;
       if (result['success']) {
-        final items = result['inspections'] as List<InspectionHistory>;
-        for (final item in items) {
-          log('[ReportsPage] id=${item.id} status=${item.status} links=${item.links}');
-        }
         _safeSetState(() {
-          _historyItems = items;
+          _historyItems = result['inspections'];
           _paginationData = result['pagination'];
           _isHistoryLoading = false;
         });

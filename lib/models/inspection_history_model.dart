@@ -1,5 +1,3 @@
-import 'dart:developer';
-
 class InspectionHistory {
   final String id;
   final String inspectorName;
@@ -43,8 +41,6 @@ class InspectionHistory {
     if (status.isEmpty) {
       status = (json['is_approved'] == true) ? 'approved' : 'pending';
     }
-
-    log('[InspectionHistory] id=${json['id']} status=$status links=$links | raw keys: ${json.keys.toList()} | links_raw=${json['links']} | redirect_url=${json['redirect_url']}');
 
     return InspectionHistory(
       id: json['id'].toString(),
