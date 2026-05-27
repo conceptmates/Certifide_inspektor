@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -16,6 +17,7 @@ part 'inspection_provider.g.dart';
 class InspectionNotifier extends _$InspectionNotifier {
   Timer? _cooldownTimer;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _isAutoSubmitting = false;
 
   @override
   InspectionState build() {
@@ -28,13 +30,14 @@ class InspectionNotifier extends _$InspectionNotifier {
   }
 
   void _startConnectivityListener() {
+    _connectivitySubscription?.cancel();
     _connectivitySubscription = Connectivity()
         .onConnectivityChanged
         .listen((List<ConnectivityResult> results) {
       if (results.isNotEmpty && results.first != ConnectivityResult.none) {
-        // Schedule async work without propagating the Future to the listener,
-        // and catch any errors explicitly so they don't become unhandled.
-        Future(() async {
+        // Stream listeners must be synchronous; async work is scheduled via
+        // unawaited() and all errors are caught explicitly inside.
+        unawaited(Future(() async {
           try {
             final hasInternet =
                 await ConnectivityChecker.hasInternetConnection();
@@ -42,12 +45,14 @@ class InspectionNotifier extends _$InspectionNotifier {
           } catch (e) {
             log('Connectivity listener error: $e');
           }
-        });
+        }));
       }
     });
   }
 
   Future<void> _autoSubmitPending() async {
+    if (_isAutoSubmitting) return;
+    _isAutoSubmitting = true;
     try {
       final pending = await LocalStorageService.getPendingInspections();
       if (pending.isEmpty) return;
@@ -59,6 +64,8 @@ class InspectionNotifier extends _$InspectionNotifier {
       state = state.copyWith(isDirty: true);
     } catch (e) {
       log('Error auto-submitting pending inspections: $e');
+    } finally {
+      _isAutoSubmitting = false;
     }
   }
 
@@ -121,8 +128,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             itemId: entry.value.itemId,
           );
 
-          if (result['success'] == true) {
-            uploadedImages[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            uploadedImages[entry.key] = url;
           }
         }
 
@@ -184,8 +192,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             section: entry.value.section,
             itemId: entry.value.itemId,
           );
-          if (result['success'] == true) {
-            uploadedImages[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            uploadedImages[entry.key] = url;
           }
         }
 
@@ -223,9 +232,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             itemId: entry.key,
             fieldName: 'image',
           );
-          if (result['success'] == true) {
-            // Key by itemId so we can find the item in the data by ID.
-            videoReplacements[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            videoReplacements[entry.key] = url;
           }
         }
       }
@@ -238,8 +247,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             itemId: entry.key,
             fieldName: 'image',
           );
-          if (result['success'] == true) {
-            audioReplacements[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            audioReplacements[entry.key] = url;
           }
         }
       }
@@ -252,8 +262,9 @@ class InspectionNotifier extends _$InspectionNotifier {
             itemId: entry.key,
             fieldName: 'image',
           );
-          if (result['success'] == true) {
-            fileReplacements[entry.key] = result['url'] as String;
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            fileReplacements[entry.key] = url;
           }
         }
       }
@@ -283,8 +294,9 @@ class InspectionNotifier extends _$InspectionNotifier {
       }
 
       // Build final submission payload with all uploaded URLs applied.
-      // Build a single item-ID index first to avoid O(n²) traversal per file.
-      final inspectionData = Map<String, dynamic>.from(currentInspection.data);
+      // Deep-copy so mutations to nested item maps don't affect Riverpod state.
+      final inspectionData =
+          json.decode(json.encode(currentInspection.data)) as Map<String, dynamic>;
       final itemIndex = <String, Map<String, dynamic>>{};
       List<dynamic>? summaryImages;
 

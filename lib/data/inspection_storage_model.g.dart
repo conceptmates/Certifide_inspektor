@@ -34,13 +34,15 @@ class InspectionStorageModelAdapter
       vehicleDetails: (fields[12] as Map?)?.cast<String, dynamic>(),
       inspectionTemplate: (fields[13] as Map?)?.cast<String, dynamic>(),
       inspectionId: fields[14] as int?,
+      itemFlaggedIssues: (fields[15] as Map?)?.map((dynamic k, dynamic v) =>
+          MapEntry(k as String, (v as List).cast<String>())),
     );
   }
 
   @override
   void write(BinaryWriter writer, InspectionStorageModel obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.itemValues)
       ..writeByte(1)
@@ -70,7 +72,9 @@ class InspectionStorageModelAdapter
       ..writeByte(13)
       ..write(obj.inspectionTemplate)
       ..writeByte(14)
-      ..write(obj.inspectionId);
+      ..write(obj.inspectionId)
+      ..writeByte(15)
+      ..write(obj.itemFlaggedIssues);
   }
 
   @override

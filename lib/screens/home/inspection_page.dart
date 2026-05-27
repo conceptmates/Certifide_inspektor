@@ -62,6 +62,11 @@ Map<String, dynamic> _buildStoragePayload(Map<String, dynamic> input) {
       ? null
       : Map<String, List<String>>.from(rawMultiImages.map((k, v) =>
           MapEntry(k.toString(), (v as List).map((e) => e.toString()).toList())));
+  final rawFlaggedIssues = input['itemFlaggedIssues'] as Map?;
+  final itemFlaggedIssues = rawFlaggedIssues == null
+      ? <String, List<String>>{}
+      : Map<String, List<String>>.from(rawFlaggedIssues.map((k, v) =>
+          MapEntry(k.toString(), (v as List).map((e) => e.toString()).toList())));
   return {
     'itemValues': itemValues,
     'itemImages': itemImages,
@@ -71,6 +76,7 @@ Map<String, dynamic> _buildStoragePayload(Map<String, dynamic> input) {
     'itemRemarks': itemRemarks,
     'textFieldValues': textFieldValues,
     'multiImages': multiImages,
+    'itemFlaggedIssues': itemFlaggedIssues,
     'vehicleDetails': input['vehicleDetails'],
     'inspectionTemplate': input['inspectionTemplate'],
     'currentSection': input['currentSection'],
@@ -126,6 +132,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   bool _isScrollable = false;
   bool _isSubmitting = false;
   final Set<String> _uploadingImages = {};
+  final Set<String> _uploadingMultiImagePaths = {};
   String? _verifyingRegNoUniqueId;
   final Map<String, String> _regNoVerifyMessage = {};
   final Map<String, bool> _regNoVerifyIsError = {};
@@ -148,6 +155,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   // Bound to SectionCameraCard when showControls:false; resets on item change.
   VoidCallback? _triggerPhotoCapture;
   VoidCallback? _triggerEnlarge;
+  VoidCallback? _triggerFlashToggle;
+  bool _cameraFlashOn = false;
   VoidCallback? _triggerVideoToggle;
   bool _isVideoRecording = false;
   AudioRecorder? _audioRecorder;
@@ -208,7 +217,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     for (int i = 0; i < _currentSection; i++) {
       count += (_sections[i]['items'] as List).length;
     }
-    return count + _currentItemIndex + 1;
+    return count + _currentItemIndex;
   }
 
   int get _progressPercent {
@@ -251,6 +260,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     // Check if this is an image field type or has hasImage flag
     final isImageField = fieldType == 'image' || field.hasImage;
+    // Multi-image when explicitly flagged OR when it's a text+image field
+    // (summary-style fields: write text and attach multiple photos).
+    final useMultiImage =
+        field.hasMultipleImages || (fieldType == 'text' && field.hasImage);
 
     return {
       'id': field.fieldId,
@@ -259,11 +272,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       'fieldType': fieldType,
       'isRequired': field.isRequired,
       'hasRemarks': field.hasRemarks,
-      'hasImage':
-          isImageField, // Override hasImage based on field_type or hasImage flag
+      'hasImage': useMultiImage ? false : isImageField,
       'hasVideo': field.hasVideo,
       'hasFile': field.hasFile,
-      'useTextField': fieldType == 'text' || fieldType == 'date',
+      'allowMultiImage': useMultiImage,
+      'useTextField': fieldType == 'text' || fieldType == 'date' || useMultiImage,
       'options': field.options
           .map((opt) => {
                 'id': opt.id,
@@ -388,24 +401,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   Future<void> _initHive() async {
     try {
-      if (!Hive.isBoxOpen(INSPECTION_BOX)) {
-        final appDocumentDir = await getApplicationDocumentsDirectory();
-        await Hive.initFlutter(appDocumentDir.path);
-
-        if (!Hive.isAdapterRegistered(0)) {
-          Hive.registerAdapter(InspectionStorageModelAdapter());
-        }
-
+      if (Hive.isBoxOpen(INSPECTION_BOX)) {
+        _inspectionBox = Hive.box<InspectionStorageModel>(INSPECTION_BOX);
+      } else {
         _inspectionBox =
             await Hive.openBox<InspectionStorageModel>(INSPECTION_BOX);
-      } else {
-        _inspectionBox = Hive.box<InspectionStorageModel>(INSPECTION_BOX);
       }
     } catch (e) {
       print('Error initializing Hive: $e');
       await Hive.deleteBoxFromDisk(INSPECTION_BOX);
-      final appDocumentDir = await getApplicationDocumentsDirectory();
-      await Hive.initFlutter(appDocumentDir.path);
       _inspectionBox =
           await Hive.openBox<InspectionStorageModel>(INSPECTION_BOX);
     }
@@ -441,6 +445,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         'itemRemarks': remarksSnapshot,
         'textFieldValues': textFieldSnapshot,
         'multiImages': multiImagesSnapshot,
+        'itemFlaggedIssues': Map<String, List<String>>.from(itemFlaggedIssues),
         'vehicleDetails': vehicleDetails,
         'inspectionTemplate': _inspectionTemplate?.toJson(),
         'currentSection': _currentSection,
@@ -529,14 +534,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
-      _flushPendingAutoSave();
+      // didChangeAppLifecycleState is void — we can't await here.
+      // Hive keeps data in memory, so the write succeeds even if the OS
+      // suspends the process before the disk flush completes.
+      unawaited(_flushPendingAutoSave());
     }
   }
 
   /// Requests camera and microphone permissions while the loading screen is
   /// shown so the camera card never races with a permission dialog.
   Future<void> _requestInspectionPermissions() async {
-    if (!Platform.isIOS) return;
     final camStatus = await Permission.camera.status;
     if (!camStatus.isGranted &&
         !camStatus.isPermanentlyDenied &&
@@ -781,6 +788,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           itemRemarks = storedData.typedItemRemarks;
           _currentSection = storedData.currentSection;
           itemMultiImages = storedData.typedMultiImages;
+          itemFlaggedIssues = storedData.typedItemFlaggedIssues;
         });
         _initializeControllers();
       } else {
@@ -1291,7 +1299,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final uniqueId = _getItemUniqueId(item);
     final title = _getItemTitle(item);
     final allowImage = _itemHasImage(item);
-    final allowMultiImage = _itemHasMultiImage(item);
     final isRequired = _itemIsRequired(item);
     final referenceMedia = _getItemReferenceMedia(item);
     final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
@@ -1384,8 +1391,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if ((allowImage && !_isImageFieldType(item)) ||
-                            allowMultiImage)
+                        if (allowImage && !_isImageFieldType(item))
                           IconButton(
                             icon: const Icon(Icons.camera_alt, size: 22),
                             color: const Color(0xFF4D9EFF),
@@ -1394,13 +1400,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               minWidth: 36,
                               minHeight: 36,
                             ),
-                            onPressed: () {
-                              if (allowMultiImage) {
-                                _pickMultiImages(item);
-                              } else {
-                                _showImagePickerOptions(item);
-                              }
-                            },
+                            onPressed: () => _showImagePickerOptions(item),
                           ),
                         if (_itemHasVideo(item))
                           IconButton(
@@ -1514,9 +1514,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   );
                   if (mounted) {
                     setState(() => _uploadingImages.remove(uniqueId));
-                    if (result['success']) {
-                      setState(
-                          () => itemImages[uniqueId] = result['url'] as String);
+                    final url = result['url']?.toString();
+                    if (result['success'] == true && url != null && url.isNotEmpty) {
+                      setState(() => itemImages[uniqueId] = url);
                       await _saveDataLocally();
                     }
                   }
@@ -1528,6 +1528,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             ),
             const SizedBox(height: 8),
           ],
+
 
           // ── Full-width video card ───────────────────────────────
           if (_itemHasVideo(item) && itemVideos[uniqueId] == null) ...[
@@ -1601,79 +1602,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           child: _buildImageWidget(itemImages[uniqueId]!),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-                if (allowMultiImage &&
-                    itemMultiImages[uniqueId] != null &&
-                    itemMultiImages[uniqueId]!.isNotEmpty) ...[
-                  Text(
-                    'Captured Images:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 150,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: itemMultiImages[uniqueId]!.length,
-                      itemBuilder: (context, imgIndex) {
-                        final imagePath = itemMultiImages[uniqueId]![imgIndex];
-                        return Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          width: 150,
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: Colors.grey.shade300, width: 1),
-                          ),
-                          child: Stack(
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: SizedBox(
-                                  width: 150,
-                                  height: 150,
-                                  child: _buildImageWidget(imagePath,
-                                      fit: BoxFit.cover),
-                                ),
-                              ),
-                              Positioned(
-                                top: 4,
-                                right: 4,
-                                child: GestureDetector(
-                                  onTap: () {
-                                    final updatedPaths = List<String>.from(
-                                        itemMultiImages[uniqueId]!)
-                                      ..removeAt(imgIndex);
-                                    setState(() {
-                                      itemMultiImages[uniqueId] =
-                                          updatedPaths.isEmpty
-                                              ? null
-                                              : updatedPaths;
-                                    });
-                                    _autoSave();
-                                  },
-                                  child: Container(
-                                    decoration: const BoxDecoration(
-                                      color: Colors.white,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.cancel,
-                                        size: 18, color: Colors.red),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -1833,6 +1761,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             controller: textFieldControllers[uniqueId],
             decoration: inputDecoration,
             keyboardType: TextInputType.multiline,
+            minLines: _itemHasMultiImage(item) ? 4 : 1,
+            maxLines: _itemHasMultiImage(item) ? null : 1,
             onChanged: (value) {
               setState(() {
                 itemValues[uniqueId] = value;
@@ -1840,6 +1770,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               _autoSave();
             },
           ),
+        if (_itemHasMultiImage(item)) ...[
+          const SizedBox(height: 10),
+          _buildInlineMultiImageGallery(item, uniqueId),
+        ],
         if (!useTextField && _itemHasOptions(item))
           DropdownButtonFormField<String>(
             initialValue:
@@ -1882,6 +1816,31 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               _autoSave();
             },
           ),
+        if (_itemHasRemarks(item) && remarksControllers[uniqueId] != null) ...[
+          const SizedBox(height: 12),
+          Text(
+            'Remarks',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: remarksControllers[uniqueId],
+            decoration: inputDecoration.copyWith(
+              hintText: 'Add remarks...',
+            ),
+            keyboardType: TextInputType.multiline,
+            minLines: 2,
+            maxLines: null,
+            onChanged: (value) {
+              itemRemarks[uniqueId] = value;
+              _autoSave();
+            },
+          ),
+        ],
       ],
     );
   }
@@ -1918,6 +1877,226 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         );
       },
     );
+  }
+
+  Widget _buildInlineMultiImageGallery(dynamic item, String uniqueId) {
+    final images = itemMultiImages[uniqueId] ?? [];
+    const maxImages = 11;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Photos (${images.length}/$maxImages)',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).textTheme.bodyMedium?.color,
+              ),
+            ),
+            const Spacer(),
+            if (images.length < maxImages)
+              GestureDetector(
+                onTap: () => _pickMultiImagesForItem(item),
+                child: Row(
+                  children: [
+                    Icon(Icons.add_photo_alternate,
+                        size: 18, color: Theme.of(context).primaryColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Add Photos',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).primaryColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        if (images.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 80,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: images.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                final imagePath = images[index];
+                final isUploading = _uploadingMultiImagePaths.contains(imagePath);
+                return Stack(
+                  children: [
+                    GestureDetector(
+                      onTap: isUploading ? null : () => _showImagePreview(imagePath),
+                      child: Container(
+                        width: 70,
+                        height: 70,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: _buildImageWidget(imagePath),
+                        ),
+                      ),
+                    ),
+                    if (isUploading)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.45),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Center(
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (!isUploading)
+                      Positioned(
+                        top: 0,
+                        right: 0,
+                        child: GestureDetector(
+                          onTap: () {
+                            final updated = List<String>.from(images)
+                              ..removeAt(index);
+                            setState(() {
+                              itemMultiImages[uniqueId] =
+                                  updated.isEmpty ? null : updated;
+                            });
+                            _autoSave();
+                          },
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.cancel,
+                                size: 18, color: Colors.red),
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _pickMultiImagesForItem(dynamic item) async {
+    final uniqueId = _getItemUniqueId(item);
+    final fieldId = _getItemFieldId(item);
+    const maxImages = 11;
+    final current = itemMultiImages[uniqueId] ?? [];
+
+    if (current.length >= maxImages) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Maximum of 11 images already added'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    final hasPermission = await _ensureMediaPermission(
+      Permission.photos,
+      permissionName: 'Gallery',
+    );
+    if (!hasPermission) return;
+
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickMultiImage(imageQuality: 100);
+      if (picked.isEmpty || !mounted) return;
+
+      final remainingSlots = maxImages - current.length;
+      final toAdd = picked.take(remainingSlots).toList();
+
+      if (toAdd.length < picked.length && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Only ${toAdd.length} image(s) added. Maximum is $maxImages.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+
+      // Save locally and show in UI immediately
+      final savedPaths = <String>[];
+      for (final xFile in toAdd) {
+        final saved = await LocalStorageService.saveImage(xFile.path);
+        savedPaths.add(saved);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        itemMultiImages[uniqueId] = [...current, ...savedPaths];
+        _uploadingMultiImagePaths.addAll(savedPaths);
+      });
+      await _saveDataLocally();
+
+      // Upload each image immediately, replacing local path with URL on success
+      final sectionTitle = _sections[_currentSection]['title'] as String;
+      final hasInternet = await ConnectivityChecker.hasInternetConnection();
+
+      if (!hasInternet) {
+        if (mounted) {
+          setState(() => _uploadingMultiImagePaths.removeAll(savedPaths));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Images saved locally. Will upload when online.')),
+          );
+        }
+        return;
+      }
+
+      for (final savedPath in savedPaths) {
+        final result = await ApiService.uploadImage(
+          savedPath,
+          inspectionId: _effectiveInspectionId,
+          section: sectionTitle,
+          itemId: fieldId,
+        );
+        if (!mounted) return;
+
+        final url = result['url']?.toString();
+        setState(() {
+          _uploadingMultiImagePaths.remove(savedPath);
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            final imgs = List<String>.from(itemMultiImages[uniqueId] ?? []);
+            final idx = imgs.indexOf(savedPath);
+            if (idx != -1) imgs[idx] = url;
+            itemMultiImages[uniqueId] = imgs;
+          }
+        });
+      }
+      await _saveDataLocally();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to pick images: $e')),
+        );
+      }
+    }
   }
 
   Future<bool> _ensureMediaPermission(
@@ -1985,6 +2164,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final ImagePicker picker = ImagePicker();
       final XFile? image = await picker.pickImage(
         source: source,
+        imageQuality: 100,
       );
 
       if (image != null && mounted) {
@@ -2016,9 +2196,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               _uploadingImages.remove(uniqueId);
             });
 
-            if (result['success']) {
+            final url = result['url']?.toString();
+            if (result['success'] == true && url != null && url.isNotEmpty) {
               setState(() {
-                itemImages[uniqueId] = result['url'] as String;
+                itemImages[uniqueId] = url;
               });
               await _saveDataLocally();
             } else {
@@ -2049,95 +2230,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to pick image: $e')),
-        );
-      }
-    }
-  }
-
-  Future<void> _pickMultiImages(dynamic item) async {
-    final uniqueId = _getItemUniqueId(item);
-    final fieldId = _getItemFieldId(item);
-
-    try {
-      final hasGalleryPermission = await _ensureMediaPermission(
-        Permission.photos,
-        permissionName: 'Gallery',
-      );
-      if (!hasGalleryPermission) return;
-
-      final ImagePicker picker = ImagePicker();
-      final List<XFile> images = await picker.pickMultiImage();
-
-      if (images.isNotEmpty && mounted) {
-        final String sectionTitle =
-            _sections[_currentSection]['title'] as String;
-        final currentImages = itemMultiImages[uniqueId] ?? [];
-        final List<String> savedPaths = [];
-
-        for (var image in images) {
-          final savedPath = await LocalStorageService.saveImage(image.path);
-          savedPaths.add(savedPath);
-        }
-
-        final updatedPaths =
-            [...currentImages, ...savedPaths].take(11).toList();
-
-        setState(() {
-          itemMultiImages[uniqueId] = updatedPaths;
-          _uploadingImages.add(uniqueId);
-        });
-        if (mounted) _showFlagIssuesSheet(item);
-
-        await _saveDataLocally();
-
-        final bool hasInternet =
-            await ConnectivityChecker.hasInternetConnection();
-
-        if (hasInternet) {
-          final List<String> uploadedUrls = [];
-
-          for (int i = 0; i < updatedPaths.length; i++) {
-            final path = updatedPaths[i];
-            if (!path.startsWith('http')) {
-              final result = await ApiService.uploadImage(
-                path,
-                inspectionId: _effectiveInspectionId,
-                section: sectionTitle,
-                itemId: fieldId,
-              );
-
-              if (result['success']) {
-                uploadedUrls.add(result['url'] as String);
-              } else {
-                uploadedUrls.add(path);
-              }
-            } else {
-              uploadedUrls.add(path);
-            }
-          }
-
-          if (mounted) {
-            setState(() {
-              _uploadingImages.remove(uniqueId);
-              itemMultiImages[uniqueId] = uploadedUrls;
-            });
-            await _saveDataLocally();
-          }
-        } else {
-          if (mounted) {
-            setState(() {
-              _uploadingImages.remove(uniqueId);
-            });
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _uploadingImages.remove(uniqueId);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick images: $e')),
         );
       }
     }
@@ -2585,8 +2677,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (mounted) {
         setState(() => _uploadingImages.remove(uniqueId));
-        if (result['success']) {
-          setState(() => itemImages[uniqueId] = result['url'] as String);
+        final url = result['url']?.toString();
+        if (result['success'] == true && url != null && url.isNotEmpty) {
+          setState(() => itemImages[uniqueId] = url);
           await _saveDataLocally();
         }
       }
@@ -2643,8 +2736,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (mounted) {
         setState(() => _uploadingImages.remove(uniqueId));
-        if (result['success']) {
-          setState(() => itemVideos[uniqueId] = result['url'] as String);
+        final url = result['url']?.toString();
+        if (result['success'] == true && url != null && url.isNotEmpty) {
+          setState(() => itemVideos[uniqueId] = url);
           await _saveDataLocally();
         }
       }
@@ -2701,8 +2795,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (mounted) {
         setState(() => _uploadingImages.remove(uniqueId));
-        if (result['success']) {
-          setState(() => itemAudios[uniqueId] = result['url'] as String);
+        final url = result['url']?.toString();
+        if (result['success'] == true && url != null && url.isNotEmpty) {
+          setState(() => itemAudios[uniqueId] = url);
           await _saveDataLocally();
         }
       }
@@ -2768,9 +2863,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
       if (mounted) {
         setState(() => _uploadingImages.remove(uniqueId));
-        if (result['success'] == true) {
+        final url = result['url']?.toString();
+        if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemFiles[uniqueId] = json.encode({
-                'filePath': result['url'] as String,
+                'filePath': url,
                 'fileName': name ?? path.split('/').last,
                 'fileType': ext ?? '',
               }));
@@ -2817,6 +2913,56 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     return true;
   }
 
+  bool _checkCurrentItemRequired() {
+    final currentSection = _sections[_currentSection];
+    final items = currentSection['items'] as List<dynamic>;
+    if (items.isEmpty) return true;
+
+    final currentItem = items[_currentItemIndex];
+    if (!_itemIsRequired(currentItem)) return true;
+
+    final uniqueId = _getItemUniqueId(currentItem);
+    final title = _getItemTitle(currentItem);
+    final errors = <String>[];
+
+    if (_itemUsesTextField(currentItem)) {
+      final value = itemValues[uniqueId]?.trim() ?? '';
+      if (value.isEmpty) errors.add(title);
+    } else if (_itemHasOptions(currentItem)) {
+      final value = itemValues[uniqueId] ?? 'N/A';
+      if (value == 'N/A' || value.isEmpty) errors.add(title);
+    }
+
+    if (_itemHasImage(currentItem)) {
+      if (itemImages[uniqueId] == null || itemImages[uniqueId]!.isEmpty) {
+        errors.add('$title (image)');
+      }
+    }
+    if (_itemHasVideo(currentItem)) {
+      if (itemVideos[uniqueId] == null || itemVideos[uniqueId]!.isEmpty) {
+        errors.add('$title (video)');
+      }
+    }
+    if (_itemHasFile(currentItem)) {
+      if (itemFiles[uniqueId] == null || itemFiles[uniqueId]!.isEmpty) {
+        errors.add('$title (file)');
+      }
+    }
+
+    if (errors.isNotEmpty) {
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('"$title" is required and must be filled before proceeding'),
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return false;
+    }
+    return true;
+  }
+
   void _nextItem() {
     if (_isReviewingCapture) {
       setState(() {
@@ -2843,6 +2989,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       return;
     }
     if (!_checkCurrentItemFlagIssue()) return;
+    if (!_checkCurrentItemRequired()) return;
     setState(() => _highlightFlagIssues = false);
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
@@ -2860,6 +3007,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _currentCaptureMode = _defaultCaptureModeForItem(nextItem);
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
+        _triggerFlashToggle = null;
+        _cameraFlashOn = false;
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
@@ -2910,6 +3059,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _currentCaptureMode = _defaultCaptureModeForItem(prevItem);
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
+        _triggerFlashToggle = null;
+        _cameraFlashOn = false;
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
@@ -3030,6 +3181,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             : 'PHOTO';
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
+        _triggerFlashToggle = null;
+        _cameraFlashOn = false;
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
@@ -3103,7 +3256,30 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       for (var item in section['items'] as List<dynamic>) {
         final uniqueId = _getItemUniqueId(item);
         final title = _getItemTitle(item);
-        final value = itemValues[uniqueId] ?? '';
+        // Guard: 'flagged' without recorded issues means stale Hive data — clear it so the server's value wins.
+        String value = itemValues[uniqueId] ?? '';
+        if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
+          value = '';
+        } else if (value == 'flagged') {
+          // Map the selected issue label back to its option value for server submission.
+          final selectedLabel = itemFlaggedIssues[uniqueId]!.first;
+          String? optionValue;
+          if (item is Map) {
+            final opts = item['options'] as List?;
+            if (opts != null) {
+              for (final opt in opts) {
+                final lbl = opt['label']?.toString() ?? '';
+                final val = opt['value']?.toString() ?? '';
+                final label = lbl.isNotEmpty ? lbl : val;
+                if (label == selectedLabel) {
+                  optionValue = val.isNotEmpty ? val : label;
+                  break;
+                }
+              }
+            }
+          }
+          value = optionValue ?? selectedLabel;
+        }
         final remarks = itemRemarks[uniqueId];
         final imagePath = itemImages[uniqueId];
         final multiImages = itemMultiImages[uniqueId];
@@ -3201,8 +3377,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (mounted) {
             setState(() {
               _uploadingImages.remove(uniqueId);
-              if (result['success'] == true) {
-                itemImages[uniqueId] = result['url'] as String;
+              final url = result['url']?.toString();
+              if (result['success'] == true && url != null && url.isNotEmpty) {
+                itemImages[uniqueId] = url;
               }
             });
           }
@@ -3220,7 +3397,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 itemId: fieldId,
               );
               updated.add(
-                result['success'] == true ? result['url'] as String : path,
+                result['success'] == true
+                    ? (result['url']?.toString() ?? path)
+                    : path,
               );
             } else {
               updated.add(path);
@@ -3242,8 +3421,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (mounted) {
             setState(() {
               _uploadingImages.remove(uniqueId);
-              if (result['success'] == true) {
-                itemVideos[uniqueId] = result['url'] as String;
+              final url = result['url']?.toString();
+              if (result['success'] == true && url != null && url.isNotEmpty) {
+                itemVideos[uniqueId] = url;
               }
             });
           }
@@ -3262,8 +3442,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (mounted) {
             setState(() {
               _uploadingImages.remove(uniqueId);
-              if (result['success'] == true) {
-                itemAudios[uniqueId] = result['url'] as String;
+              final url = result['url']?.toString();
+              if (result['success'] == true && url != null && url.isNotEmpty) {
+                itemAudios[uniqueId] = url;
               }
             });
           }
@@ -3297,9 +3478,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             if (mounted) {
               setState(() {
                 _uploadingImages.remove(uniqueId);
-                if (result['success'] == true) {
+                final url = result['url']?.toString();
+                if (result['success'] == true && url != null && url.isNotEmpty) {
                   itemFiles[uniqueId] = json.encode({
-                    'filePath': result['url'] as String,
+                    'filePath': url,
                     'fileName': fileName ?? localPath!.split('/').last,
                     'fileType': fileType ?? '',
                   });
@@ -3721,6 +3903,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             showControls: false,
             onCaptureReady: (fn) => setState(() => _triggerPhotoCapture = fn),
             onEnlargeReady: (fn) => setState(() => _triggerEnlarge = fn),
+            onFlashReady: (fn) => setState(() => _triggerFlashToggle = fn),
             onPickFromGallery: () =>
                 _pickImage(ImageSource.gallery, uniqueId, fieldId),
             onCapture: (XFile file) {
@@ -3750,6 +3933,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             showControls: false,
             onRecordingToggleReady: (fn) =>
                 setState(() => _triggerVideoToggle = fn),
+            onFlashToggleReady: (fn) => setState(() => _triggerFlashToggle = fn),
             onRecordingChanged: (recording) =>
                 setState(() => _isVideoRecording = recording),
             onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
@@ -4016,6 +4200,32 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   ),
                 ),
 
+              // Enlarge button (PHOTO, camera active, top-right)
+              if (!hasCapturedPhoto && _currentCaptureMode == 'PHOTO')
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: GestureDetector(
+                    onTap: _triggerEnlarge,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Icon(
+                        Icons.open_in_full,
+                        color: _triggerEnlarge != null
+                            ? Colors.white70
+                            : Colors.white24,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+
               // Retake badge (PHOTO captured, top-right)
               if (hasCapturedPhoto && _currentCaptureMode == 'PHOTO')
                 Positioned(
@@ -4224,6 +4434,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               _currentCaptureMode = mode;
                               _triggerPhotoCapture = null;
                               _triggerEnlarge = null;
+                              _triggerFlashToggle = null;
+                              _cameraFlashOn = false;
                               _triggerVideoToggle = null;
                               _isVideoRecording = false;
                               _isRecordingAudio = false;
@@ -4407,24 +4619,38 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           ),
                         ),
 
-                      // Right slot: enlarge (PHOTO) or spacer
-                      if (_currentCaptureMode == 'PHOTO')
+                      // Right slot: flash (PHOTO / VIDEO) or spacer
+                      if (_currentCaptureMode == 'PHOTO' ||
+                          _currentCaptureMode == 'VIDEO')
                         GestureDetector(
-                          onTap: _triggerEnlarge,
+                          onTap: _triggerFlashToggle != null
+                              ? () {
+                                  _triggerFlashToggle!();
+                                  setState(() => _cameraFlashOn = !_cameraFlashOn);
+                                }
+                              : null,
                           child: Container(
                             width: 46,
                             height: 46,
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
+                              color: _cameraFlashOn
+                                  ? const Color(0xFFFFC107)
+                                  : Colors.white.withValues(alpha: 0.1),
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white24),
+                              border: Border.all(
+                                color: _cameraFlashOn
+                                    ? const Color(0xFFFFC107)
+                                    : Colors.white24,
+                              ),
                             ),
                             child: Icon(
-                              Icons.open_in_full,
-                              color: _triggerEnlarge != null
-                                  ? Colors.white70
-                                  : Colors.white24,
-                              size: 20,
+                              _cameraFlashOn ? Icons.flash_on : Icons.flash_off,
+                              color: _cameraFlashOn
+                                  ? Colors.black87
+                                  : (_triggerFlashToggle != null
+                                      ? Colors.white70
+                                      : Colors.white24),
+                              size: 22,
                             ),
                           ),
                         )
@@ -4723,6 +4949,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _isRecordingAudio = false;
       _triggerPhotoCapture = null;
       _triggerEnlarge = null;
+      _triggerFlashToggle = null;
+      _cameraFlashOn = false;
       _triggerVideoToggle = null;
       if (targetItem != null) {
         _currentCaptureMode = _defaultCaptureModeForItem(targetItem);
@@ -4791,14 +5019,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 sessionInspectionId: _sessionInspectionId,
               ),
             );
-      } catch (_) {
-        // ref was already invalidated; session data persisted to Hive via _flushPendingAutoSave.
+      } on StateError catch (_) {
+        // ref was already invalidated (Riverpod container disposed);
+        // session data persisted to Hive via _flushPendingAutoSave.
       }
     }
     _scrollController.dispose();
     _cleanupControllers();
     _isSubmitting = false;
     _audioTimer?.cancel();
+    if (_isRecordingAudio) {
+      _audioRecorder?.stop();
+    }
     _audioRecorder?.dispose();
     super.dispose();
   }

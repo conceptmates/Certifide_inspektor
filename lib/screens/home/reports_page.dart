@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/inspection_history_model.dart';
 import '../../models/local_inspection.dart';
@@ -10,7 +11,6 @@ import '../../services/api_services.dart';
 import '../../utils/loading_animation.dart';
 import '../../widgets/error_widget.dart';
 import 'car_spy/car_spy_data.dart';
-import 'inspection_webview_screen.dart';
 
 class ReportsPage extends ConsumerStatefulWidget {
   const ReportsPage({super.key});
@@ -105,11 +105,59 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     return DateFormat('MMM d, yyyy, h:mm a').format(date);
   }
 
+  Future<void> _launchURL(String url) async {
+    try {
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return const Center(child: LoadingAnimation());
+          },
+        );
+      }
+
+      final Uri uri = Uri.parse(url);
+
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      await _launchInBrowser(uri);
+    } catch (e) {
+      if (mounted && Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text('Error'),
+              content: Text(_getReadableErrorMessage(e)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    }
+  }
+
+  Future<void> _launchInBrowser(Uri url) async {
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch $url');
+    }
+  }
+
   Widget _buildHistoryCard(InspectionHistory inspection) {
     final vehicleInfo = inspection.vehicleInfo;
     final statusColor = _getStatusColor(inspection.status);
-    final canView = inspection.status == 'approved' &&
-        inspection.links != null &&
+    final canView = inspection.links != null &&
         inspection.links!['view'] != null;
 
     return Container(
@@ -132,17 +180,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
           borderRadius: BorderRadius.circular(20),
           splashColor: CarSpyColors.primary.withValues(alpha: 0.08),
           highlightColor: CarSpyColors.primary.withValues(alpha: 0.04),
-          onTap: canView
-              ? () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => InspectionWebViewScreen(
-                        url: inspection.links!['view']!,
-                        title: 'Inspection #${inspection.id}',
-                      ),
-                    ),
-                  )
-              : null,
+          onTap: null,
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -187,28 +225,17 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 _infoRow('Make & Model', vehicleInfo['make_model']),
                 _infoRow('Variant', vehicleInfo['variant']),
                 _infoRow('Year', vehicleInfo['manufacturing_year']),
-                _infoRow('Fuel', vehicleInfo['fuel_type']),
-                _infoRow('Inspector', inspection.inspectorName),
                 _infoRow('Date', _formatDate(inspection.date)),
                 if (canView) ...[
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 4),
                   Align(
                     alignment: Alignment.centerRight,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.visibility_outlined,
-                            size: 14, color: CarSpyColors.primary),
-                        const SizedBox(width: 4),
-                        Text(
-                          'View Report',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: CarSpyColors.primary,
-                          ),
-                        ),
-                      ],
+                    child: IconButton(
+                      onPressed: () => _launchURL(inspection.links!['view']!),
+                      icon: Icon(
+                        Icons.visibility_outlined,
+                        color: CarSpyColors.primary,
+                      ),
                     ),
                   ),
                 ],
@@ -270,7 +297,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     _safeSetState(() => _isLoadingMore = true);
 
     try {
-      final result = await ApiService.getInspectionHistory(
+      final result = await ApiService.getDynamicInspectionMyHistory(
         context,
         page: _paginationData.currentPage + 1,
       );
@@ -301,7 +328,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       _historyError = '';
     });
     try {
-      final result = await ApiService.getInspectionHistory(context, page: 1);
+      final result = await ApiService.getDynamicInspectionMyHistory(context, page: 1);
       if (_isCancelled) return;
       if (result['success']) {
         _safeSetState(() {
@@ -450,7 +477,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       color: CarSpyColors.primary,
       child: ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: EdgeInsets.fromLTRB(
+            16, 8, 16, MediaQuery.of(context).padding.bottom + 24),
         itemCount: _historyItems.length +
             (_isLoadingMore &&
                     _paginationData.currentPage < _paginationData.lastPage
@@ -515,6 +543,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                       ),
                     )
                   : ListView.builder(
+                      padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).padding.bottom + 16),
                       itemCount: provider.inspections.length,
                       itemBuilder: (context, index) {
                         final inspection = provider.inspections[index];
@@ -573,9 +603,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     );
     final isOnPendingTab = _tabController.index == 1;
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
+    return ColoredBox(
+      color: Colors.white,
+      child: SafeArea(
+        bottom: false,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -610,6 +641,16 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                                   .read(inspectionNotifierProvider.notifier)
                                   .loadInspections(),
                     ),
+                  if (!isOnPendingTab)
+                    IconButton(
+                      icon: Icon(
+                        Icons.refresh,
+                        color: _isHistoryLoading
+                            ? Colors.grey
+                            : CarSpyColors.primary,
+                      ),
+                      onPressed: _isHistoryLoading ? null : _loadHistory,
+                    ),
                 ],
               ),
             ),
@@ -638,3 +679,4 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     );
   }
 }
+

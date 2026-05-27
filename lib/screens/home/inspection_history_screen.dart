@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../models/inspection_history_model.dart';
 import '../../models/pagination_data_model.dart';
 import '../../services/api_services.dart';
 import '../../widgets/fade_animation.dart';
-import 'inspection_webview_screen.dart';
 import 'package:intl/intl.dart';
 
 class InspectionHistoryScreen extends StatefulWidget {
@@ -154,6 +154,17 @@ class _InspectionHistoryScreenState extends State<InspectionHistoryScreen> {
     }
   }
 
+  Future<void> _launchURL(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open report URL')),
+        );
+      }
+    }
+  }
+
   Widget _buildInspectionCard(InspectionHistory inspection) {
     final vehicleInfo = inspection.vehicleInfo;
     final registrationNumber = vehicleInfo['registration_number'] ?? 'N/A';
@@ -182,20 +193,7 @@ class _InspectionHistoryScreenState extends State<InspectionHistoryScreen> {
           borderRadius: BorderRadius.circular(20),
           child: InkWell(
             borderRadius: BorderRadius.circular(20),
-            onTap: () {
-              if (inspection.links != null &&
-                  inspection.links!['view'] != null) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => InspectionWebViewScreen(
-                      url: inspection.links!['view']!,
-                      title: 'Inspection #${inspection.id}',
-                    ),
-                  ),
-                );
-              }
-            },
+            onTap: null,
             child: Padding(
               padding: const EdgeInsets.all(20),
               child: Column(
@@ -312,13 +310,38 @@ class _InspectionHistoryScreenState extends State<InspectionHistoryScreen> {
                         color: Colors.grey[500],
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        inspection.inspectorName,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
+                      Expanded(
+                        child: Text(
+                          inspection.inspectorName,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[600],
+                          ),
                         ),
                       ),
+                      if (inspection.links != null &&
+                          inspection.links!['view'] != null)
+                        GestureDetector(
+                          onTap: () => _launchURL(inspection.links!['view']!),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1A73E8),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Text(
+                              'View Report',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ],

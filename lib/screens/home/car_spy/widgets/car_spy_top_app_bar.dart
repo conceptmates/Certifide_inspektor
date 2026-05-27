@@ -1,4 +1,4 @@
-import 'package:certifide_openapp/routes/routes.dart';
+import 'package:certifide_inspektor/routes/routes.dart';
 import 'package:flutter/material.dart';
 
 class CarSpyTopAppBar extends StatelessWidget implements PreferredSizeWidget {

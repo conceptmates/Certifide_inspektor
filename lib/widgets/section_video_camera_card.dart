@@ -22,6 +22,10 @@ class SectionVideoCameraCard extends StatefulWidget {
   /// Fired whenever the recording state changes (true = recording started).
   final void Function(bool isRecording)? onRecordingChanged;
 
+  /// Called once the camera is ready, passing a function that toggles the
+  /// torch flash. Only useful when [showControls] is false.
+  final void Function(VoidCallback toggleFlash)? onFlashToggleReady;
+
   const SectionVideoCameraCard({
     super.key,
     this.height = 220,
@@ -32,6 +36,7 @@ class SectionVideoCameraCard extends StatefulWidget {
     this.showControls = true,
     this.onRecordingToggleReady,
     this.onRecordingChanged,
+    this.onFlashToggleReady,
   });
 
   @override
@@ -49,15 +54,17 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
   bool _isInitializing = false;
+  bool _isDisposePending = false;
   bool _hasError = false;
   String _errorMessage = '';
   int _currentCameraIndex = 0;
 
   bool _isRecording = false;
   bool _isToggling = false;
+  bool _flashOn = false;
   Duration _elapsed = Duration.zero;
   Timer? _timer;
-  // Incremented on every inactive/paused transition to cancel in-flight inits.
+  // Incremented on every inactive/paused and widget-dispose to cancel in-flight inits.
   int _initGeneration = 0;
 
   @override
@@ -84,6 +91,11 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   }
 
   void _disposeController() {
+    if (_isInitializing) {
+      _isDisposePending = true;
+      return;
+    }
+    _isDisposePending = false;
     final controller = _controller;
     _controller = null;
     if (controller != null) {
@@ -230,19 +242,27 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
 
     try {
       await controller.initialize();
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-          _hasError = false;
-        });
-        widget.onRecordingToggleReady?.call(_toggleRecording);
+      if (_isDisposePending || !mounted || _controller != controller) {
+        _isDisposePending = false;
+        _pendingDisposal = controller.dispose();
+        _controller = null;
+        return false;
       }
+      setState(() {
+        _isInitialized = true;
+        _hasError = false;
+        _flashOn = false;
+      });
+      widget.onRecordingToggleReady?.call(_toggleRecording);
+      widget.onFlashToggleReady?.call(_toggleFlash);
       return true;
     } on CameraException {
+      _isDisposePending = false;
       _pendingDisposal = _controller?.dispose();
       _controller = null;
       return false;
     } catch (_) {
+      _isDisposePending = false;
       _pendingDisposal = _controller?.dispose();
       _controller = null;
       return false;
@@ -270,6 +290,15 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
       });
     }
     return status.isGranted;
+  }
+
+  Future<void> _toggleFlash() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    final next = _flashOn ? FlashMode.off : FlashMode.torch;
+    try {
+      await _controller!.setFlashMode(next);
+      if (mounted) setState(() => _flashOn = !_flashOn);
+    } catch (_) {}
   }
 
   Future<void> _toggleRecording() async {
@@ -384,6 +413,7 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _initGeneration++;
     _timer?.cancel();
     _disposeController();
     super.dispose();
@@ -591,26 +621,36 @@ class _SectionVideoCameraCardState extends State<SectionVideoCameraCard>
                     ),
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Expanded(
                         child: Align(
                           alignment: Alignment.centerRight,
                           child: Padding(
-                            padding: const EdgeInsets.only(bottom: 6, right: 6),
+                            padding: const EdgeInsets.only(right: 10),
                             child: widget.onPickFromGallery != null
                                 ? Tooltip(
                                     message: 'Pick video from gallery',
                                     child: _VideoActionButton(
                                       icon: Icons.video_library_outlined,
                                       onTap: widget.onPickFromGallery,
-                                      size: 44,
+                                      size: 40,
                                     ),
                                   )
-                                : const SizedBox(width: 44, height: 44),
+                                : const SizedBox(width: 40, height: 40),
                           ),
                         ),
                       ),
+                      Tooltip(
+                        message: _flashOn ? 'Turn flash off' : 'Turn flash on',
+                        child: _VideoActionButton(
+                          icon: _flashOn ? Icons.flash_on : Icons.flash_off,
+                          onTap: _isRecording ? null : _toggleFlash,
+                          size: 40,
+                          isActive: _flashOn,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
                       Tooltip(
                         message:
                             _isRecording ? 'Stop recording' : 'Start recording',
@@ -643,6 +683,7 @@ class _VideoActionButton extends StatelessWidget {
   final double size;
   final bool isPrimary;
   final bool isRecording;
+  final bool isActive;
 
   const _VideoActionButton({
     required this.icon,
@@ -650,6 +691,7 @@ class _VideoActionButton extends StatelessWidget {
     this.size = 32,
     this.isPrimary = false,
     this.isRecording = false,
+    this.isActive = false,
   });
 
   @override
@@ -659,6 +701,9 @@ class _VideoActionButton extends StatelessWidget {
     if (isPrimary) {
       bgColor = isRecording ? Colors.red : Colors.white.withAlpha(230);
       iconColor = isRecording ? Colors.white : Colors.black87;
+    } else if (isActive) {
+      bgColor = const Color(0xFFFFC107);
+      iconColor = Colors.black87;
     } else {
       bgColor = Colors.black.withAlpha(120);
       iconColor = Colors.white;

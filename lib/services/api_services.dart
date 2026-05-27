@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../models/inspection_history_model.dart';
+import '../models/inspection_stats_model.dart';
 import '../models/inspection_template_model.dart';
 import '../models/inspector.dart';
 import '../models/pagination_data_model.dart';
@@ -19,19 +20,20 @@ import '../screens/auth/login_page.dart';
 class ApiService {
   // static const String baseUrl = 'https://api.estelledarcy.com/api';
   static const String baseUrl = 'https://api.certifide.in/api';
+  static const Duration _requestTimeout = Duration(seconds: 30);
 
   static final _storage = FlutterSecureStorage();
 
   static const String loginEndpoint = '/auth/login';
   static const String registerEndpoint = '/auth/register';
-  static const String refreshTokenEndpoint = 'auth/refresh';
+  static const String refreshTokenEndpoint = '/auth/refresh';
   static const String profileEndPoint = '/auth/me';
   static const String getInspectorEndPoint = '/tokens/inspectors';
   static const String allocateTokensEndPoint = '/tokens/allocate';
   static const String sendDataEndPoint = '/inspections';
   static const String uploadImageEndPoint = '/inspection/upload-image';
   static const String getBalanceTokensEndPoint = '/tokens/balance';
-  static const String getHistoryEndPoint = '/inspections';
+  static const String getHistoryEndPoint = '/dynamic-inspections';
   static const String initialInspectionEndPoint = '/inspections/initial';
   static const String initializeInspectionEndPoint = '/inspections/initialize';
   static const String initializeDynamicInspectionEndPoint =
@@ -42,6 +44,9 @@ class ApiService {
   static const String userCarsEndPoint = '/cars/old';
   static const String carFiltersEndpoint = '/cars/filters';
   static const String vehicleDetailsEndPoint = '/ulip/vehicle-details';
+  static const String getDynamicMyHistoryEndPoint =
+      '/dynamic-inspections/my-history';
+  static const String inspectionStatsEndPoint = '/dynamic-inspections/stats';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -52,7 +57,7 @@ class ApiService {
         Uri.parse('$baseUrl$initialInspectionEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(vehicleData),
-      );
+      ).timeout(_requestTimeout);
 
       log('Initial inspection response status: ${response.statusCode}');
       if (kDebugMode) log('Initial inspection response body: ${response.body}');
@@ -117,7 +122,7 @@ class ApiService {
         Uri.parse('$baseUrl$initializeDynamicInspectionEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(body),
-      );
+      ).timeout(_requestTimeout);
 
       log('Initialize inspection response status: ${response.statusCode}');
       if (kDebugMode) log('Initialize inspection response body: ${response.body}');
@@ -212,6 +217,10 @@ class ApiService {
           }
           // Get new token after refresh
           final newToken = await _storage.read(key: 'jwt_token');
+          if (newToken == null) {
+            await _storage.deleteAll();
+            throw UnauthorizedException('Token missing after refresh');
+          }
           headers['Authorization'] = 'Bearer $newToken';
         } else {
           headers['Authorization'] = 'Bearer $token';
@@ -225,8 +234,12 @@ class ApiService {
   static Future<String?> getUserId() async {
     final userData = await _storage.read(key: 'user_data');
     if (userData != null) {
-      final user = json.decode(userData);
-      return user['id'].toString();
+      try {
+        final user = json.decode(userData);
+        return user['id']?.toString();
+      } catch (e) {
+        log('getUserId: malformed user_data in storage — $e');
+      }
     }
     return null;
   }
@@ -241,7 +254,7 @@ class ApiService {
           'email': email,
           'password': password,
         }),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -301,7 +314,7 @@ class ApiService {
           'password': password,
           'password_confirmation': passwordConfirmation,
         }),
-      );
+      ).timeout(_requestTimeout);
 
       final responseData = json.decode(response.body);
 
@@ -342,7 +355,7 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$baseUrl$refreshTokenEndpoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -383,7 +396,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$profileEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       return response.statusCode == 200;
     } catch (e) {
@@ -413,7 +426,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$profileEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -460,14 +473,14 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$getInspectorEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
 
-        if (responseData['status'] == 'success' &&
-            responseData['data'] != null) {
-          List<Inspector> inspectors = (responseData['data'] as List)
+        final rawData = responseData['data'];
+        if (responseData['status'] == 'success' && rawData is List) {
+          List<Inspector> inspectors = rawData
               .map((inspectorData) => Inspector.fromJson(inspectorData))
               .toList();
 
@@ -503,7 +516,7 @@ class ApiService {
           'user_id': userId,
           'tokens': tokens,
         }),
-      );
+      ).timeout(_requestTimeout);
 
       final responseData = json.decode(response.body);
 
@@ -545,7 +558,7 @@ class ApiService {
         Uri.parse('$baseUrl$endpoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(inspectionData),
-      );
+      ).timeout(_requestTimeout);
 
       log('Inspection submission response status: ${response.statusCode}');
       if (kDebugMode) log('Inspection submission response body: ${response.body}');
@@ -621,6 +634,9 @@ class ApiService {
       }
 
       final newToken = await _storage.read(key: 'jwt_token');
+      if (newToken == null) {
+        return {'success': false, 'message': 'Session expired. Please login again.'};
+      }
 
       final request = http.MultipartRequest(
         'POST',
@@ -664,11 +680,17 @@ class ApiService {
             responseData['filePath'];
 
         if (responseData['status'] == 'success' && mediaPath != null) {
-          log('Upload successful. URL: ${mediaPath['url']}');
+          final String? url = mediaPath is Map
+              ? mediaPath['url']?.toString()
+              : mediaPath?.toString();
+          final String? path = mediaPath is Map
+              ? mediaPath['path']?.toString()
+              : null;
+          log('Upload successful. URL: $url');
           return {
             'success': true,
-            'url': mediaPath['url'],
-            'path': mediaPath['path'],
+            'url': url,
+            'path': path,
             'message': responseData['message'] ?? 'Uploaded successfully',
           };
         } else {
@@ -677,6 +699,13 @@ class ApiService {
             'message': responseData['message'] ?? 'Failed to upload',
           };
         }
+      } else if (response.statusCode == 401) {
+        final refreshResult = await refreshToken();
+        if (!refreshResult['success']) {
+          await _storage.deleteAll();
+          return {'success': false, 'message': 'Session expired. Please login again.'};
+        }
+        return {'success': false, 'message': 'Authentication refreshed — please retry upload.'};
       } else {
         log('Error response: $responseBody');
         return {
@@ -712,7 +741,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$getBalanceTokensEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -747,20 +776,32 @@ class ApiService {
       {int page = 1}) async {
     try {
       final response = await http.get(
-        Uri.parse(
-            '$baseUrl$getHistoryEndPoint?page=$page'), // Add page parameter
+        Uri.parse('$baseUrl$getHistoryEndPoint?page=$page'),
         headers: await _getHeaders(requiresAuth: true),
-      );
-      log('Response status: ${response.statusCode} ${response.body}');
+      ).timeout(_requestTimeout);
+      log('getInspectionHistory status: ${response.statusCode}');
+      log('getInspectionHistory body: ${response.body}');
+
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
 
         if (responseData['status'] == 'success') {
           final data = responseData['data'];
-          final inspections = (data['inspections'] as List)
+          final rawList = data['inspections'] ?? data['data'] ?? [];
+          if (rawList is! List) {
+            return {'success': false, 'message': 'Unexpected response shape'};
+          }
+          final inspections = rawList
               .map((item) => InspectionHistory.fromJson(item))
               .toList();
-          final pagination = PaginationData.fromJson(data['pagination']);
+          final pagination = data['pagination'] != null
+              ? PaginationData.fromJson(data['pagination'])
+              : PaginationData(
+                  currentPage: data['current_page'] ?? 1,
+                  lastPage: data['last_page'] ?? 1,
+                  perPage: data['per_page'] ?? 10,
+                  total: data['total'] ?? 0,
+                );
 
           return {
             'success': true,
@@ -781,6 +822,79 @@ class ApiService {
         'success': false,
         'message': _handleError(response),
       };
+    } on UnauthorizedException {
+      await handleUnauthorizedResponse(context);
+      return {
+        'success': false,
+        'message': 'Session expired. Please login again.',
+      };
+    } catch (e) {
+      log('getInspectionHistory error: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  static Future<Map<String, dynamic>> getDynamicInspectionMyHistory(
+      BuildContext context,
+      {int page = 1}) async {
+    final url = '$baseUrl$getDynamicMyHistoryEndPoint?page=$page';
+    try {
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: await _getHeaders(requiresAuth: true),
+          )
+          .timeout(_requestTimeout);
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+
+        if (responseData['status'] == 'success') {
+          final data = responseData['data'];
+          final rawList = data['inspections'] ?? data['data'] ?? [];
+          if (rawList is! List) {
+            return {'success': false, 'message': 'Unexpected response shape'};
+          }
+          final inspections = rawList
+              .map((item) => InspectionHistory.fromJson(item))
+              .toList();
+          final pagination = data['pagination'] != null
+              ? PaginationData.fromJson(data['pagination'])
+              : PaginationData(
+                  currentPage: data['current_page'] ?? 1,
+                  lastPage: data['last_page'] ?? 1,
+                  perPage: data['per_page'] ?? 10,
+                  total: data['total'] ?? 0,
+                );
+
+          return {
+            'success': true,
+            'inspections': inspections,
+            'pagination': pagination,
+            'message': 'History retrieved successfully',
+          };
+        }
+      } else if (response.statusCode == 401) {
+        await handleUnauthorizedResponse(context);
+        return {
+          'success': false,
+          'message': 'Unauthorized access',
+        };
+      }
+
+      return {
+        'success': false,
+        'message': _handleError(response),
+      };
+    } on UnauthorizedException {
+      await handleUnauthorizedResponse(context);
+      return {
+        'success': false,
+        'message': 'Session expired. Please login again.',
+      };
     } catch (e) {
       return {
         'success': false,
@@ -796,7 +910,7 @@ class ApiService {
       final response = await http.post(
         Uri.parse('$baseUrl/inspections/$inspectionId/approve-api'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
@@ -826,7 +940,7 @@ class ApiService {
         Uri.parse('$baseUrl$submitDynamicInspectionEndPoint'),
         headers: await _getHeaders(requiresAuth: true),
         body: json.encode(body),
-      );
+      ).timeout(_requestTimeout);
 
       log('Submit inspection response status: ${response.statusCode}');
       if (kDebugMode) log('Submit inspection response body: ${response.body}');
@@ -899,7 +1013,7 @@ class ApiService {
       final response = await http.get(
         Uri.parse('$baseUrl$getModelsEndpoint'),
         headers: await _getHeaders(requiresAuth: true),
-      );
+      ).timeout(_requestTimeout);
 
       log('Get models response status: ${response.statusCode}');
       log('Get models response body: ${response.body}');
@@ -1014,7 +1128,7 @@ class ApiService {
       final response = await http.get(
         uri,
         headers: await _getHeaders(requiresAuth: false),
-      );
+      ).timeout(_requestTimeout);
 
       log('Car filters status: ${response.statusCode}');
 
@@ -1098,7 +1212,7 @@ class ApiService {
       final response = await http.get(
         uri,
         headers: await _getHeaders(requiresAuth: false),
-      );
+      ).timeout(_requestTimeout);
 
       log('New cars status: ${response.statusCode}');
 
@@ -1184,7 +1298,7 @@ class ApiService {
       final response = await http.get(
         uri,
         headers: await _getHeaders(requiresAuth: false),
-      );
+      ).timeout(_requestTimeout);
 
       log('Used cars status: ${response.statusCode}');
 
@@ -1212,6 +1326,48 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> getInspectionStats({
+    String period = 'daily',
+    String? from,
+    String? to,
+    String? status,
+    int? userId,
+  }) async {
+    try {
+      final params = <String, String>{'period': period};
+      if (from != null) params['from'] = from;
+      if (to != null) params['to'] = to;
+      if (status != null) params['status'] = status;
+      if (userId != null) params['user_id'] = userId.toString();
+
+      final uri = Uri.parse('$baseUrl$inspectionStatsEndPoint')
+          .replace(queryParameters: params);
+
+      final response = await http.get(
+        uri,
+        headers: await _getHeaders(requiresAuth: true),
+      ).timeout(_requestTimeout);
+
+      if (response.statusCode == 200) {
+        final responseData =
+            json.decode(response.body) as Map<String, dynamic>;
+        if (responseData['status'] == 'success') {
+          return {
+            'success': true,
+            'data': InspectionStats.fromJson(responseData),
+          };
+        }
+      } else if (response.statusCode == 401) {
+        return {'success': false, 'message': 'Unauthorized'};
+      }
+
+      return {'success': false, 'message': _handleError(response)};
+    } catch (e) {
+      log('getInspectionStats error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
   static Future<Map<String, dynamic>> getVehicleDetails({
     required String vehicleNumber,
   }) async {
@@ -1224,7 +1380,7 @@ class ApiService {
         body: json.encode({
           'vehiclenumber': vehicleNumber,
         }),
-      );
+      ).timeout(_requestTimeout);
 
       log('Vehicle details response status: ${response.statusCode}');
       log('Vehicle details response body: ${response.body}');

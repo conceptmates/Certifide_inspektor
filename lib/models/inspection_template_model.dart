@@ -105,6 +105,7 @@ class InspectionField {
   final bool hasImage;
   final bool hasVideo;
   final bool hasFile;
+  final bool hasMultipleImages;
   final int order;
   final Map<String, dynamic>? metadata;
   final List<DropdownOption> options;
@@ -120,6 +121,7 @@ class InspectionField {
     required this.hasImage,
     required this.hasVideo,
     required this.hasFile,
+    required this.hasMultipleImages,
     required this.order,
     this.metadata,
     required this.options,
@@ -137,6 +139,7 @@ class InspectionField {
       hasImage: json['has_image'] ?? false,
       hasVideo: json['has_video'] ?? false,
       hasFile: json['has_file'] ?? false,
+      hasMultipleImages: json['has_multiple_images'] ?? false,
       order: json['order'] ?? 0,
       metadata: json['metadata'],
       options: (json['options'] as List<dynamic>?)
@@ -161,6 +164,7 @@ class InspectionField {
       'has_image': hasImage,
       'has_video': hasVideo,
       'has_file': hasFile,
+      'has_multiple_images': hasMultipleImages,
       'order': order,
       'metadata': metadata,
       'options': options.map((e) => e.toJson()).toList(),

@@ -187,11 +187,11 @@ class InspectionSuccessPage extends StatelessWidget {
                             borderRadius: BorderRadius.circular(16),
                           ),
                         ),
-                        onPressed: () => _launchUrl(context),
+                        onPressed: () => _goToHomePage(context),
                         icon:
-                            const Icon(Icons.open_in_new, color: Colors.white),
+                            const Icon(Icons.home_outlined, color: Colors.white),
                         label: const Text(
-                          'View Report',
+                          'Go to Homepage',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -215,10 +215,10 @@ class InspectionSuccessPage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      onPressed: () => _goToHomePage(context),
-                      icon: const Icon(Icons.home_outlined),
+                      onPressed: () => _launchUrl(context),
+                      icon: const Icon(Icons.open_in_new),
                       label: const Text(
-                        'Go to Homepage',
+                        'View Report',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

@@ -1,14 +1,18 @@
 import 'dart:convert';
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
+import '../../models/inspection_stats_model.dart';
 import '../../providers/inspection_provider.dart';
+import '../../providers/stats_provider.dart';
 import '../../routes/routes.dart';
 import '../../widgets/fade_animation.dart';
 
@@ -322,6 +326,315 @@ class _MainContentState extends ConsumerState<MainContent>
     );
   }
 
+  // ── Stats helpers ────────────────────────────────────────────────────
+
+  Widget _buildStatsSection(AsyncValue<InspectionStats?> statsAsync) {
+    return statsAsync.when(
+      data: (stats) {
+        if (stats == null || stats.totals.total == 0) return const SizedBox.shrink();
+        final active = stats.activeBuckets;
+        if (active.isEmpty) return const SizedBox.shrink();
+
+        final monthLabel = DateFormat('MMMM yyyy').format(
+          DateFormat('yyyy-MM-dd').parse(stats.from),
+        );
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 28),
+          child: Container(
+            decoration: BoxDecoration(
+              color: _cardBg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Inspection Activity',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: _textPrimary,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    Text(
+                      monthLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: _textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildTotalsRow(stats.totals),
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 160,
+                  child: _buildBarChart(active),
+                ),
+                const SizedBox(height: 12),
+                _buildChartLegend(),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const Padding(
+        padding: EdgeInsets.only(bottom: 28),
+        child: SizedBox(
+          height: 60,
+          child: Center(
+            child: SizedBox(
+              width: 24,
+              height: 24,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        ),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildTotalsRow(InspectionStatsTotals totals) {
+    return Row(
+      children: [
+        _buildStatChip('Total', totals.total, const Color(0xFF64748B),
+            const Color(0xFFF1F5F9)),
+        const SizedBox(width: 8),
+        _buildStatChip('Approved', totals.approved, const Color(0xFF16A34A),
+            const Color(0xFFF0FDF4)),
+        const SizedBox(width: 8),
+        _buildStatChip('Pending', totals.pending, const Color(0xFFD97706),
+            const Color(0xFFFFFBEB)),
+        const SizedBox(width: 8),
+        _buildStatChip('Rejected', totals.rejected, const Color(0xFFDC2626),
+            const Color(0xFFFEF2F2)),
+      ],
+    );
+  }
+
+  Widget _buildStatChip(String label, int value, Color fg, Color bg) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '$value',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w500,
+                color: fg.withValues(alpha: 0.8),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBarChart(List<InspectionStatsBucket> buckets) {
+    final maxY = buckets
+            .map((b) => b.total)
+            .reduce((a, b) => a > b ? a : b)
+            .toDouble() *
+        1.25;
+
+    final barGroups = buckets.asMap().entries.map((e) {
+      final i = e.key;
+      final b = e.value;
+      final approvedY = b.approved.toDouble();
+      final pendingY = approvedY + b.pending;
+      final totalY = b.total.toDouble();
+
+      return BarChartGroupData(
+        x: i,
+        barRods: [
+          BarChartRodData(
+            toY: totalY,
+            color: Colors.transparent,
+            width: 14,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+            rodStackItems: [
+              if (b.approved > 0)
+                BarChartRodStackItem(0, approvedY, const Color(0xFF22C55E)),
+              if (b.pending > 0)
+                BarChartRodStackItem(
+                    approvedY, pendingY, const Color(0xFFF59E0B)),
+              if (b.rejected > 0)
+                BarChartRodStackItem(
+                    pendingY, totalY, const Color(0xFFEF4444)),
+              // fallback single-color when only one category
+              if (b.approved == 0 && b.pending == 0 && b.rejected == 0)
+                BarChartRodStackItem(0, totalY, const Color(0xFF94A3B8)),
+            ],
+          ),
+        ],
+      );
+    }).toList();
+
+    return BarChart(
+      BarChartData(
+        maxY: maxY,
+        barGroups: barGroups,
+        alignment: BarChartAlignment.spaceAround,
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: maxY / 4,
+          getDrawingHorizontalLine: (_) => FlLine(
+            color: const Color(0xFFE2E8F0),
+            strokeWidth: 1,
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 28,
+              interval: maxY / 4,
+              getTitlesWidget: (value, _) => Text(
+                value.toInt().toString(),
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: _textSecondary,
+                ),
+              ),
+            ),
+          ),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 22,
+              getTitlesWidget: (value, _) {
+                final idx = value.toInt();
+                if (idx < 0 || idx >= buckets.length) return const SizedBox();
+                final parts = buckets[idx].bucket.split('-');
+                final day = parts.length == 3 ? parts[2] : '';
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    day,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: _textSecondary,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipItem: (group, _, rod, __) {
+              final b = buckets[group.x];
+              return BarTooltipItem(
+                '${b.bucket.substring(5)}\n',
+                const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+                children: [
+                  TextSpan(
+                      text: 'Total: ${b.total}\n',
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.normal)),
+                  if (b.approved > 0)
+                    TextSpan(
+                        text: 'Approved: ${b.approved}\n',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF86EFAC),
+                            fontWeight: FontWeight.normal)),
+                  if (b.pending > 0)
+                    TextSpan(
+                        text: 'Pending: ${b.pending}\n',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFFFCD34D),
+                            fontWeight: FontWeight.normal)),
+                  if (b.rejected > 0)
+                    TextSpan(
+                        text: 'Rejected: ${b.rejected}',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFFFCA5A5),
+                            fontWeight: FontWeight.normal)),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChartLegend() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _legendDot('Approved', const Color(0xFF22C55E)),
+        const SizedBox(width: 16),
+        _legendDot('Pending', const Color(0xFFF59E0B)),
+        const SizedBox(width: 16),
+        _legendDot('Rejected', const Color(0xFFEF4444)),
+      ],
+    );
+  }
+
+  Widget _legendDot(String label, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: _textSecondary),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -613,9 +926,15 @@ class _MainContentState extends ConsumerState<MainContent>
 
               const SizedBox(height: 28),
 
-              // ── Section heading ──────────────────────────────────────
+              // ── Inspection Activity Chart ────────────────────────────
               FadeAnimation(
                 1.5,
+                _buildStatsSection(ref.watch(inspectionStatsProvider)),
+              ),
+
+              // ── Section heading ──────────────────────────────────────
+              FadeAnimation(
+                1.7,
                 const Padding(
                   padding: EdgeInsets.only(bottom: 14),
                   child: Text(
@@ -632,7 +951,7 @@ class _MainContentState extends ConsumerState<MainContent>
 
               // ── Action Cards ─────────────────────────────────────────
               FadeAnimation(
-                1.6,
+                1.8,
                 Column(
                   children: [
                     _buildQuickActionCard(

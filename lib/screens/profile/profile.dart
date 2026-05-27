@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive/hive.dart';
 import 'dart:convert';
-import 'package:intl/intl.dart';
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
 import '../../routes/routes.dart';
@@ -17,8 +16,7 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage>
-    with TickerProviderStateMixin {
+class _ProfilePageState extends State<ProfilePage> {
   final _storage = const FlutterSecureStorage();
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
@@ -45,17 +43,13 @@ class _ProfilePageState extends State<ProfilePage>
       }
 
       final lastUpdateStr = await _storage.read(key: 'last_profile_update');
-      final shouldRefresh = _shouldRefreshData(lastUpdateStr);
-
-      if (shouldRefresh) {
+      if (_shouldRefreshData(lastUpdateStr)) {
         if (!mounted) return;
         final result = await ApiService.getProfile(context);
         if (!mounted) return;
 
         if (result['success']) {
-          setState(() {
-            _userData = result['data']['user'];
-          });
+          setState(() => _userData = result['data']['user']);
           await _storage.write(
             key: 'last_profile_update',
             value: DateTime.now().toIso8601String(),
@@ -71,31 +65,27 @@ class _ProfilePageState extends State<ProfilePage>
         ),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   bool _shouldRefreshData(String? lastUpdateStr) {
     if (lastUpdateStr == null) return true;
     try {
-      final lastUpdate = DateTime.parse(lastUpdateStr);
-      final now = DateTime.now();
-      return now.difference(lastUpdate).inHours >= 1;
-    } catch (e) {
+      return DateTime.now()
+              .difference(DateTime.parse(lastUpdateStr))
+              .inHours >=
+          1;
+    } catch (_) {
       return true;
     }
   }
 
-  String _formatDate(String? dateStr) {
-    if (dateStr == null) return 'N/A';
-    try {
-      final date = DateTime.parse(dateStr);
-      return DateFormat('MMM dd, yyyy').format(date);
-    } catch (e) {
-      return 'N/A';
-    }
+  String _getRoleLabel() {
+    final roles = _userData?['roles'] as List?;
+    if (roles == null || roles.isEmpty) return 'Inspector';
+    final name = roles.first['name'] as String? ?? 'inspector';
+    return name[0].toUpperCase() + name.substring(1);
   }
 
   Future<void> _showLogoutDialog(BuildContext context) async {
@@ -105,7 +95,8 @@ class _ProfilePageState extends State<ProfilePage>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Confirm Logout',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to logout of your account?'),
+        content:
+            const Text('Are you sure you want to logout of your account?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -131,10 +122,14 @@ class _ProfilePageState extends State<ProfilePage>
 
       final inspectionBox = Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)
           ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX)
-          : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
-      final historyBox = Hive.isBoxOpen(HiveConstants.INSPECTION_HISTORY_BOX)
-          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX)
-          : await Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX);
+          : await Hive.openBox<InspectionStorageModel>(
+              HiveConstants.INSPECTION_BOX);
+      final historyBox =
+          Hive.isBoxOpen(HiveConstants.INSPECTION_HISTORY_BOX)
+              ? Hive.box<InspectionStorageModel>(
+                  HiveConstants.INSPECTION_HISTORY_BOX)
+              : await Hive.openBox<InspectionStorageModel>(
+                  HiveConstants.INSPECTION_HISTORY_BOX);
       await inspectionBox.clear();
       await historyBox.clear();
 
@@ -144,353 +139,314 @@ class _ProfilePageState extends State<ProfilePage>
     }
   }
 
-  Widget _buildProfileHeader() {
-    return FlexibleSpaceBar(
-      background: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF2563EB), // Sleeker top color
-              CarSpyColors.primary,
-            ],
+  Widget _buildCard({required List<Widget> children}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Stack(
-                alignment: Alignment.bottomRight,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.15),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    child: CircleAvatar(
-                      radius: 50,
-                      backgroundColor: Colors.white,
-                      child: Text(
-                        _userData?['name']?.substring(0, 1).toUpperCase() ??
-                            'U',
-                        style: const TextStyle(
-                          fontSize: 36,
-                          fontWeight: FontWeight.w800,
-                          color: CarSpyColors.primary,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _userData?['name'] ?? 'Loading...',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  _userData?['email'] ?? 'Fetching email...',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
+      child: Column(children: children),
     );
   }
 
-  Widget _buildStatCard(
-      {required IconData icon, required String label, required String value}) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: CarSpyColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(icon, color: CarSpyColors.primary, size: 22),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: CarSpyColors.onSurface,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSettingsGroup(
-      {required String title, required List<Widget> children}) {
+  Widget _buildInfoRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    bool isLast = false,
+  }) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 16, bottom: 8, top: 24),
-          child: Text(
-            title.toUpperCase(),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: Colors.grey.shade500,
-              letterSpacing: 1.2,
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: CarSpyColors.primary),
+              const SizedBox(width: 14),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const Spacer(),
+              Flexible(
+                child: Text(
+                  value,
+                  textAlign: TextAlign.end,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: CarSpyColors.onSurface,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
-          child: Column(
-            children: children,
-          ),
         ),
+        if (!isLast) Divider(height: 1, indent: 50, color: Colors.grey.shade100),
       ],
     );
   }
 
-  Widget _buildListTile({
+  Widget _buildMenuTile({
     required IconData icon,
     required String title,
-    String? subtitle,
     Color? iconColor,
     Color? textColor,
-    bool showTrailing = true,
     VoidCallback? onTap,
+    bool isLast = false,
   }) {
-    return ListTile(
-      onTap: onTap,
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: (iconColor ?? CarSpyColors.primary).withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
+    final color = iconColor ?? CarSpyColors.primary;
+    return Column(
+      children: [
+        ListTile(
+          onTap: onTap,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: textColor ?? CarSpyColors.onSurface,
+            ),
+          ),
+          trailing: Icon(Icons.arrow_forward_ios_rounded,
+              size: 14, color: Colors.grey.shade400),
         ),
-        child: Icon(icon, color: iconColor ?? CarSpyColors.primary, size: 20),
-      ),
-      title: Text(
+        if (!isLast)
+          Divider(height: 1, indent: 70, color: Colors.grey.shade100),
+      ],
+    );
+  }
+
+  Widget _buildSectionLabel(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8, top: 24),
+      child: Text(
         title,
         style: TextStyle(
-          fontWeight: FontWeight.w600,
-          fontSize: 16,
-          color: textColor ?? CarSpyColors.onSurface,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Colors.grey.shade500,
+          letterSpacing: 0.8,
         ),
       ),
-      subtitle: subtitle != null
-          ? Text(subtitle,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600))
-          : null,
-      trailing: showTrailing
-          ? Icon(Icons.arrow_forward_ios_rounded,
-              size: 16, color: Colors.grey.shade400)
-          : null,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final name = _userData?['name'] ?? '—';
+    final email = _userData?['email'] ?? '—';
+    final initials = name.isNotEmpty ? name[0].toUpperCase() : 'U';
+
     return Scaffold(
-      backgroundColor:
-          const Color(0xFFF8FAFC), // A slightly off-white modern background
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        automaticallyImplyLeading: false,
+        title: const Text(
+          'Profile',
+          style: TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: CarSpyColors.onSurface,
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).pop(),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  shape: BoxShape.circle,
+                ),
+                child:
+                    Icon(Icons.close, color: Colors.grey.shade600, size: 18),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(color: CarSpyColors.primary))
-          : CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  expandedHeight: 260.0,
-                  floating: false,
-                  pinned: true,
-                  automaticallyImplyLeading: false,
-                  backgroundColor: CarSpyColors.primary,
-                  elevation: 0,
-                  actions: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: GestureDetector(
-                        onTap: () => Navigator.of(context).pop(),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.close, color: Colors.white, size: 20),
-                        ),
-                      ),
-                    ),
-                  ],
-                  flexibleSpace: _buildProfileHeader(),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 24),
+          : SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 32),
+
+                  // Avatar + Name + Role badge
+                  Center(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Stats Row
-                        Row(
-                          children: [
-                            _buildStatCard(
-                              icon: Icons.calendar_today_rounded,
-                              label: 'Member Since',
-                              value: _formatDate(_userData?['created_at']),
-                            ),
-                            const SizedBox(width: 16),
-                            _buildStatCard(
-                              icon: Icons.verified_rounded,
-                              label: 'Status',
-                              value: 'Active',
-                            ),
-                          ],
-                        ),
-
-                        // General Settings Group
-                        _buildSettingsGroup(
-                          title: 'General',
-                          children: [
-                            _buildListTile(
-                              icon: Icons.person_outline_rounded,
-                              title: 'Personal Information',
-                              subtitle: 'Update your name and details',
-                              onTap: () {
-                                // Add navigation later
-                              },
-                            ),
-                            Divider(
-                                height: 1,
-                                indent: 60,
-                                color: Colors.grey.shade200),
-                            _buildListTile(
-                              icon: Icons.shield_outlined,
-                              title: 'Security & Password',
-                              subtitle: 'Manage your credentials',
-                              onTap: () {},
-                            ),
-                          ],
-                        ),
-
-                        // Support & About Group
-                        _buildSettingsGroup(
-                          title: 'Support',
-                          children: [
-                            _buildListTile(
-                              icon: Icons.help_outline_rounded,
-                              title: 'Help Center',
-                              onTap: () {},
-                            ),
-                            Divider(
-                                height: 1,
-                                indent: 60,
-                                color: Colors.grey.shade200),
-                            _buildListTile(
-                              icon: Icons.info_outline_rounded,
-                              title: 'About App',
-                              onTap: () {},
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 32),
-
-                        // Logout Button (Styled as a cleaner card)
                         Container(
                           decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: Colors.red.shade100),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    CarSpyColors.primary.withValues(alpha: 0.25),
+                                blurRadius: 24,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
                           ),
-                          child: _buildListTile(
-                            icon: Icons.logout_rounded,
-                            title: 'Log Out',
-                            iconColor: Colors.red,
-                            textColor: Colors.red,
-                            showTrailing: false,
-                            onTap: () => _showLogoutDialog(context),
+                          child: CircleAvatar(
+                            radius: 46,
+                            backgroundColor: CarSpyColors.primary,
+                            child: Text(
+                              initials,
+                              style: const TextStyle(
+                                fontSize: 36,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
                         ),
-
-                        const SizedBox(height: 40), // Bottom padding
+                        const SizedBox(height: 16),
+                        Text(
+                          name,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w700,
+                            color: CarSpyColors.onSurface,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: CarSpyColors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            _getRoleLabel(),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: CarSpyColors.primary,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                ),
-              ],
+
+                  // Account info
+                  _buildSectionLabel('ACCOUNT'),
+                  _buildCard(children: [
+                    _buildInfoRow(
+                      icon: Icons.mail_outline_rounded,
+                      label: 'Email',
+                      value: email,
+                    ),
+                    _buildInfoRow(
+                      icon: Icons.verified_rounded,
+                      label: 'Status',
+                      value: 'Active',
+                      isLast: true,
+                    ),
+                  ]),
+
+                  // Settings
+                  _buildSectionLabel('SETTINGS'),
+                  _buildCard(children: [
+                    _buildMenuTile(
+                      icon: Icons.person_outline_rounded,
+                      title: 'Personal Information',
+                      onTap: () {},
+                    ),
+                    _buildMenuTile(
+                      icon: Icons.shield_outlined,
+                      title: 'Security & Password',
+                      isLast: true,
+                      onTap: () {},
+                    ),
+                  ]),
+
+                  // Support
+                  _buildSectionLabel('SUPPORT'),
+                  _buildCard(children: [
+                    _buildMenuTile(
+                      icon: Icons.help_outline_rounded,
+                      title: 'Help Center',
+                      onTap: () {},
+                    ),
+                    _buildMenuTile(
+                      icon: Icons.info_outline_rounded,
+                      title: 'About App',
+                      isLast: true,
+                      onTap: () {},
+                    ),
+                  ]),
+
+                  const SizedBox(height: 24),
+
+                  // Logout
+                  _buildCard(children: [
+                    ListTile(
+                      onTap: () => _showLogoutDialog(context),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 2),
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.red.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.logout_rounded,
+                            color: Colors.red, size: 20),
+                      ),
+                      title: const Text(
+                        'Log Out',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                  ]),
+
+                  const SizedBox(height: 48),
+                ],
+              ),
             ),
     );
   }

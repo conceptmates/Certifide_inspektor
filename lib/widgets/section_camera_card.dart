@@ -32,6 +32,13 @@ class SectionCameraCard extends StatefulWidget {
   /// the fullscreen preview. Only useful when [showControls] is false.
   final void Function(VoidCallback enlarge)? onEnlargeReady;
 
+  /// Called once the camera is initialized, passing a function that cycles
+  /// flash mode. Only useful when [showControls] is false.
+  final void Function(VoidCallback toggleFlash)? onFlashReady;
+
+  /// Called whenever the flash mode changes so the parent can update its UI.
+  final void Function(FlashMode mode)? onFlashModeChanged;
+
   const SectionCameraCard({
     super.key,
     this.height = 220,
@@ -42,6 +49,8 @@ class SectionCameraCard extends StatefulWidget {
     this.showControls = true,
     this.onCaptureReady,
     this.onEnlargeReady,
+    this.onFlashReady,
+    this.onFlashModeChanged,
   });
 
   @override
@@ -59,11 +68,18 @@ class _SectionCameraCardState extends State<SectionCameraCard>
   List<CameraDescription>? _cameras;
   bool _isInitialized = false;
   bool _isInitializing = false;
+  // When dispose() is called while _isInitializing, we can't safely call
+  // controller.dispose() yet — doing so while initialize() is in-flight causes
+  // "CameraController used after being disposed" unhandled exceptions from the
+  // platform channel callback. Set this flag instead and let _tryStartCamera
+  // do the actual disposal once initialize() resolves.
+  bool _isDisposePending = false;
   bool _hasError = false;
   String _errorMessage = '';
   bool _isCapturing = false;
   int _currentCameraIndex = 0;
-  // Incremented on every inactive/paused transition to cancel in-flight inits.
+  FlashMode _flashMode = FlashMode.off;
+  // Incremented on every inactive/paused and widget-dispose to cancel in-flight inits.
   int _initGeneration = 0;
 
   @override
@@ -93,6 +109,14 @@ class _SectionCameraCardState extends State<SectionCameraCard>
   }
 
   void _disposeController() {
+    if (_isInitializing) {
+      // Defer: calling controller.dispose() while initialize() is in-flight
+      // causes an unhandled platform-channel callback to fire on the disposed
+      // controller. Mark the flag and let _tryStartCamera dispose it after init.
+      _isDisposePending = true;
+      return;
+    }
+    _isDisposePending = false;
     final controller = _controller;
     _controller = null;
     if (controller != null) {
@@ -240,21 +264,29 @@ class _SectionCameraCardState extends State<SectionCameraCard>
 
     try {
       await controller.initialize();
-      if (mounted) {
-        setState(() {
-          _isInitialized = true;
-          _hasError = false;
-        });
-        widget.onCaptureReady?.call(_captureImage);
-        widget.onEnlargeReady?.call(_openFullscreenPreview);
+      // If a dispose() arrived while we were awaiting init, honour it now that
+      // the platform callback has completed (so no "used after disposed" crash).
+      if (_isDisposePending || !mounted || _controller != controller) {
+        _isDisposePending = false;
+        _pendingDisposal = controller.dispose();
+        _controller = null;
+        return false;
       }
+      setState(() {
+        _isInitialized = true;
+        _hasError = false;
+      });
+      widget.onCaptureReady?.call(_captureImage);
+      widget.onEnlargeReady?.call(_openFullscreenPreview);
+      widget.onFlashReady?.call(_toggleFlash);
       return true;
     } on CameraException {
-      // Keep _controller set so the retry loop's disposal path picks it up.
+      _isDisposePending = false;
       _pendingDisposal = _controller?.dispose();
       _controller = null;
       return false;
     } catch (_) {
+      _isDisposePending = false;
       _pendingDisposal = _controller?.dispose();
       _controller = null;
       return false;
@@ -298,6 +330,19 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     }
   }
 
+  Future<void> _toggleFlash() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    final next =
+        _flashMode == FlashMode.off ? FlashMode.torch : FlashMode.off;
+    try {
+      await _controller!.setFlashMode(next);
+      if (mounted) {
+        setState(() => _flashMode = next);
+        widget.onFlashModeChanged?.call(next);
+      }
+    } catch (_) {}
+  }
+
   void _openFullscreenPreview() {
     if (_controller == null || !_controller!.value.isInitialized) return;
 
@@ -317,6 +362,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _initGeneration++; // Invalidate any in-flight _initCamera call
     _disposeController();
     super.dispose();
   }
