@@ -236,8 +236,6 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                         Icons.visibility_outlined,
                         color: CarSpyColors.primary,
                       ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
                     ),
                   ),
                 ],
