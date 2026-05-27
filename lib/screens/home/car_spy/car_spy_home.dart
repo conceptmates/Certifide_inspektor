@@ -409,11 +409,9 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
     if (useApiData) {
       if (isDaily && dailyStats != null) {
         final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
-        todayCount = dailyStats.buckets
-                .where((b) => b.bucket == todayStr)
-                .firstOrNull
-                ?.total ??
-            0;
+        final todayBuckets =
+            dailyStats.buckets.where((b) => b.bucket == todayStr);
+        todayCount = todayBuckets.isEmpty ? 0 : todayBuckets.first.total;
         totalCount = dailyStats.totals.total;
         secondStatLabel = 'This Month';
       } else if (!isDaily && monthlyStats != null) {

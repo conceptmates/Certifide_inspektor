@@ -58,7 +58,11 @@ NEW_VERSION="$NEW_VERSION_NAME+$NEW_BUILD_NUMBER"
 echo "🏷️  New full version: $NEW_VERSION"
 
 # Update pubspec.yaml with new version
-sed -i '' "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
+if [ "$(uname)" = "Darwin" ]; then
+  sed -i '' "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
+else
+  sed -i "s/^version: .*/version: $NEW_VERSION/" pubspec.yaml
+fi
 echo "✅ Updated pubspec.yaml"
 
 echo ""

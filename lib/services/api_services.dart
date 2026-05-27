@@ -788,7 +788,10 @@ class ApiService {
         if (responseData['status'] == 'success') {
           final data = responseData['data'];
           final rawList = data['inspections'] ?? data['data'] ?? [];
-          final inspections = (rawList as List)
+          if (rawList is! List) {
+            return {'success': false, 'message': 'Unexpected response shape'};
+          }
+          final inspections = rawList
               .map((item) => InspectionHistory.fromJson(item))
               .toList();
           final pagination = data['pagination'] != null
@@ -852,7 +855,10 @@ class ApiService {
         if (responseData['status'] == 'success') {
           final data = responseData['data'];
           final rawList = data['inspections'] ?? data['data'] ?? [];
-          final inspections = (rawList as List)
+          if (rawList is! List) {
+            return {'success': false, 'message': 'Unexpected response shape'};
+          }
+          final inspections = rawList
               .map((item) => InspectionHistory.fromJson(item))
               .toList();
           final pagination = data['pagination'] != null
