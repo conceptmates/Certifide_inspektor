@@ -37,7 +37,7 @@ class LocalStorageService {
     await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
   }
 
-  static Future<String> saveImage(String filePath) async {
+  static Future<String> saveImage(String filePath, {int rotateAngle = 0}) async {
     try {
       final File imageFile = File(filePath);
 
@@ -50,8 +50,6 @@ class LocalStorageService {
       final String imagesDir = '${appDir.path}/$IMAGES_DIR';
       await Directory(imagesDir).create(recursive: true);
 
-      // Bake EXIF orientation into pixels so the stored file displays correctly
-      // in whatever orientation it was captured (landscape or portrait).
       final String finalPath = '$imagesDir/${const Uuid().v4()}.jpg';
       final result = await FlutterImageCompress.compressAndGetFile(
         filePath,
@@ -59,6 +57,7 @@ class LocalStorageService {
         quality: 100,
         autoCorrectionAngle: true,
         keepExif: false,
+        rotate: rotateAngle,
       );
       // Fall back to copying the raw file if compression fails.
       if (result == null) {
@@ -68,6 +67,24 @@ class LocalStorageService {
       return finalPath;
     } catch (e) {
       print('Error saving image: $e');
+      rethrow;
+    }
+  }
+
+  static Future<String> saveVideo(String filePath, {int rotateAngle = 0}) async {
+    try {
+      final File videoFile = File(filePath);
+      if (!videoFile.existsSync()) throw Exception('File not found');
+
+      final Directory appDir = await getApplicationDocumentsDirectory();
+      final String videosDir = '${appDir.path}/inspection_videos';
+      await Directory(videosDir).create(recursive: true);
+
+      final String finalPath = '$videosDir/${const Uuid().v4()}.mp4';
+      await videoFile.copy(finalPath);
+      return finalPath;
+    } catch (e) {
+      print('Error saving video: $e');
       rethrow;
     }
   }

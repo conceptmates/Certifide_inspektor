@@ -5,12 +5,14 @@ import 'package:video_player/video_player.dart';
 
 class InspectionVideoPlayer extends StatefulWidget {
   final String videoPath;
+  final int rotationQuarterTurns;
   final VoidCallback onReRecord;
   final VoidCallback onDiscard;
 
   const InspectionVideoPlayer({
     super.key,
     required this.videoPath,
+    this.rotationQuarterTurns = 0,
     required this.onReRecord,
     required this.onDiscard,
   });
@@ -122,7 +124,7 @@ class _InspectionVideoPlayerState extends State<InspectionVideoPlayer> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        Chewie(controller: _chewieController!),
+        RotatedBox(quarterTurns: widget.rotationQuarterTurns, child: Chewie(controller: _chewieController!)),
         Positioned(
           top: 12,
           right: 12,

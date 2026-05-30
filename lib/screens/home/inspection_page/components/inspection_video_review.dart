@@ -8,7 +8,7 @@ class InspectionVideoReview extends StatefulWidget {
   final String fieldTitle;
   final String mediaLabel;
   final VoidCallback onRetake;
-  final VoidCallback onUseMedia;
+  final void Function(int quarterTurns) onUseMedia;
 
   const InspectionVideoReview({
     super.key,
@@ -28,6 +28,7 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
   ChewieController? _chewieController;
   bool _isInitialized = false;
   String? _error;
+  int _quarterTurns = 0;
 
   @override
   void initState() {
@@ -65,30 +66,38 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
     super.dispose();
   }
 
+  Widget _buildPlayer() {
+    if (_error != null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, color: Colors.white54, size: 48),
+            const SizedBox(height: 12),
+            Text(
+              'Could not load ${widget.mediaLabel.toLowerCase()}',
+              style: const TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+          ],
+        ),
+      );
+    }
+    if (!_isInitialized) {
+      return const Center(child: CircularProgressIndicator(color: Colors.white70));
+    }
+    return RotatedBox(
+      quarterTurns: _quarterTurns,
+      child: Chewie(controller: _chewieController!),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       fit: StackFit.expand,
       children: [
         Container(color: Colors.black),
-        if (_error != null)
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.error_outline, color: Colors.white54, size: 48),
-                const SizedBox(height: 12),
-                Text(
-                  'Could not load ${widget.mediaLabel.toLowerCase()}',
-                  style: const TextStyle(color: Colors.white54, fontSize: 14),
-                ),
-              ],
-            ),
-          )
-        else if (!_isInitialized)
-          const Center(child: CircularProgressIndicator(color: Colors.white70))
-        else
-          Chewie(controller: _chewieController!),
+        _buildPlayer(),
         // Top gradient
         Positioned(
           top: 0, left: 0, right: 0,
@@ -107,7 +116,7 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
         Positioned(
           bottom: 0, left: 0, right: 0,
           child: Container(
-            height: 180,
+            height: 220,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.bottomCenter,
@@ -135,41 +144,74 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
             ],
           ),
         ),
-        // Retake / Use buttons
+        // Rotate button + Retake / Use buttons
         Positioned(
           bottom: 16, left: 16, right: 16,
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white38),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              // Rotate button
+              GestureDetector(
+                onTap: () => setState(() => _quarterTurns = (_quarterTurns + 1) % 4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white30),
                   ),
-                  onPressed: widget.onRetake,
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Retake', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.rotate_right, color: Colors.white, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Rotate',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4D9EFF),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white38),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: widget.onRetake,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Retake', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    ),
                   ),
-                  onPressed: widget.onUseMedia,
-                  icon: const Icon(Icons.check, size: 18),
-                  label: Text(
-                    'Use ${widget.mediaLabel}',
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4D9EFF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => widget.onUseMedia(_quarterTurns),
+                      icon: const Icon(Icons.check, size: 18),
+                      label: Text(
+                        'Use ${widget.mediaLabel}',
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
             ],
           ),

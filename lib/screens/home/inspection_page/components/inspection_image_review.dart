@@ -1,12 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 
-class InspectionImageReview extends StatelessWidget {
+class InspectionImageReview extends StatefulWidget {
   final String capturedImagePath;
   final String fieldTitle;
   final List<Map<String, dynamic>> referenceMedia;
   final VoidCallback onRetake;
-  final VoidCallback onUsePhoto;
+  final void Function(int quarterTurns) onUsePhoto;
 
   const InspectionImageReview({
     super.key,
@@ -17,19 +17,27 @@ class InspectionImageReview extends StatelessWidget {
     required this.onUsePhoto,
   });
 
+  @override
+  State<InspectionImageReview> createState() => _InspectionImageReviewState();
+}
+
+class _InspectionImageReviewState extends State<InspectionImageReview> {
+  int _quarterTurns = 0;
+
   Widget _buildImage() {
-    if (capturedImagePath.startsWith('http')) {
-      return Image.network(capturedImagePath,
-          fit: BoxFit.cover, width: double.infinity, height: double.infinity);
-    }
-    return Image.file(File(capturedImagePath),
-        fit: BoxFit.cover, width: double.infinity, height: double.infinity);
+    final image = widget.capturedImagePath.startsWith('http')
+        ? Image.network(widget.capturedImagePath,
+            fit: BoxFit.contain, width: double.infinity, height: double.infinity)
+        : Image.file(File(widget.capturedImagePath),
+            fit: BoxFit.contain, width: double.infinity, height: double.infinity);
+
+    return RotatedBox(quarterTurns: _quarterTurns, child: image);
   }
 
   @override
   Widget build(BuildContext context) {
-    final refUrl = referenceMedia.isNotEmpty
-        ? (referenceMedia.first['url'] as String? ?? '')
+    final refUrl = widget.referenceMedia.isNotEmpty
+        ? (widget.referenceMedia.first['url'] as String? ?? '')
         : '';
 
     return Stack(
@@ -42,7 +50,6 @@ class InspectionImageReview extends StatelessWidget {
           left: 0,
           right: 0,
           child: Container(
-            
             height: 120,
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -62,7 +69,7 @@ class InspectionImageReview extends StatelessWidget {
           left: 0,
           right: 0,
           child: Container(
-            height: 180,
+            height: 220,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.bottomCenter,
@@ -75,7 +82,7 @@ class InspectionImageReview extends StatelessWidget {
             ),
           ),
         ),
-        // "Does this look right?" header
+        // Header
         Positioned(
           top: 16,
           left: 16,
@@ -103,7 +110,7 @@ class InspectionImageReview extends StatelessWidget {
             ],
           ),
         ),
-        // Reference thumbnail (top-left, below header)
+        // Reference thumbnail
         if (refUrl.isNotEmpty)
           Positioned(
             top: 80,
@@ -128,46 +135,80 @@ class InspectionImageReview extends StatelessWidget {
               ),
             ),
           ),
-        // Retake / Use Photo buttons
+        // Rotate button + Retake / Use Photo buttons
         Positioned(
           bottom: 16,
           left: 16,
           right: 16,
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    side: const BorderSide(color: Colors.white38),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+              // Rotate button
+              GestureDetector(
+                onTap: () => setState(() => _quarterTurns = (_quarterTurns + 1) % 4),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white30),
                   ),
-                  onPressed: onRetake,
-                  icon: const Icon(Icons.refresh, size: 18),
-                  label: const Text('Retake',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.rotate_right, color: Colors.white, size: 20),
+                      SizedBox(width: 8),
+                      Text(
+                        'Rotate',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4D9EFF),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
+              const SizedBox(height: 12),
+              // Retake / Use Photo
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white38),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: widget.onRetake,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Retake',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600)),
+                    ),
                   ),
-                  onPressed: onUsePhoto,
-                  icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Use Photo',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4D9EFF),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onPressed: () => widget.onUsePhoto(_quarterTurns),
+                      icon: const Icon(Icons.check, size: 18),
+                      label: const Text('Use Photo',
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

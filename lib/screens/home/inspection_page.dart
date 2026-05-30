@@ -119,6 +119,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   int _currentItemIndex = 0;
   Map<String, String?> itemImages = {};
   Map<String, String?> itemVideos = {};
+  Map<String, int> itemVideoRotations = {};
   Map<String, String?> itemAudios = {};
   Map<String, String?> itemFiles = {};
   Map<String, String> itemRemarks = {};
@@ -2638,7 +2639,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     );
   }
 
-  Future<void> _acceptCapturedImage() async {
+  Future<void> _acceptCapturedImage(int quarterTurns) async {
     final file = _pendingCapturedXFile;
     final uniqueId = _pendingCapturedUniqueId;
     if (file == null || uniqueId == null) return;
@@ -2653,7 +2654,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         as List<dynamic>)[_currentItemIndex];
     final fieldId = _getItemFieldId(item);
     final sectionTitle = _sections[_currentSection]['title'] as String;
-    final savedPath = await LocalStorageService.saveImage(file.path);
+    final savedPath = await LocalStorageService.saveImage(file.path, rotateAngle: quarterTurns * 90);
     unawaited(LocalStorageService.saveMediaToUserStorage(
       savedPath,
       MediaType.image,
@@ -2688,7 +2689,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
-  Future<void> _acceptCapturedVideo() async {
+  Future<void> _acceptCapturedVideo(int quarterTurns) async {
     final file = _pendingCapturedVideoFile;
     final uniqueId = _pendingCapturedVideoUniqueId;
     if (file == null || uniqueId == null) return;
@@ -2708,8 +2709,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       if (sectionTitle.isNotEmpty) break;
     }
 
-    unawaited(LocalStorageService.saveMediaToUserStorage(
+    final savedPath = await LocalStorageService.saveVideo(
       file.path,
+      rotateAngle: quarterTurns * 90,
+    );
+
+    unawaited(LocalStorageService.saveMediaToUserStorage(
+      savedPath,
       MediaType.video,
       inspectionId: _folderLabelForStorage,
     ));
@@ -2718,7 +2724,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _isReviewingVideo = false;
       _pendingCapturedVideoFile = null;
       _pendingCapturedVideoUniqueId = null;
-      itemVideos[uniqueId] = file.path;
+      itemVideos[uniqueId] = savedPath;
+      itemVideoRotations[uniqueId] = quarterTurns;
       _uploadingImages.add(uniqueId);
     });
     if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
@@ -2728,7 +2735,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
     if (hasInternet && sectionTitle.isNotEmpty) {
       final result = await ApiService.uploadImage(
-        file.path,
+        savedPath,
         inspectionId: _effectiveInspectionId,
         section: sectionTitle,
         itemId: fieldId,
@@ -3921,6 +3928,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         captureArea = InspectionVideoPlayer(
           key: ValueKey('vplay_$uniqueId'),
           videoPath: itemVideos[uniqueId]!,
+          rotationQuarterTurns: itemVideoRotations[uniqueId] ?? 0,
           onReRecord: () => _showVideoPickerOptions(item),
           onDiscard: () => _discardAllMedia(item),
         );
@@ -4831,7 +4839,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               _pendingCapturedVideoUniqueId = null;
                             });
                           },
-                          onUseMedia: _acceptCapturedVideo,
+                          onUseMedia: (int quarterTurns) => _acceptCapturedVideo(quarterTurns),
                         )
                       : _isReviewingAudio && _pendingCapturedAudioPath != null
                           ? InspectionVideoReview(
@@ -4847,7 +4855,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                   _pendingCapturedAudioUniqueId = null;
                                 });
                               },
-                              onUseMedia: _acceptCapturedAudio,
+                              onUseMedia: (_) => _acceptCapturedAudio(),
                             )
                           : _isReviewingCapture && _pendingCapturedXFile != null
                               ? InspectionImageReview(
@@ -4866,7 +4874,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                       _pendingCapturedUniqueId = null;
                                     });
                                   },
-                                  onUsePhoto: _acceptCapturedImage,
+                                  onUsePhoto: (int quarterTurns) => _acceptCapturedImage(quarterTurns),
                                 )
                               : currentItem != null &&
                                       (_itemHasImage(currentItem) ||
