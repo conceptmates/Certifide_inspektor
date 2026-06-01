@@ -1456,7 +1456,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               minWidth: 36,
                               minHeight: 36,
                             ),
-                            onPressed: () => _showFlagIssuesSheet(item),
+                            onPressed: () => _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true),
                           ),
                       ],
                     ),
@@ -1502,7 +1502,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   itemImages[uniqueId] = savedPath;
                   _uploadingImages.add(uniqueId);
                 });
-                if (mounted) _showFlagIssuesSheet(item);
+                if (mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
                 await _saveDataLocally();
                 final bool hasInternet =
                     await ConnectivityChecker.hasInternetConnection();
@@ -2202,7 +2202,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           itemImages[uniqueId] = savedPath;
           _uploadingImages.add(uniqueId);
         });
-        if (item != null && mounted) _showFlagIssuesSheet(item);
+        if (item != null && mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
 
         await _saveDataLocally();
 
@@ -2690,7 +2690,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       itemImages[uniqueId] = savedPath;
       _uploadingImages.add(uniqueId);
     });
-    if (mounted) _showFlagIssuesSheet(item);
+    if (mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
     await _saveDataLocally();
 
     final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
@@ -2753,7 +2753,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       itemVideoRotations[uniqueId] = quarterTurns;
       _uploadingImages.add(uniqueId);
     });
-    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
     await _saveDataLocally();
 
@@ -2812,7 +2812,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       itemAudios[uniqueId] = path;
       _uploadingImages.add(uniqueId);
     });
-    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
     await _saveDataLocally();
 
@@ -2880,7 +2880,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       itemFiles[uniqueId] = payload;
       _uploadingImages.add(uniqueId);
     });
-    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
     await _saveDataLocally();
 
@@ -3673,7 +3673,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     );
   }
 
-  void _showFlagIssuesSheet(dynamic item) {
+  void _showFlagIssuesSheet(dynamic item, {bool autoAdvanceOnConfirm = false}) {
     final uniqueId = _getItemUniqueId(item);
     final sectionTitle = _sections[_currentSection]['title'] as String;
     final currentIssues = itemFlaggedIssues[uniqueId] ?? [];
@@ -3740,6 +3740,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               }
             });
             _autoSave();
+            if (autoAdvanceOnConfirm) {
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (mounted) _nextItem();
+              });
+            }
           },
         ),
       ),
@@ -4344,7 +4349,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => _showFlagIssuesSheet(item),
+                        onTap: () => _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
@@ -4379,7 +4384,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     GestureDetector(
                       onTap: () {
                         setState(() => _highlightFlagIssues = false);
-                        _showFlagIssuesSheet(item);
+                        _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
