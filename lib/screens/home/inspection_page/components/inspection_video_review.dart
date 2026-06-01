@@ -36,6 +36,19 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
     _initPlayer();
   }
 
+  @override
+  void didUpdateWidget(InspectionVideoReview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.capturedMediaPath != widget.capturedMediaPath) {
+      _quarterTurns = 0;
+      _isInitialized = false;
+      _error = null;
+      _chewieController?.dispose();
+      _videoController.dispose();
+      _initPlayer();
+    }
+  }
+
   Future<void> _initPlayer() async {
     try {
       _videoController = VideoPlayerController.file(File(widget.capturedMediaPath));

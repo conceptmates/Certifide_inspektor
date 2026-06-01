@@ -24,6 +24,14 @@ class InspectionImageReview extends StatefulWidget {
 class _InspectionImageReviewState extends State<InspectionImageReview> {
   int _quarterTurns = 0;
 
+  @override
+  void didUpdateWidget(InspectionImageReview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.capturedImagePath != widget.capturedImagePath) {
+      _quarterTurns = 0;
+    }
+  }
+
   Widget _buildImage() {
     final image = widget.capturedImagePath.startsWith('http')
         ? Image.network(widget.capturedImagePath,

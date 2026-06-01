@@ -1803,11 +1803,36 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             ),
             items: ((item['options'] as List?) ?? [])
-                .map((opt) => DropdownMenuItem<String>(
-                      value: (opt['value'] ?? '').toString(),
-                      child:
-                          Text((opt['label'] ?? opt['value'] ?? '').toString()),
-                    ))
+                .map((opt) {
+                  final colorCodeStr = (opt['colorCode'] ?? '').toString();
+                  Color? optionColor;
+                  if (colorCodeStr.startsWith('#') &&
+                      colorCodeStr.length >= 7) {
+                    final hex = colorCodeStr.replaceFirst('#', '');
+                    optionColor =
+                        Color(int.parse('FF$hex', radix: 16));
+                  }
+                  return DropdownMenuItem<String>(
+                    value: (opt['value'] ?? '').toString(),
+                    child: Row(
+                      children: [
+                        if (optionColor != null) ...[
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: optionColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Text(
+                            (opt['label'] ?? opt['value'] ?? '').toString()),
+                      ],
+                    ),
+                  );
+                })
                 .toList(),
             onChanged: (value) {
               if (value == null) return;
@@ -4827,6 +4852,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     )
                   : _isReviewingVideo && _pendingCapturedVideoFile != null
                       ? InspectionVideoReview(
+                          key: ValueKey(_pendingCapturedVideoFile!.path),
                           capturedMediaPath: _pendingCapturedVideoFile!.path,
                           fieldTitle: currentItem != null
                               ? _getItemTitle(currentItem)
@@ -4843,6 +4869,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         )
                       : _isReviewingAudio && _pendingCapturedAudioPath != null
                           ? InspectionVideoReview(
+                              key: ValueKey(_pendingCapturedAudioPath!),
                               capturedMediaPath: _pendingCapturedAudioPath!,
                               fieldTitle: currentItem != null
                                   ? _getItemTitle(currentItem)
@@ -4859,6 +4886,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             )
                           : _isReviewingCapture && _pendingCapturedXFile != null
                               ? InspectionImageReview(
+                                  key: ValueKey(_pendingCapturedXFile!.path),
                                   capturedImagePath:
                                       _pendingCapturedXFile!.path,
                                   fieldTitle: currentItem != null
