@@ -3834,6 +3834,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   }
 
   Widget _buildDarkNavBar(List<dynamic> items) {
+    if (_isReviewingCapture ||
+        _isReviewingVideo ||
+        _isReviewingAudio ||
+        _isReviewingFile) {
+      return const SizedBox.shrink();
+    }
+
     final canGoPrevious =
         !_isSubmitting && (_currentItemIndex > 0 || _currentSection > 0);
     final canGoNext = !_isSubmitting && items.isNotEmpty;
