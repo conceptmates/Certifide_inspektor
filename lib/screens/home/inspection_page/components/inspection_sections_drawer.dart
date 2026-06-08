@@ -6,6 +6,7 @@ class InspectionSectionsDrawer extends StatefulWidget {
     required this.sections,
     required this.currentSection,
     required this.isSectionComplete,
+    required this.isFieldFilled,
     required this.getSectionIcon,
     required this.onSelectSection,
     required this.onSelectField,
@@ -14,6 +15,7 @@ class InspectionSectionsDrawer extends StatefulWidget {
   final List<Map<String, dynamic>> sections;
   final int currentSection;
   final bool Function(int index) isSectionComplete;
+  final bool Function(int sectionIndex, int fieldIndex) isFieldFilled;
   final IconData Function(String title) getSectionIcon;
   final ValueChanged<int> onSelectSection;
   final void Function(int sectionIndex, int fieldIndex) onSelectField;
@@ -200,6 +202,7 @@ class _InspectionSectionsDrawerState extends State<InspectionSectionsDrawer> {
         children: List.generate(items.length, (fieldIndex) {
           final item = items[fieldIndex] as Map<String, dynamic>;
           final title = item['title'] as String? ?? 'Field ${fieldIndex + 1}';
+          final isFilled = widget.isFieldFilled(sectionIndex, fieldIndex);
 
           return InkWell(
             onTap: () => widget.onSelectField(sectionIndex, fieldIndex),
@@ -213,19 +216,27 @@ class _InspectionSectionsDrawerState extends State<InspectionSectionsDrawer> {
                     width: 20,
                     height: 20,
                     decoration: BoxDecoration(
-                      color: _surfaceHigh,
+                      color: isFilled
+                          ? Colors.green.withValues(alpha: 0.12)
+                          : _surfaceHigh,
                       borderRadius: BorderRadius.circular(5),
                     ),
-                    child: Center(
-                      child: Text(
-                        '${fieldIndex + 1}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
+                    child: isFilled
+                        ? const Icon(
+                            Icons.check,
+                            color: Colors.green,
+                            size: 13,
+                          )
+                        : Center(
+                            child: Text(
+                              '${fieldIndex + 1}',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(

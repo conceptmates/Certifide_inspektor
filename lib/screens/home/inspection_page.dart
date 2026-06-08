@@ -4938,6 +4938,26 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     );
   }
 
+  bool _isFieldFilled(int sectionIndex, int fieldIndex) {
+    if (sectionIndex >= _sections.length) return false;
+    final items = _sections[sectionIndex]['items'] as List<dynamic>;
+    if (fieldIndex >= items.length) return false;
+
+    final item = items[fieldIndex];
+    final uniqueId = _getItemUniqueId(item);
+
+    if (itemImages[uniqueId]?.isNotEmpty == true) return true;
+    if (itemMultiImages[uniqueId]?.isNotEmpty == true) return true;
+    if (itemVideos[uniqueId]?.isNotEmpty == true) return true;
+    if (itemAudios[uniqueId]?.isNotEmpty == true) return true;
+    if (itemFiles[uniqueId]?.isNotEmpty == true) return true;
+    if (itemRemarks[uniqueId]?.isNotEmpty == true) return true;
+    final val = itemValues[uniqueId];
+    if (val != null && val.isNotEmpty && val != 'N/A') return true;
+
+    return false;
+  }
+
   bool _isSectionComplete(int sectionIndex) {
     if (sectionIndex >= _sections.length) return false;
 
@@ -4976,6 +4996,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       sections: _sections,
       currentSection: _currentSection,
       isSectionComplete: _isSectionComplete,
+      isFieldFilled: _isFieldFilled,
       getSectionIcon: _getSectionIcon,
       onSelectSection: (index) => _navigateToField(index, 0),
       onSelectField: (sectionIndex, fieldIndex) =>
@@ -5090,7 +5111,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       Navigator.of(context).pop();
       Navigator.of(context).pop();
     } catch (e) {
-      print('Error handling close: $e');
+      debugPrint('Error handling close: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Error saving data')),
       );
