@@ -164,7 +164,7 @@ class _InspectionImageReviewState extends State<InspectionImageReview> {
           ),
         // Rotate button + Retake / Use Photo buttons
         Positioned(
-          bottom: 16,
+          bottom: 16 + MediaQuery.of(context).padding.bottom,
           left: 16,
           right: 16,
           child: Column(

@@ -40,11 +40,13 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
   void didUpdateWidget(InspectionVideoReview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.capturedMediaPath != widget.capturedMediaPath) {
-      _quarterTurns = 0;
-      _isInitialized = false;
-      _error = null;
       _chewieController?.dispose();
       _videoController.dispose();
+      setState(() {
+        _quarterTurns = 0;
+        _isInitialized = false;
+        _error = null;
+      });
       _initPlayer();
     }
   }
@@ -56,15 +58,9 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
         autoPlay: true,
-        looping: false,
+        looping: true,
         aspectRatio: _videoController.value.aspectRatio,
-        showControls: true,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: const Color(0xFF4D9EFF),
-          handleColor: const Color(0xFF4D9EFF),
-          bufferedColor: Colors.white30,
-          backgroundColor: Colors.white12,
-        ),
+        showControls: false,
       );
       if (mounted) setState(() => _isInitialized = true);
     } catch (e) {
@@ -178,7 +174,9 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
         ),
         // Rotate button + Retake / Use buttons
         Positioned(
-          bottom: 16, left: 16, right: 16,
+          bottom: 16 + MediaQuery.of(context).padding.bottom,
+          left: 16,
+          right: 16,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
