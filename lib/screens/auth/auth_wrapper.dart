@@ -24,6 +24,11 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     final userState = ref.watch(userNotifierProvider);
-    return userState.isAuthenticated ? const CarSpyHome() : LoginPage();
+    if (userState.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator.adaptive()),
+      );
+    }
+    return userState.isAuthenticated ? const CarSpyHome() : const LoginPage();
   }
 }

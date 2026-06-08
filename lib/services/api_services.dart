@@ -188,12 +188,18 @@ class ApiService {
     }
   }
 
-  static Future<void> handleUnauthorizedResponse(BuildContext context) async {
-    await _storage.deleteAll(); // Clear all stored data
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => LoginPage()),
-      (route) => false,
-    );
+  static Future<void> handleUnauthorizedResponse(
+    BuildContext context, {
+    VoidCallback? onStateReset,
+  }) async {
+    await _storage.deleteAll();
+    onStateReset?.call();
+    if (context.mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+        (route) => false,
+      );
+    }
   }
 
   static Future<Map<String, String>> _getHeaders(
@@ -352,9 +358,18 @@ class ApiService {
         };
       }
 
+      // Build headers manually — do NOT call _getHeaders(requiresAuth: true) here.
+      // _getHeaders checks expiry and calls refreshToken() again, causing infinite recursion.
+      // The refresh endpoint needs the current (possibly expired) token to identify the session.
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $currentToken',
+      };
+
       final response = await http.post(
         Uri.parse('$baseUrl$refreshTokenEndpoint'),
-        headers: await _getHeaders(requiresAuth: true),
+        headers: headers,
       ).timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
@@ -421,7 +436,10 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> getProfile(BuildContext context) async {
+  static Future<Map<String, dynamic>> getProfile(
+    BuildContext context, {
+    VoidCallback? onStateReset,
+  }) async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl$profileEndPoint'),
@@ -443,7 +461,7 @@ class ApiService {
           'message': 'Profile retrieved successfully',
         };
       } else if (response.statusCode == 401) {
-        await handleUnauthorizedResponse(context);
+        await handleUnauthorizedResponse(context, onStateReset: onStateReset);
         return {
           'success': false,
           'message': 'Unauthorized access',
@@ -455,7 +473,7 @@ class ApiService {
         };
       }
     } on UnauthorizedException {
-      await handleUnauthorizedResponse(context);
+      await handleUnauthorizedResponse(context, onStateReset: onStateReset);
       return {
         'success': false,
         'message': 'Session expired',

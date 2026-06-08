@@ -45,7 +45,10 @@ class UserNotifier extends _$UserNotifier {
         }
 
         if (!context.mounted) return;
-        final result = await ApiService.getProfile(context);
+        final result = await ApiService.getProfile(
+          context,
+          onStateReset: clearUserData,
+        );
         if (result['success']) {
           final userData = result['data']['user'] as Map<String, dynamic>;
           await _storage.write(
