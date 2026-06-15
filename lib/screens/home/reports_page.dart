@@ -1,12 +1,14 @@
+import 'dart:developer';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/inspection_history_model.dart';
-import '../../models/local_inspection.dart';
+import '../../models/inspection_template_model.dart';
 import '../../models/pagination_data_model.dart';
-import '../../providers/inspection_provider.dart';
+import '../../routes/routes.dart';
 import '../../services/api_services.dart';
 import '../../utils/loading_animation.dart';
 import '../../widgets/error_widget.dart';
@@ -33,7 +35,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   bool _isCancelled = false;
 
   // Pending tab state
-  bool _isPendingInitialLoadComplete = false;
+  List<InspectionHistory> _pendingItems = [];
+  bool _isPendingLoading = false;
+  String _pendingError = '';
+  final Set<String> _resumingIds = {};
 
   @override
   void initState() {
@@ -353,77 +358,88 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   // --- Pending ---
 
   Future<void> _loadPendingInspections() async {
+    _safeSetState(() {
+      _isPendingLoading = true;
+      _pendingError = '';
+    });
     try {
-      await Future.microtask(() {
-        ref.read(inspectionNotifierProvider.notifier).loadInspections();
+      final result = await ApiService.getDynamicInspectionMyHistory(
+        context,
+        status: 'pending',
+      );
+      log('[ReportsPage] pending response: $result');
+      if (_isCancelled) return;
+      if (result['success'] == true) {
+        _safeSetState(() {
+          _pendingItems = List<InspectionHistory>.from(result['inspections']);
+          _isPendingLoading = false;
+        });
+      } else {
+        _safeSetState(() {
+          _pendingError = result['message'] ?? 'Failed to load pending inspections';
+          _isPendingLoading = false;
+        });
+      }
+    } catch (e) {
+      _safeSetState(() {
+        _pendingError = 'Failed to load pending inspections';
+        _isPendingLoading = false;
       });
-      _safeSetState(() => _isPendingInitialLoadComplete = true);
-    } catch (e) {
-      _safeSetState(() => _isPendingInitialLoadComplete = true);
     }
   }
 
-  void _showCooldownMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Please wait a few seconds before refreshing again'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _handleSubmission(LocalInspection inspection) async {
+  Future<void> _resumeInspection(InspectionHistory history) async {
+    final id = history.idAsInt;
+    if (id == null) return;
+    _safeSetState(() => _resumingIds.add(history.id));
     try {
-      final success = await ref
-          .read(inspectionNotifierProvider.notifier)
-          .retrySubmission(inspection);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success
-                ? 'Inspection submitted successfully'
-                : 'Failed to submit inspection'),
-            backgroundColor: success ? Colors.green : Colors.red,
-          ),
+      final result = await ApiService.resumeInspection(id);
+      if (_isCancelled || !mounted) return;
+      if (result['success'] == true) {
+        final template = result['data'] as InspectionInitializationResponse?;
+        if (!mounted) return;
+        Navigator.pushNamed(
+          context,
+          Routes.inspection,
+          arguments: {
+            'isNew': true,
+            'inspectionId': id,
+            'vehicleDetails': _buildResumeVehicleDetails(history, template),
+            'inspectionTemplate': template,
+          },
         );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'] ?? 'Failed to resume')),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting inspection: $e'),
-            backgroundColor: Colors.red,
-          ),
+          const SnackBar(content: Text('Network error. Please try again.')),
         );
       }
+    } finally {
+      _safeSetState(() => _resumingIds.remove(history.id));
     }
   }
 
-  void _showInspectionDetailsDialog(LocalInspection inspection) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Inspection Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Inspection ID: ${inspection.id}'),
-              Text(
-                  'Created: ${DateFormat('dd-MM-yyyy hh:mm a').format(inspection.createdAt)}'),
-              Text('Status: ${inspection.status}'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+  Map<String, dynamic> _buildResumeVehicleDetails(
+    InspectionHistory history,
+    InspectionInitializationResponse? template,
+  ) {
+    final vi = history.vehicleInfo;
+    final tvi = template?.vehicleInfo;
+    return {
+      'make': tvi?.brand ?? vi['make_model']?.toString().split(' ').first ?? '',
+      'model': tvi?.model ?? vi['make_model']?.toString().split(' ').skip(1).join(' ') ?? '',
+      'year': tvi?.year ?? vi['manufacturing_year']?.toString() ?? '',
+      'variant': tvi?.variant ?? vi['variant']?.toString() ?? '',
+      'color': tvi?.colour ?? vi['color']?.toString() ?? '',
+      'transmission': tvi?.transmission ?? vi['transmission']?.toString() ?? '',
+    };
   }
 
   // --- Tab content builders ---
@@ -499,108 +515,156 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     );
   }
 
-  Widget _buildPendingTab(({
-    List<LocalInspection> inspections,
-    bool isLoading,
-    bool refreshCooldown,
-    Map<String, bool> submittingStates,
-  }) provider) {
-    if (!_isPendingInitialLoadComplete) {
-      return const Center(
+  Widget _buildPendingTab() {
+    if (_isPendingLoading) {
+      return const Center(child: LoadingAnimation());
+    }
+    if (_pendingError.isNotEmpty) {
+      return ErrorDisplayWidget(
+        message: _pendingError,
+        onRetry: _loadPendingInspections,
+      );
+    }
+    if (_pendingItems.isEmpty) {
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading inspections...', style: TextStyle(fontSize: 16)),
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: CarSpyColors.surface,
+                borderRadius: BorderRadius.circular(24),
+              ),
+              child: const Icon(Icons.pending_actions,
+                  size: 48, color: CarSpyColors.onSurfaceVariant),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'No pending inspections',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Colors.black87,
+              ),
+            ),
           ],
         ),
       );
     }
-    return Column(
-      children: [
-        if (provider.inspections.any(
-            (i) => provider.submittingStates[i.id] == true))
-          const LinearProgressIndicator(),
-        Expanded(
-          child: provider.isLoading
-              ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Loading inspections...',
-                          style: TextStyle(fontSize: 16)),
-                    ],
-                  ),
-                )
-              : provider.inspections.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No pending inspections',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: EdgeInsets.only(
-                          bottom: MediaQuery.of(context).padding.bottom + 16),
-                      itemCount: provider.inspections.length,
-                      itemBuilder: (context, index) {
-                        final inspection = provider.inspections[index];
-                        final displayId = inspection.id.length > 8
-                            ? inspection.id.substring(0, 8)
-                            : inspection.id;
-                        final isSubmitting =
-                            provider.submittingStates[inspection.id] ?? false;
-                        return Card(
-                          margin: const EdgeInsets.all(8),
-                          child: ListTile(
-                            title: Text(
-                              'Inspection $displayId',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Text(
-                              'Created: ${DateFormat('dd-MM-yyyy hh:mm a').format(inspection.createdAt)}\n'
-                              'Status: ${inspection.status}${isSubmitting ? ' Submitting...' : ''}',
-                            ),
-                            leading: IconButton(
-                              icon: const Icon(Icons.info_outline),
-                              onPressed: () =>
-                                  _showInspectionDetailsDialog(inspection),
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.refresh),
-                              onPressed: isSubmitting
-                                  ? null
-                                  : () => _handleSubmission(inspection),
-                              tooltip: isSubmitting
-                                  ? 'Submitting...'
-                                  : 'Retry submission',
-                            ),
-                            isThreeLine: true,
-                          ),
-                        );
-                      },
+    return RefreshIndicator(
+      onRefresh: _loadPendingInspections,
+      color: CarSpyColors.primary,
+      child: ListView.builder(
+        padding: EdgeInsets.fromLTRB(
+            16, 8, 16, MediaQuery.of(context).padding.bottom + 24),
+        itemCount: _pendingItems.length,
+        itemBuilder: (context, index) {
+          final history = _pendingItems[index];
+          final isResuming = _resumingIds.contains(history.id);
+          return _buildPendingCard(history, isResuming);
+        },
+      ),
+    );
+  }
+
+  Widget _buildPendingCard(InspectionHistory inspection, bool isResuming) {
+    final vehicleInfo = inspection.vehicleInfo;
+    final canView = inspection.links != null && inspection.links!['view'] != null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Reg: ${vehicleInfo['registration_number'] ?? 'N/A'}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
                     ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                  ),
+                  child: const Text(
+                    'PENDING',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFF59E0B),
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _infoRow('Make & Model', vehicleInfo['make_model']),
+            _infoRow('Variant', vehicleInfo['variant']),
+            _infoRow('Year', vehicleInfo['manufacturing_year']),
+            _infoRow('Date', _formatDate(inspection.date)),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (canView)
+                  IconButton(
+                    onPressed: () => _launchURL(inspection.links!['view']!),
+                    icon: Icon(Icons.visibility_outlined,
+                        color: CarSpyColors.primary),
+                  ),
+                if (inspection.isResumable)
+                  isResuming
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : TextButton.icon(
+                          icon: const Icon(Icons.play_arrow, size: 16),
+                          label: const Text('Resume'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFF59E0B),
+                          ),
+                          onPressed: () => _resumeInspection(inspection),
+                        ),
+              ],
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final inspectionState = ref.watch(
-      inspectionNotifierProvider.select(
-        (s) => (
-          inspections: s.inspections,
-          isLoading: s.isLoading,
-          refreshCooldown: s.refreshCooldown,
-          submittingStates: s.submittingStates,
-        ),
-      ),
-    );
     final isOnPendingTab = _tabController.index == 1;
 
     return ColoredBox(
@@ -624,33 +688,17 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                       letterSpacing: -0.5,
                     ),
                   ),
-                  if (isOnPendingTab)
-                    IconButton(
-                      icon: Icon(
-                        Icons.refresh,
-                        color: (inspectionState.isLoading ||
-                                inspectionState.refreshCooldown)
-                            ? Colors.grey
-                            : CarSpyColors.primary,
-                      ),
-                      onPressed:
-                          (inspectionState.isLoading ||
-                                  inspectionState.refreshCooldown)
-                              ? _showCooldownMessage
-                              : () => ref
-                                  .read(inspectionNotifierProvider.notifier)
-                                  .loadInspections(),
+                  IconButton(
+                    icon: Icon(
+                      Icons.refresh,
+                      color: (isOnPendingTab ? _isPendingLoading : _isHistoryLoading)
+                          ? Colors.grey
+                          : CarSpyColors.primary,
                     ),
-                  if (!isOnPendingTab)
-                    IconButton(
-                      icon: Icon(
-                        Icons.refresh,
-                        color: _isHistoryLoading
-                            ? Colors.grey
-                            : CarSpyColors.primary,
-                      ),
-                      onPressed: _isHistoryLoading ? null : _loadHistory,
-                    ),
+                    onPressed: (isOnPendingTab ? _isPendingLoading : _isHistoryLoading)
+                        ? null
+                        : (isOnPendingTab ? _loadPendingInspections : _loadHistory),
+                  ),
                 ],
               ),
             ),
@@ -669,7 +717,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 controller: _tabController,
                 children: [
                   _buildHistoryTab(),
-                  _buildPendingTab(inspectionState),
+                  _buildPendingTab(),
                 ],
               ),
             ),

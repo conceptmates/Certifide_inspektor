@@ -350,7 +350,7 @@ class InspectionNotifier extends _$InspectionNotifier {
         itemIndex[entry.key]?['filePath'] = entry.value;
       }
 
-      final result = await ApiService.sendInspectionData(inspectionData);
+      final result = await ApiService.submitInspection(inspectionData);
 
       if (result['success'] == true) {
         await LocalStorageService.markInspectionAsSubmitted(inspection.id);

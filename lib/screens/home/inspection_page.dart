@@ -165,6 +165,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   Timer? _audioTimer;
   Duration _audioElapsed = Duration.zero;
   bool _highlightFlagIssues = false;
+  bool _isSyncingToServer = false;
 
   // Dynamic inspection template from API
   InspectionInitializationResponse? _inspectionTemplate;
@@ -300,6 +301,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 'order': m.order,
               })
           .toList(),
+      if (field.initialValue != null) 'initialValue': field.initialValue,
+      if (field.initialRemarks != null) 'initialRemarks': field.initialRemarks,
+      if (field.initialImage != null) 'initialImage': field.initialImage,
+      if (field.initialMultiImages != null)
+        'initialMultiImages': field.initialMultiImages,
+      if (field.initialVideo != null) 'initialVideo': field.initialVideo,
+      if (field.initialAudio != null) 'initialAudio': field.initialAudio,
+      if (field.initialFile != null) 'initialFile': field.initialFile,
     };
   }
 
@@ -504,12 +513,121 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
+  /// Builds the items list for a section in save-step format.
+  List<Map<String, dynamic>> _buildSectionItems(Map<String, dynamic> section) {
+    final items = <Map<String, dynamic>>[];
+    for (var item in section['items'] as List<dynamic>) {
+      final uniqueId = _getItemUniqueId(item);
+      final title = _getItemTitle(item);
+
+      String value = itemValues[uniqueId] ?? '';
+      if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
+        value = '';
+      } else if (value == 'flagged') {
+        final selectedLabel = itemFlaggedIssues[uniqueId]!.first;
+        String? optionValue;
+        if (item is Map) {
+          final opts = item['options'] as List?;
+          if (opts != null) {
+            for (final opt in opts) {
+              final lbl = opt['label']?.toString() ?? '';
+              final val = opt['value']?.toString() ?? '';
+              final label = lbl.isNotEmpty ? lbl : val;
+              if (label == selectedLabel) {
+                optionValue = val.isNotEmpty ? val : label;
+                break;
+              }
+            }
+          }
+        }
+        value = optionValue ?? selectedLabel;
+      }
+
+      final remarks = itemRemarks[uniqueId];
+      final imagePath = itemImages[uniqueId];
+      final multiImages = itemMultiImages[uniqueId];
+      final videoPath = itemVideos[uniqueId];
+      final audioPath = itemAudios[uniqueId];
+      final filePayload = itemFiles[uniqueId];
+      String? filePath;
+      if (filePayload != null) {
+        try {
+          final decoded = json.decode(filePayload) as Map<String, dynamic>;
+          filePath = decoded['filePath'] as String?;
+        } catch (_) {
+          filePath = filePayload;
+        }
+      }
+
+      items.add({
+        'id': uniqueId,
+        'title': title,
+        'value': value,
+        'remarks': (remarks != null && remarks.isNotEmpty) ? remarks : null,
+        'imagePath': imagePath,
+        'multiImages': multiImages,
+        'videoPath': videoPath,
+        'audioPath': audioPath,
+        'filePath': filePath,
+      });
+    }
+    return items;
+  }
+
+  /// Checks whether a section has any filled data worth saving.
+  bool _sectionHasData(Map<String, dynamic> section) {
+    for (var item in section['items'] as List<dynamic>) {
+      final uniqueId = _getItemUniqueId(item);
+      final value = (itemValues[uniqueId] ?? '').trim();
+      if (value.isNotEmpty && value != 'N/A') return true;
+      if ((itemRemarks[uniqueId] ?? '').isNotEmpty) return true;
+      if (itemImages[uniqueId] != null) return true;
+      if ((itemMultiImages[uniqueId] ?? []).isNotEmpty) return true;
+      if (itemVideos[uniqueId] != null) return true;
+      if (itemAudios[uniqueId] != null) return true;
+      if (itemFiles[uniqueId] != null) return true;
+    }
+    return false;
+  }
+
+  /// Saves each filled section to the server via save-step so the resume API
+  /// can return all data pre-filled even before final submission.
+  void _syncToServer() {
+    final inspectionId = _effectiveInspectionId;
+    if (inspectionId == null || _isSyncingToServer) return;
+    _isSyncingToServer = true;
+    unawaited(Future(() async {
+      try {
+        final hasInternet = await ConnectivityChecker.hasInternetConnection();
+        if (!hasInternet) return;
+
+        for (final section in _sections) {
+          if (!_sectionHasData(section)) continue;
+          final sectionName = (section['name'] as String?) ??
+              (section['title'] as String).toLowerCase().replaceAll(' ', '_');
+          final items = _buildSectionItems(section);
+          if (items.isEmpty) continue;
+          await ApiService.saveInspectionStep(
+            inspectionId,
+            section: sectionName,
+            items: items,
+          );
+        }
+      } catch (e) {
+        log('Background save-step sync error: $e');
+      } finally {
+        _isSyncingToServer = false;
+      }
+    }));
+  }
+
   void _autoSave() {
     if (_saveDebouncer?.isActive ?? false) _saveDebouncer?.cancel();
     _saveDebouncer = Timer(const Duration(milliseconds: 500), () async {
       if (mounted) {
         try {
           await _saveDataLocally();
+          _syncToServer();
         } catch (e) {
           print('Error in auto save: $e');
         }
@@ -891,6 +1009,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       for (var item in items) {
         final uniqueId = _getItemUniqueId(item);
 
+        // Default values — will be overwritten by initial_* if present.
         if (_itemUsesTextField(item)) {
           itemValues[uniqueId] = '';
         } else if (_itemHasOptions(item)) {
@@ -899,6 +1018,39 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         if (_itemHasRemarks(item)) {
           itemRemarks[uniqueId] = '';
+        }
+
+        // Prefill from server-provided initial_* values (resume / initialize).
+        if (item is Map) {
+          final iv = item['initialValue'];
+          if (iv != null && iv.toString().isNotEmpty) {
+            itemValues[uniqueId] = iv.toString();
+          }
+          final ir = item['initialRemarks'];
+          if (ir != null && ir.toString().isNotEmpty) {
+            itemRemarks[uniqueId] = ir.toString();
+          }
+          final img = item['initialImage'];
+          if (img != null && img.toString().isNotEmpty) {
+            itemImages[uniqueId] = img.toString();
+          }
+          final multi = item['initialMultiImages'];
+          if (multi is List && multi.isNotEmpty) {
+            itemMultiImages[uniqueId] =
+                multi.map((e) => e.toString()).toList();
+          }
+          final vid = item['initialVideo'];
+          if (vid != null && vid.toString().isNotEmpty) {
+            itemVideos[uniqueId] = vid.toString();
+          }
+          final aud = item['initialAudio'];
+          if (aud != null && aud.toString().isNotEmpty) {
+            itemAudios[uniqueId] = aud.toString();
+          }
+          final fil = item['initialFile'];
+          if (fil != null && fil.toString().isNotEmpty) {
+            itemFiles[uniqueId] = fil.toString();
+          }
         }
       }
     }
@@ -1519,6 +1671,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     if (result['success'] == true && url != null && url.isNotEmpty) {
                       setState(() => itemImages[uniqueId] = url);
                       await _saveDataLocally();
+                      try { await File(savedPath).delete(); } catch (_) {}
+                      _syncToServer();
                     }
                   }
                 } else {
@@ -2105,17 +2259,22 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         if (!mounted) return;
 
         final url = result['url']?.toString();
+        final uploadSuccess = result['success'] == true && url != null && url.isNotEmpty;
         setState(() {
           _uploadingMultiImagePaths.remove(savedPath);
-          if (result['success'] == true && url != null && url.isNotEmpty) {
+          if (uploadSuccess) {
             final imgs = List<String>.from(itemMultiImages[uniqueId] ?? []);
             final idx = imgs.indexOf(savedPath);
-            if (idx != -1) imgs[idx] = url;
+            if (idx != -1) imgs[idx] = url!;
             itemMultiImages[uniqueId] = imgs;
           }
         });
+        if (uploadSuccess) {
+          try { await File(savedPath).delete(); } catch (_) {}
+        }
       }
       await _saveDataLocally();
+      _syncToServer();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2228,6 +2387,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 itemImages[uniqueId] = url;
               });
               await _saveDataLocally();
+              try { await File(savedPath).delete(); } catch (_) {}
+              _syncToServer();
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -2707,6 +2868,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemImages[uniqueId] = url);
           await _saveDataLocally();
+          try { await File(savedPath).delete(); } catch (_) {}
+          _syncToServer();
         }
       }
     } else {
@@ -2772,6 +2935,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemVideos[uniqueId] = url);
           await _saveDataLocally();
+          try { await File(savedPath).delete(); } catch (_) {}
+          _syncToServer();
         }
       }
     } else {
@@ -2831,6 +2996,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemAudios[uniqueId] = url);
           await _saveDataLocally();
+          try { await File(path).delete(); } catch (_) {}
+          _syncToServer();
         }
       }
     } else {
@@ -2903,6 +3070,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 'fileType': ext ?? '',
               }));
           await _saveDataLocally();
+          try { await File(path).delete(); } catch (_) {}
+          _syncToServer();
         }
       }
     } else {
@@ -3281,69 +3450,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     Map<String, dynamic> inspectionData = {};
 
     for (var section in _sections) {
-      final sectionName = section['name'] ??
+      final sectionName = (section['name'] as String?) ??
           (section['title'] as String).toLowerCase().replaceAll(' ', '_');
-      List<Map<String, dynamic>> sectionItems = [];
-
-      for (var item in section['items'] as List<dynamic>) {
-        final uniqueId = _getItemUniqueId(item);
-        final title = _getItemTitle(item);
-        // Guard: 'flagged' without recorded issues means stale Hive data — clear it so the server's value wins.
-        String value = itemValues[uniqueId] ?? '';
-        if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
-          value = '';
-        } else if (value == 'flagged') {
-          // Map the selected issue label back to its option value for server submission.
-          final selectedLabel = itemFlaggedIssues[uniqueId]!.first;
-          String? optionValue;
-          if (item is Map) {
-            final opts = item['options'] as List?;
-            if (opts != null) {
-              for (final opt in opts) {
-                final lbl = opt['label']?.toString() ?? '';
-                final val = opt['value']?.toString() ?? '';
-                final label = lbl.isNotEmpty ? lbl : val;
-                if (label == selectedLabel) {
-                  optionValue = val.isNotEmpty ? val : label;
-                  break;
-                }
-              }
-            }
-          }
-          value = optionValue ?? selectedLabel;
-        }
-        final remarks = itemRemarks[uniqueId];
-        final imagePath = itemImages[uniqueId];
-        final multiImages = itemMultiImages[uniqueId];
-        final videoPath = itemVideos[uniqueId];
-        final audioPath = itemAudios[uniqueId];
-        // Decode JSON file payload to extract the URL/path for submission.
-        final filePayload = itemFiles[uniqueId];
-        String? filePath;
-        if (filePayload != null) {
-          try {
-            final decoded = json.decode(filePayload) as Map<String, dynamic>;
-            filePath = decoded['filePath'] as String?;
-          } catch (_) {
-            filePath = filePayload;
-          }
-        }
-
-        sectionItems.add({
-          'id': uniqueId,
-          'fieldId': _getItemFieldId(item),
-          'fieldType': item is Map ? (item['fieldType'] ?? '').toString() : '',
-          'title': title,
-          'value': value,
-          'remarks': (remarks != null && remarks.isNotEmpty) ? remarks : null,
-          'imagePath': imagePath,
-          'multiImages': multiImages,
-          'videoPath': videoPath,
-          'audioPath': audioPath,
-          'filePath': filePath,
-        });
-      }
-
+      // Reuse _buildSectionItems to avoid duplication.
+      final sectionItems = _buildSectionItems(section);
       inspectionData[sectionName] = {
         'title': section['title'],
         'items': sectionItems,
@@ -3551,10 +3661,27 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
         final body = _buildSubmissionBody();
 
+        // Build metadata so offline-queued images retain their section/fieldId
+        // for the upload step when the device comes back online.
+        final imageMetadata = <String, dynamic>{};
+        for (final section in _sections) {
+          final sectionTitle = section['title'] as String;
+          for (final item in section['items'] as List<dynamic>) {
+            final uniqueId = _getItemUniqueId(item);
+            if (finalItemImages[uniqueId] != null) {
+              imageMetadata[uniqueId] = {
+                'section': sectionTitle,
+                'itemId': _getItemFieldId(item),
+              };
+            }
+          }
+        }
+
         await LocalStorageService.saveInspection(
           data: body,
           images: finalItemImages,
-          status: 'pending',
+          imageMetadata: imageMetadata,
+          status: 'offline',
           videos: finalItemVideos,
           audios: finalItemAudios,
           files: finalItemFiles,
@@ -3622,10 +3749,26 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               finalMultiImages[key] = value;
             }
           });
+
+          final imageMetadata = <String, dynamic>{};
+          for (final section in _sections) {
+            final sectionTitle = section['title'] as String;
+            for (final item in section['items'] as List<dynamic>) {
+              final uniqueId = _getItemUniqueId(item);
+              if (finalItemImages[uniqueId] != null) {
+                imageMetadata[uniqueId] = {
+                  'section': sectionTitle,
+                  'itemId': _getItemFieldId(item),
+                };
+              }
+            }
+          }
+
           await LocalStorageService.saveInspection(
             data: _buildSubmissionBody(),
             images: finalItemImages,
-            status: 'pending',
+            imageMetadata: imageMetadata,
+            status: 'offline',
             videos: finalItemVideos,
             audios: finalItemAudios,
             files: finalItemFiles,

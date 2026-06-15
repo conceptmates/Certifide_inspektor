@@ -2,6 +2,8 @@ class InspectionHistory {
   final String id;
   final String inspectorName;
   final String status;
+  final String processingStatus;
+  final String? referenceNumber;
   final DateTime date;
   final Map<String, dynamic> vehicleInfo;
   final Map<String, String>? links;
@@ -10,10 +12,17 @@ class InspectionHistory {
     required this.id,
     required this.inspectorName,
     required this.status,
+    required this.processingStatus,
+    this.referenceNumber,
     required this.date,
     required this.vehicleInfo,
     this.links,
   });
+
+  /// True when the inspection can be resumed (pending = submitted, awaiting review).
+  bool get isResumable => status == 'pending' || processingStatus == 'completed';
+
+  int? get idAsInt => int.tryParse(id);
 
   factory InspectionHistory.fromJson(Map<String, dynamic> json) {
     // Handle both old /inspections shape and new /dynamic-inspections shape
@@ -31,10 +40,12 @@ class InspectionHistory {
     final inspectorName = json['inspector']?['name'] ?? json['user']?['name'] ?? '';
 
     Map<String, String>? links;
-    if (json['report_url'] != null &&
-        (json['report_url'] as String).isNotEmpty) {
-      links = {'view': json['report_url'] as String};
+    final reportUrl = json['report_url']?.toString() ?? '';
+    if (reportUrl.isNotEmpty) {
+      links = {'view': reportUrl};
     }
+
+    final processingStatus = (json['processing_status'] ?? '').toString();
 
     // /dynamic-inspections uses is_approved; map it to status when status is missing
     String status = (json['status'] ?? '').toString();
@@ -46,6 +57,8 @@ class InspectionHistory {
       id: json['id'].toString(),
       inspectorName: inspectorName,
       status: status,
+      processingStatus: processingStatus,
+      referenceNumber: json['reference_number']?.toString(),
       date: DateTime.parse(json['created_at']),
       vehicleInfo: vehicleInfo,
       links: links,

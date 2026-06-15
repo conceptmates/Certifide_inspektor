@@ -857,8 +857,12 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getDynamicInspectionMyHistory(
       BuildContext context,
-      {int page = 1}) async {
-    final url = '$baseUrl$getDynamicMyHistoryEndPoint?page=$page';
+      {int page = 1, String? status}) async {
+    final params = <String, String>{'page': '$page'};
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    final url = Uri.parse('$baseUrl$getDynamicMyHistoryEndPoint')
+        .replace(queryParameters: params)
+        .toString();
     try {
       final response = await http
           .get(
@@ -1021,6 +1025,68 @@ class ApiService {
         'success': false,
         'message': 'Network error: ${e.toString()}',
       };
+    }
+  }
+
+  /// Saves one section to the server so the resume API can return it pre-filled.
+  /// POST /api/dynamic-inspections/{id}/save-step
+  static Future<Map<String, dynamic>> saveInspectionStep(
+    int inspectionId, {
+    required String section,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    try {
+      final url = '$baseUrl/dynamic-inspections/$inspectionId/save-step';
+      log('Saving step for inspection $inspectionId, section: $section');
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: await _getHeaders(requiresAuth: true),
+        body: json.encode({'section': section, 'items': items}),
+      ).timeout(_requestTimeout);
+
+      log('save-step response status: ${response.statusCode}');
+      log('save-step response body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body);
+        return {
+          'success': true,
+          'data': responseData['data'],
+          'saved_sections': responseData['data']?['saved_sections'],
+          'message': responseData['message'] ?? 'Section saved',
+        };
+      }
+      return {'success': false, 'message': _handleError(response)};
+    } catch (e) {
+      log('Error saving inspection step: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateDynamicInspection(
+    int inspectionId,
+    Map<String, dynamic> data,
+  ) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl$submitDynamicInspectionEndPoint/$inspectionId'),
+        headers: await _getHeaders(requiresAuth: true),
+        body: json.encode(data),
+      ).timeout(_requestTimeout);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body);
+        return {
+          'success': true,
+          'data': responseData['data'],
+          'message': responseData['message'] ?? 'Updated successfully',
+        };
+      }
+      return {'success': false, 'message': _handleError(response)};
+    } catch (e) {
+      log('Error updating dynamic inspection: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
 
@@ -1382,6 +1448,59 @@ class ApiService {
       return {'success': false, 'message': _handleError(response)};
     } catch (e) {
       log('getInspectionStats error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> resumeInspection(int inspectionId) async {
+    try {
+      final url = '$baseUrl/dynamic-inspections/$inspectionId/resume';
+      log('Resuming inspection $inspectionId from: $url');
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: await _getHeaders(requiresAuth: true),
+      ).timeout(_requestTimeout);
+
+      log('Resume inspection response status: ${response.statusCode}');
+      log('Resume inspection response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+
+        if (responseData['status'] == 'success' && responseData['data'] != null) {
+          final data = responseData['data'];
+
+          InspectionInitializationResponse? inspectionResponse;
+          try {
+            inspectionResponse = InspectionInitializationResponse.fromJson(data);
+          } catch (e) {
+            log('Error parsing resume template: $e');
+          }
+
+          return {
+            'success': true,
+            'data': inspectionResponse ?? data,
+            'inspection_id': data['inspection_id'],
+            'processing_status': data['processing_status'],
+            'saved_sections': data['saved_sections'],
+            'message': 'Inspection resumed successfully',
+          };
+        }
+
+        return {
+          'success': false,
+          'message': responseData['message'] ?? 'Failed to resume inspection',
+        };
+      } else if (response.statusCode == 403) {
+        return {'success': false, 'message': 'You do not own this inspection.'};
+      } else if (response.statusCode == 404) {
+        return {'success': false, 'message': 'Inspection not found.'};
+      }
+
+      return {'success': false, 'message': _handleError(response)};
+    } catch (e) {
+      log('Error resuming inspection: $e');
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }
