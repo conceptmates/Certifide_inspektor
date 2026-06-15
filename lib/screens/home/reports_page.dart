@@ -287,8 +287,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels ==
-        _scrollController.position.maxScrollExtent) {
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 300) {
       _loadMoreData();
     }
   }

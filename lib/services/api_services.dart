@@ -858,7 +858,7 @@ class ApiService {
   static Future<Map<String, dynamic>> getDynamicInspectionMyHistory(
       BuildContext context,
       {int page = 1, String? status}) async {
-    final params = <String, String>{'page': '$page'};
+    final params = <String, String>{'page': '$page', 'sort': 'latest'};
     if (status != null && status.isNotEmpty) params['status'] = status;
     final url = Uri.parse('$baseUrl$getDynamicMyHistoryEndPoint')
         .replace(queryParameters: params)

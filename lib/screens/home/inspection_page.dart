@@ -590,8 +590,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     return false;
   }
 
-  /// Saves each filled section to the server via save-step so the resume API
-  /// can return all data pre-filled even before final submission.
+  /// Bulk fallback: saves all filled sections to the server (e.g. on explicit request).
+  /// Normal flow uses [_saveFieldToServer] for per-field instant saves.
+  // ignore: unused_element
   void _syncToServer() {
     final inspectionId = _effectiveInspectionId;
     if (inspectionId == null || _isSyncingToServer) return;
@@ -621,13 +622,93 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }));
   }
 
+  /// Instantly uploads a single field's current data to the server via save-step.
+  /// Called whenever a field value, option, remark, or media changes.
+  void _saveFieldToServer(dynamic item, String uniqueId) {
+    final inspectionId = _effectiveInspectionId;
+    if (inspectionId == null) return;
+
+    // Locate the field's section by searching all sections
+    dynamic resolvedItem = item;
+    String? sectionName;
+    for (final sec in _sections) {
+      for (final si in sec['items'] as List<dynamic>) {
+        if (_getItemUniqueId(si) == uniqueId) {
+          resolvedItem ??= si;
+          sectionName = (sec['name'] as String?) ??
+              (sec['title'] as String).toLowerCase().replaceAll(' ', '_');
+          break;
+        }
+      }
+      if (sectionName != null) break;
+    }
+    if (resolvedItem == null || sectionName == null) return;
+
+    String value = itemValues[uniqueId] ?? '';
+    if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
+      value = '';
+    } else if (value == 'flagged') {
+      final selectedLabel = itemFlaggedIssues[uniqueId]!.first;
+      if (resolvedItem is Map) {
+        final opts = resolvedItem['options'] as List?;
+        if (opts != null) {
+          for (final opt in opts) {
+            final lbl = opt['label']?.toString() ?? '';
+            final val = opt['value']?.toString() ?? '';
+            final label = lbl.isNotEmpty ? lbl : val;
+            if (label == selectedLabel) {
+              value = val.isNotEmpty ? val : label;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    String? filePath;
+    final filePayload = itemFiles[uniqueId];
+    if (filePayload != null) {
+      try {
+        filePath = (json.decode(filePayload) as Map<String, dynamic>)['filePath'] as String?;
+      } catch (_) {
+        filePath = filePayload;
+      }
+    }
+
+    final singleItem = {
+      'id': uniqueId,
+      'title': _getItemTitle(resolvedItem),
+      'value': value,
+      'remarks': (itemRemarks[uniqueId]?.isNotEmpty ?? false) ? itemRemarks[uniqueId] : null,
+      'imagePath': itemImages[uniqueId],
+      'multiImages': itemMultiImages[uniqueId],
+      'videoPath': itemVideos[uniqueId],
+      'audioPath': itemAudios[uniqueId],
+      'filePath': filePath,
+    };
+
+    final capturedSection = sectionName;
+    unawaited(Future(() async {
+      try {
+        final hasInternet = await ConnectivityChecker.hasInternetConnection();
+        if (!hasInternet) return;
+        await ApiService.saveInspectionStep(
+          inspectionId,
+          section: capturedSection,
+          items: [singleItem],
+        );
+      } catch (e) {
+        log('Per-field save error: $e');
+      }
+    }));
+  }
+
   void _autoSave() {
     if (_saveDebouncer?.isActive ?? false) _saveDebouncer?.cancel();
     _saveDebouncer = Timer(const Duration(milliseconds: 500), () async {
       if (mounted) {
         try {
           await _saveDataLocally();
-          _syncToServer();
         } catch (e) {
           print('Error in auto save: $e');
         }
@@ -1672,7 +1753,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       setState(() => itemImages[uniqueId] = url);
                       await _saveDataLocally();
                       try { await File(savedPath).delete(); } catch (_) {}
-                      _syncToServer();
+                      _saveFieldToServer(item, uniqueId);
                     }
                   }
                 } else {
@@ -1881,6 +1962,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       _regNoVerifyIsError.remove(uniqueId);
                     });
                     _autoSave();
+                    _saveFieldToServer(item, uniqueId);
                   },
                 ),
               ),
@@ -1923,6 +2005,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 itemValues[uniqueId] = value;
               });
               _autoSave();
+              _saveFieldToServer(item, uniqueId);
             },
           ),
         if (_itemHasMultiImage(item)) ...[
@@ -1994,6 +2077,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 itemValues[uniqueId] = value;
               });
               _autoSave();
+              _saveFieldToServer(item, uniqueId);
             },
           ),
         if (_itemHasRemarks(item) && remarksControllers[uniqueId] != null) ...[
@@ -2018,6 +2102,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             onChanged: (value) {
               itemRemarks[uniqueId] = value;
               _autoSave();
+              _saveFieldToServer(item, uniqueId);
             },
           ),
         ],
@@ -2158,6 +2243,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                   updated.isEmpty ? null : updated;
                             });
                             _autoSave();
+                            _saveFieldToServer(item, uniqueId);
                           },
                           child: Container(
                             decoration: const BoxDecoration(
@@ -2274,7 +2360,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
       await _saveDataLocally();
-      _syncToServer();
+      _saveFieldToServer(item, uniqueId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2388,7 +2474,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               });
               await _saveDataLocally();
               try { await File(savedPath).delete(); } catch (_) {}
-              _syncToServer();
+              _saveFieldToServer(item, uniqueId);
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -2869,7 +2955,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           setState(() => itemImages[uniqueId] = url);
           await _saveDataLocally();
           try { await File(savedPath).delete(); } catch (_) {}
-          _syncToServer();
+          _saveFieldToServer(item, uniqueId);
         }
       }
     } else {
@@ -2936,7 +3022,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           setState(() => itemVideos[uniqueId] = url);
           await _saveDataLocally();
           try { await File(savedPath).delete(); } catch (_) {}
-          _syncToServer();
+          _saveFieldToServer(foundItem, uniqueId);
         }
       }
     } else {
@@ -2997,7 +3083,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           setState(() => itemAudios[uniqueId] = url);
           await _saveDataLocally();
           try { await File(path).delete(); } catch (_) {}
-          _syncToServer();
+          _saveFieldToServer(foundItem, uniqueId);
         }
       }
     } else {
@@ -3071,7 +3157,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               }));
           await _saveDataLocally();
           try { await File(path).delete(); } catch (_) {}
-          _syncToServer();
+          _saveFieldToServer(foundItem, uniqueId);
         }
       }
     } else {
@@ -3883,6 +3969,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               }
             });
             _autoSave();
+            _saveFieldToServer(item, uniqueId);
             if (autoAdvanceOnConfirm) {
               Future.delayed(const Duration(milliseconds: 300), () {
                 if (mounted) _nextItem();
