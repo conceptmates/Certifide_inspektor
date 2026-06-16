@@ -2010,7 +2010,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             border: Border.all(
                                 color: Colors.grey.shade300, width: 1),
                           ),
-                          child: _buildImageWidget(itemImages[uniqueId]!),
+                          child: _buildImageWidget(
+                            itemImages[uniqueId]!,
+                            cacheWidth: (MediaQuery.of(context).size.width *
+                                    MediaQuery.of(context).devicePixelRatio)
+                                .round(),
+                          ),
                         ),
                       ),
                     ),
@@ -2382,7 +2387,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: _buildImageWidget(imagePath),
+                          child: _buildImageWidget(imagePath, cacheWidth: 150),
                         ),
                       ),
                     ),
@@ -3002,12 +3007,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
-  Widget _buildImageWidget(String imagePath, {BoxFit fit = BoxFit.fitWidth}) {
+  Widget _buildImageWidget(String imagePath,
+      {BoxFit fit = BoxFit.fitWidth, int? cacheWidth}) {
     if (imagePath.startsWith('http')) {
       return Image.network(
         imagePath,
         fit: fit,
         width: double.infinity,
+        cacheWidth: cacheWidth,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Center(
@@ -3030,6 +3037,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         File(imagePath),
         fit: fit,
         width: double.infinity,
+        cacheWidth: cacheWidth,
+        gaplessPlayback: true,
       );
     }
   }
@@ -4355,7 +4364,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       if (hasCapturedPhoto) {
         captureArea = GestureDetector(
           onTap: () => _showImagePreview(itemImages[uniqueId]!),
-          child: _buildImageWidget(itemImages[uniqueId]!, fit: BoxFit.cover),
+          child: _buildImageWidget(
+            itemImages[uniqueId]!,
+            fit: BoxFit.cover,
+            cacheWidth: (MediaQuery.of(context).size.width *
+                    MediaQuery.of(context).devicePixelRatio)
+                .round(),
+          ),
         );
       } else {
         captureArea = LayoutBuilder(

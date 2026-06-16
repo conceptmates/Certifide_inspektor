@@ -620,7 +620,8 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                             border: Border.all(color: Colors.grey.shade300),
                             borderRadius: BorderRadius.circular(8),
                             image: DecorationImage(
-                              image: FileImage(File(imagePath)),
+                              image: ResizeImage(FileImage(File(imagePath)),
+                                  width: 150),
                               fit: BoxFit.cover,
                             ),
                           ),
@@ -927,6 +928,8 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
                                         height: 40,
                                         width: 40,
                                         fit: BoxFit.cover,
+                                        cacheWidth: 80,
+                                        gaplessPlayback: true,
                                       ),
                                     ),
                                     Positioned.fill(
