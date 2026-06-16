@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -699,8 +698,10 @@ class InspectionNotifier extends _$InspectionNotifier {
 
       // Build final submission payload with all uploaded URLs applied.
       // Deep-copy so mutations to nested item maps don't affect Riverpod state.
+      // A manual clone avoids the encode-to-string + parse round trip that
+      // json.decode(json.encode(...)) pays on the UI thread for a large map.
       final inspectionData =
-          json.decode(json.encode(currentInspection.data)) as Map<String, dynamic>;
+          _deepCopyJson(currentInspection.data) as Map<String, dynamic>;
       final itemIndex = <String, Map<String, dynamic>>{};
       List<dynamic>? summaryImages;
 
@@ -816,4 +817,20 @@ class InspectionNotifier extends _$InspectionNotifier {
     state = state.copyWith(isDirty: true);
   }
 
+}
+
+/// Recursively deep-copies a JSON-shaped value (Maps and Lists). Primitives
+/// (String, num, bool, null) are immutable so they are shared as-is. Cheaper
+/// than json.decode(json.encode(...)) because it skips the string round trip.
+dynamic _deepCopyJson(dynamic value) {
+  if (value is Map) {
+    return <String, dynamic>{
+      for (final entry in value.entries)
+        entry.key.toString(): _deepCopyJson(entry.value),
+    };
+  }
+  if (value is List) {
+    return [for (final item in value) _deepCopyJson(item)];
+  }
+  return value;
 }
