@@ -280,48 +280,69 @@ class InspectionNotifier extends _$InspectionNotifier {
 
       // 1) Upload every not-yet-uploaded entry. Already-uploaded entries are
       //    kept (their save-step may still be pending) and replayed below.
-      for (final entry in container.pendingMedia.entries.toList()) {
-        final key = entry.key;
-        final media = entry.value;
-        if (media.isUploaded && (media.uploadedUrl?.isNotEmpty ?? false)) {
-          continue;
-        }
+      //
+      //    The network upload (the slow part) runs in bounded-parallel chunks,
+      //    but every Hive status write stays sequential: setPendingMediaStatus
+      //    is a read-modify-write of the whole container, so concurrent writes
+      //    on different keys would clobber each other (lost update).
+      final pending = container.pendingMedia.entries
+          .where((e) =>
+              !(e.value.isUploaded && (e.value.uploadedUrl?.isNotEmpty ?? false)))
+          .toList();
 
+      // Mark the whole batch "uploading" (sequential RMW) and show it once.
+      for (final entry in pending) {
         await LocalStorageService.setPendingMediaStatus(
           inspectionId: id,
-          key: key,
+          key: entry.key,
           status: PendingMediaStatus.uploading,
         );
-        await _patchContainerInState(id); // reflect "uploading" per-file
+      }
+      if (pending.isNotEmpty) await _patchContainerInState(id);
 
-        final result = await ApiService.uploadImage(
-          media.localPath,
-          inspectionId: serverId,
-          section: media.section,
-          itemId: media.itemId,
-          mediaType: media.mediaType,
-        );
-        final url = result['url']?.toString();
+      const uploadConcurrency = 4;
+      for (var i = 0; i < pending.length; i += uploadConcurrency) {
+        final end = (i + uploadConcurrency < pending.length)
+            ? i + uploadConcurrency
+            : pending.length;
+        final chunk = pending.sublist(i, end);
 
-        if (result['success'] == true && url != null && url.isNotEmpty) {
-          await LocalStorageService.setPendingMediaStatus(
-            inspectionId: id,
-            key: key,
-            status: PendingMediaStatus.uploaded,
-            url: url,
+        // Upload this chunk concurrently (no Hive writes here).
+        final results = await Future.wait(chunk.map((entry) async {
+          final media = entry.value;
+          final result = await ApiService.uploadImage(
+            media.localPath,
+            inspectionId: serverId,
+            section: media.section,
+            itemId: media.itemId,
+            mediaType: media.mediaType,
           );
-          uploaded++;
-        } else {
-          await LocalStorageService.setPendingMediaStatus(
-            inspectionId: id,
-            key: key,
-            status: PendingMediaStatus.failed,
-            error: result['message']?.toString(),
-          );
-          failed++;
+          return MapEntry(entry.key, result);
+        }));
+
+        // Apply each result's status sequentially (RMW-safe).
+        for (final r in results) {
+          final url = r.value['url']?.toString();
+          if (r.value['success'] == true && url != null && url.isNotEmpty) {
+            await LocalStorageService.setPendingMediaStatus(
+              inspectionId: id,
+              key: r.key,
+              status: PendingMediaStatus.uploaded,
+              url: url,
+            );
+            uploaded++;
+          } else {
+            await LocalStorageService.setPendingMediaStatus(
+              inspectionId: id,
+              key: r.key,
+              status: PendingMediaStatus.failed,
+              error: r.value['message']?.toString(),
+            );
+            failed++;
+          }
         }
-        // Reflect uploaded/failed per-file AND update progress in one state
-        // mutation (was two: _patchContainerInState + _setMediaProgress).
+
+        // One state + progress patch per chunk instead of per file.
         await _patchContainerAndProgress(
           id,
           MediaUploadProgress(
