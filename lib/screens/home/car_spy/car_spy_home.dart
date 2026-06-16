@@ -449,7 +449,8 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
             ],
           ),
           const SizedBox(height: 24),
-          SizedBox(
+          RepaintBoundary(
+            child: SizedBox(
             height: 180,
             child: useApiData && isDaily
                 ? ShaderMask(
@@ -712,7 +713,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                       ],
                     ),
                   ),
-          ),
+          )),
           if (useApiData && isDaily) ...[
             const SizedBox(height: 12),
             Row(

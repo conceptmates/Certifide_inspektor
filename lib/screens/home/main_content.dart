@@ -502,7 +502,8 @@ class _MainContentState extends ConsumerState<MainContent>
       );
     }).toList();
 
-    return BarChart(
+    return RepaintBoundary(
+      child: BarChart(
       BarChartData(
         maxY: maxY,
         barGroups: barGroups,
@@ -602,7 +603,7 @@ class _MainContentState extends ConsumerState<MainContent>
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildChartLegend() {
@@ -871,8 +872,10 @@ class _MainContentState extends ConsumerState<MainContent>
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-                                // Animated play button
-                                AnimatedBuilder(
+                                // Animated play button — RepaintBoundary keeps
+                                // its 60fps pulse from repainting the hero.
+                                RepaintBoundary(
+                                  child: AnimatedBuilder(
                                   animation: rippleAnimation,
                                   builder: (context, child) => SizedBox(
                                     width: 72,
@@ -913,7 +916,7 @@ class _MainContentState extends ConsumerState<MainContent>
                                       ],
                                     ),
                                   ),
-                                ),
+                                )),
                               ],
                             ),
                           ),

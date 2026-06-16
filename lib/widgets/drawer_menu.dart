@@ -96,7 +96,10 @@ class _DrawerMenuState extends State<DrawerMenu> {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
+    // RepaintBoundary isolates the drawer's 60fps slide from the rest of
+    // the app so the underlying screen isn't re-rasterized each frame.
+    return RepaintBoundary(
+      child: AnimatedBuilder(
       animation: widget.drawerController,
       builder: (context, child) {
         return Stack(
@@ -301,7 +304,7 @@ class _DrawerMenuState extends State<DrawerMenu> {
           ],
         );
       },
-    );
+    ));
   }
 }
 
