@@ -180,6 +180,31 @@ class InspectionNotifier extends _$InspectionNotifier {
     state = state.copyWith(mediaQueue: list);
   }
 
+  /// Re-reads one container AND updates its progress entry in a SINGLE state
+  /// mutation. Equivalent to [_patchContainerInState] + [_setMediaProgress]
+  /// back-to-back, but with one notify/equality pass instead of two — called
+  /// once per file in the upload loop, so this halves that per-file cost.
+  Future<void> _patchContainerAndProgress(
+      String id, MediaUploadProgress progress) async {
+    final updated = await LocalStorageService.getMediaQueueById(id);
+    final newProgress = {...state.mediaProgress, id: progress};
+    if (updated == null) {
+      state = state.copyWith(
+        mediaQueue: state.mediaQueue.where((c) => c.id != id).toList(),
+        mediaProgress: newProgress,
+      );
+      return;
+    }
+    final list = state.mediaQueue.toList();
+    final idx = list.indexWhere((c) => c.id == id);
+    if (idx >= 0) {
+      list[idx] = updated;
+    } else {
+      list.insert(0, updated);
+    }
+    state = state.copyWith(mediaQueue: list, mediaProgress: newProgress);
+  }
+
   /// Uploads every queued media file (any type) for inspections that have
   /// pending media, WITHOUT submitting the inspection. Each uploaded file's URL
   /// is recorded and the field is re-saved server-side via save-step so the
@@ -296,9 +321,9 @@ class InspectionNotifier extends _$InspectionNotifier {
           );
           failed++;
         }
-        await _patchContainerInState(id); // reflect uploaded/failed per-file
-
-        _setMediaProgress(
+        // Reflect uploaded/failed per-file AND update progress in one state
+        // mutation (was two: _patchContainerInState + _setMediaProgress).
+        await _patchContainerAndProgress(
           id,
           MediaUploadProgress(
             total: total,
