@@ -1050,6 +1050,42 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       return;
     }
 
+    // If this inspection already exists on the server, RESUME it (a read-only
+    // GET) rather than initialize. Calling initialize here would mint a fresh
+    // server-side inspection on every continue, duplicating the record.
+    if (_sessionInspectionId != null) {
+      try {
+        final result = await ApiService.resumeInspection(_sessionInspectionId!);
+        if (!mounted) return;
+
+        if (result['success'] == true) {
+          final data = result['data'];
+          InspectionInitializationResponse? parsed;
+          if (data is InspectionInitializationResponse) {
+            parsed = data;
+          } else if (data is Map<String, dynamic>) {
+            try {
+              parsed = InspectionInitializationResponse.fromJson(data);
+            } catch (e) {
+              log('Error parsing resumed inspection template: $e');
+            }
+          }
+          if (parsed != null) {
+            _templateCache[cacheKey] = parsed;
+            _inspectionTemplate = parsed;
+            _useDynamicTemplate = true;
+          }
+        } else {
+          log('resumeInspection on resume failed: ${result['message']}');
+        }
+      } catch (e, st) {
+        log('resumeInspection exception on resume: $e', stackTrace: st);
+      }
+      // Never fall through to initialize when we have a server id — doing so
+      // would create a duplicate inspection.
+      return;
+    }
+
     try {
       final result = await ApiService.initializeInspection(
         vehicleBrandId: brandId,
