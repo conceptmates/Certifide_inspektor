@@ -786,7 +786,8 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: _buildInspectionChart(
-              ref.watch(inspectionNotifierProvider).inspections,
+              ref.watch(
+                  inspectionNotifierProvider.select((s) => s.inspections)),
               ref.watch(inspectionStatsProvider).valueOrNull,
               ref.watch(monthlyInspectionStatsProvider).valueOrNull,
             ),

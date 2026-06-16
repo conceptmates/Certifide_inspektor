@@ -929,7 +929,12 @@ class _MainContentState extends ConsumerState<MainContent>
               // ── Inspection Activity Chart ────────────────────────────
               FadeAnimation(
                 1.5,
-                _buildStatsSection(ref.watch(inspectionStatsProvider)),
+                // Scoped Consumer so a stats refresh rebuilds only this
+                // section instead of the whole scroll view + all animations.
+                Consumer(
+                  builder: (context, ref, _) =>
+                      _buildStatsSection(ref.watch(inspectionStatsProvider)),
+                ),
               ),
 
               // ── Section heading ──────────────────────────────────────
