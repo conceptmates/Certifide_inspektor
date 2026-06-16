@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/drop_down.dart';
 
 String logo = 'assets/images/certifide.svg';
-String carSpyHeritageVault = 'assets/images/carspy_heritage_vault.png';
-String carSpyHeroSection = 'assets/images/carspyHero.png';
+String carSpyHeritageVault = 'assets/images/carspy_heritage_vault.webp';
+String carSpyHeroSection = 'assets/images/carspyHero.webp';
 const Color yellow = Color(0xffffe5a0);
 const Color red = Color(0xffffc8aa);
 
