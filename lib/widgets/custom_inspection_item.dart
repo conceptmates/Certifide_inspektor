@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:convert';
 import 'dart:io';
 
@@ -137,7 +138,7 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
       }
     } on PlatformException catch (e) {
       // Handle platform-specific exceptions
-      print('Platform Exception in image picker: $e');
+      log('Platform Exception in image picker: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to pick image: ${e.message}'),
@@ -146,7 +147,7 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
       );
     } catch (e) {
       // Handle any other unexpected errors
-      print('Unexpected error in image picker: $e');
+      log('Unexpected error in image picker: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('An unexpected error occurred: $e'),
@@ -200,7 +201,7 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
         }
       }
     } catch (e) {
-      print('Error picking file: $e');
+      log('Error picking file: $e');
     }
   }
 
@@ -362,7 +363,7 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
         ),
       );
     } catch (e) {
-      print('Error building file preview: $e');
+      log('Error building file preview: $e');
       return const SizedBox();
     }
   }
@@ -371,10 +372,10 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
     try {
       final result = await OpenFile.open(filePath);
       if (result.type != ResultType.done) {
-        print('Error opening file: ${result.message}');
+        log('Error opening file: ${result.message}');
       }
     } catch (e) {
-      print('Error opening file: $e');
+      log('Error opening file: $e');
     }
   }
 
@@ -555,7 +556,7 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
       }
     } on PlatformException catch (e) {
       // Handle platform-specific exceptions
-      print('Platform Exception in image picker: $e');
+      log('Platform Exception in image picker: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to pick images: ${e.message}'),
@@ -564,7 +565,7 @@ class _CustomInspectionItemState<T> extends State<CustomInspectionItem<T>> {
       );
     } catch (e) {
       // Handle any other unexpected errors
-      print('Unexpected error in image picker: $e');
+      log('Unexpected error in image picker: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('An unexpected error occurred: $e'),

@@ -441,7 +441,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             await Hive.openBox<InspectionStorageModel>(INSPECTION_BOX);
       }
     } catch (e) {
-      print('Error initializing Hive: $e');
+      log('Error initializing Hive: $e');
       await Hive.deleteBoxFromDisk(INSPECTION_BOX);
       _inspectionBox =
           await Hive.openBox<InspectionStorageModel>(INSPECTION_BOX);
@@ -492,9 +492,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         storageModel,
       );
 
-      print('Data saved locally');
+      log('Data saved locally');
     } catch (e) {
-      print('Error saving data: $e');
+      log('Error saving data: $e');
     }
   }
 
@@ -531,7 +531,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
       }
     } catch (e) {
-      print('Error completing inspection: $e');
+      log('Error completing inspection: $e');
       rethrow;
     }
   }
@@ -736,7 +736,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         try {
           await _saveDataLocally();
         } catch (e) {
-          print('Error in auto save: $e');
+          log('Error in auto save: $e');
         }
       }
     });
@@ -750,7 +750,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     try {
       await _saveDataLocally();
     } catch (e) {
-      print('Error flushing auto save: $e');
+      log('Error flushing auto save: $e');
     }
   }
 
@@ -1022,12 +1022,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             );
             _useDynamicTemplate = true;
           } catch (e) {
-            print('Error parsing stored inspection template: $e');
+            log('Error parsing stored inspection template: $e');
           }
         }
       }
     } catch (e) {
-      print('Error loading template from storage: $e');
+      log('Error loading template from storage: $e');
     }
   }
 
@@ -1191,7 +1191,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _initializeControllers();
       }
     } catch (e) {
-      print('Error loading data: $e');
+      log('Error loading data: $e');
       _initializeValues();
       _initializeControllers();
     }
@@ -1236,7 +1236,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
       }
     } catch (e) {
-      print('Error cleaning up current inspection: $e');
+      log('Error cleaning up current inspection: $e');
     }
   }
 
@@ -4095,7 +4095,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
     } catch (e) {
-      print('Error in submission process: $e');
+      log('Error in submission process: $e');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

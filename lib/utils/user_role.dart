@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -25,7 +26,7 @@ class UserRole {
       }
       return false;
     } catch (e) {
-      print('Error checking admin status: $e');
+      log('Error checking admin status: $e');
       return false;
     }
   }
@@ -47,7 +48,7 @@ class UserRole {
       }
       return [];
     } catch (e) {
-      print('Error getting user roles: $e');
+      log('Error getting user roles: $e');
       return [];
     }
   }
@@ -58,7 +59,7 @@ class UserRole {
       final roles = await getUserRoles();
       return roles.contains(roleName);
     } catch (e) {
-      print('Error checking role $roleName: $e');
+      log('Error checking role $roleName: $e');
       return false;
     }
   }
@@ -68,7 +69,7 @@ class UserRole {
     try {
       await _storage.delete(key: 'user_data');
     } catch (e) {
-      print('Error clearing user roles: $e');
+      log('Error clearing user roles: $e');
     }
   }
 }

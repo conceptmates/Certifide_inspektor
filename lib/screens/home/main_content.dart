@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:convert';
 
 import 'package:fl_chart/fl_chart.dart';
@@ -73,7 +74,7 @@ class _MainContentState extends ConsumerState<MainContent>
         _userName.value = decodedData['name'] ?? 'User';
       }
     } catch (e) {
-      print('Error loading user name: $e');
+      log('Error loading user name: $e');
     }
   }
 
@@ -125,7 +126,7 @@ class _MainContentState extends ConsumerState<MainContent>
             Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
       }
     } catch (e) {
-      print('Error initializing Hive: $e');
+      log('Error initializing Hive: $e');
       await Hive.deleteBoxFromDisk(HiveConstants.INSPECTION_BOX);
       await Hive.initFlutter();
       _inspectionBox = await Hive.openBox<InspectionStorageModel>(
@@ -171,7 +172,7 @@ class _MainContentState extends ConsumerState<MainContent>
       }
       return false;
     } catch (e) {
-      print('Error checking existing inspection: $e');
+      log('Error checking existing inspection: $e');
       return false;
     }
   }
@@ -191,7 +192,7 @@ class _MainContentState extends ConsumerState<MainContent>
 
       _navigateToInspection(true);
     } catch (e) {
-      print('Error handling inspection tap: $e');
+      log('Error handling inspection tap: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:async' show TimeoutException;
 import 'dart:io' show HandshakeException, SocketException;
 import 'dart:ui';
@@ -176,7 +177,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           _passwordController.text,
         );
 
-        print('Login response: $response');
+        log('Login response: $response');
 
         if (!mounted) return;
 

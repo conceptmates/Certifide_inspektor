@@ -129,7 +129,7 @@ class LocalStorageService {
       final File imageFile = File(filePath);
 
       if (!imageFile.existsSync()) {
-        print('File does not exist at path: $filePath');
+        log('File does not exist at path: $filePath');
         throw Exception('File not found');
       }
 
@@ -155,7 +155,7 @@ class LocalStorageService {
 
       return finalPath;
     } catch (e) {
-      print('Error saving image: $e');
+      log('Error saving image: $e');
       rethrow;
     }
   }
@@ -173,7 +173,7 @@ class LocalStorageService {
       await videoFile.copy(finalPath);
       return finalPath;
     } catch (e) {
-      print('Error saving video: $e');
+      log('Error saving video: $e');
       rethrow;
     }
   }
@@ -298,7 +298,7 @@ class LocalStorageService {
             // Local file path - needs to be uploaded
             final File imageFile = File(filePath);
             if (!imageFile.existsSync()) {
-              print('Image file does not exist: $filePath');
+              log('Image file does not exist: $filePath');
               continue;
             }
 
@@ -312,7 +312,7 @@ class LocalStorageService {
                 itemId: itemId,
               );
             } catch (e) {
-              print('Error saving image $filePath: $e');
+              log('Error saving image $filePath: $e');
             }
           } else if (filePath.startsWith('http')) {
             // Already uploaded - URL
@@ -376,7 +376,7 @@ class LocalStorageService {
                     final savedPath = await saveImage(imagePath);
                     savedPaths.add(savedPath);
                   } catch (e) {
-                    print('Error saving multi-image $imagePath: $e');
+                    log('Error saving multi-image $imagePath: $e');
                   }
                 } else {
                   savedPaths.add(imagePath);
@@ -409,11 +409,11 @@ class LocalStorageService {
       await _writeInspection(box, inspectionId, inspection);
       return inspectionId;
     } catch (e) {
-      print('Error saving inspection: $e');
+      log('Error saving inspection: $e');
 
       // Log the full error details
       if (e is Error) {
-        print('Stacktrace: ${e.stackTrace}');
+        log('Stacktrace: ${e.stackTrace}');
       }
 
       rethrow;
@@ -445,7 +445,7 @@ class LocalStorageService {
 
       final File mediaFile = File(actualPath);
       if (!mediaFile.existsSync()) {
-        print('Media file does not exist: $actualPath');
+        log('Media file does not exist: $actualPath');
         return null;
       }
 
@@ -460,7 +460,7 @@ class LocalStorageService {
       await mediaFile.copy(destinationPath);
       return destinationPath;
     } catch (e) {
-      print('Error saving media file: $e');
+      log('Error saving media file: $e');
       return null;
     }
   }
@@ -540,7 +540,7 @@ class LocalStorageService {
     } on PathNotFoundException {
       // File already gone — nothing to do.
     } catch (e) {
-      print('Error deleting file: $e');
+      log('Error deleting file: $e');
     }
   }
 
@@ -669,7 +669,7 @@ class LocalStorageService {
       // If all checks pass, consider them the same inspection
       return true;
     } catch (e) {
-      print('Error comparing inspections: $e');
+      log('Error comparing inspections: $e');
       return false;
     }
   }

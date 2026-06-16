@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -35,7 +36,7 @@ class _LocalInspectionsScreenState
         _isInitialLoadComplete = true;
       });
     } catch (e) {
-      print('Error in initial load: $e');
+      log('Error in initial load: $e');
       setState(() {
         _isInitialLoadComplete = true;
       });
