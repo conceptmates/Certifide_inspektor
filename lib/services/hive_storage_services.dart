@@ -10,7 +10,9 @@ class HiveStorageService {
 
   static Future<void> init() async {
     await Hive.initFlutter();
-    Hive.registerAdapter(InspectionStorageModelAdapter());
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapter(InspectionStorageModelAdapter());
+    }
     await Hive.openBox<InspectionStorageModel>(boxName);
   }
 

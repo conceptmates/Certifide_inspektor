@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_store_plus/media_store_plus.dart';
 
-import 'constants/hive_constants.dart';
 import 'data/inspection_storage_model.dart';
 import 'routes/routes.dart';
 import 'screens/auth/auth_wrapper.dart';
@@ -22,21 +21,24 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  await Hive.initFlutter();
+  // Hive.initFlutter() is performed once inside LocalStorageService.init().
   await LocalStorageService.init();
-
-  if (Platform.isAndroid) {
-    await MediaStore.ensureInitialized();
-  }
 
   if (!Hive.isAdapterRegistered(0)) {
     Hive.registerAdapter(InspectionStorageModelAdapter());
   }
 
-  await Future.wait([
-    Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_BOX),
-    Hive.openBox<InspectionStorageModel>(HiveConstants.INSPECTION_HISTORY_BOX),
-  ]);
+  // INSPECTION_BOX / INSPECTION_HISTORY_BOX are opened lazily on first access
+  // (every reader guards with isBoxOpen), so we don't block the first frame on
+  // deserializing them here.
+
+  // MediaStore is only needed when saving captured media (well after launch),
+  // so initialize it after the first frame instead of on the critical path.
+  if (Platform.isAndroid) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      MediaStore.ensureInitialized();
+    });
+  }
 
   SystemChannels.lifecycle.setMessageHandler((msg) async {
     if (msg == AppLifecycleState.detached.toString()) {
