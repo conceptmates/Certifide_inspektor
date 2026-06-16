@@ -366,6 +366,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _initializeValues();
         _prefillVehicleDetails();
         _initializeControllers();
+        // Persist the just-initialized inspection (the API template plus the
+        // vehicle details returned by initialize — regno/make/model/etc.)
+        // immediately. Previously this lived only in memory until the first
+        // field edit, so going offline and resuming showed empty fields.
+        await _saveDataLocally();
       } else {
         // Resume path: prefer in-memory snapshot over Hive to avoid I/O.
         final snap = ref.read(inspectionSessionNotifierProvider);
@@ -417,6 +422,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (templateWasRefetched && mounted) {
             await _saveDataLocally();
           }
+        }
+
+        // Re-apply the vehicle-detail prefill (regno/make/model…) on resume so
+        // those fields render even when offline prevented refetching the server
+        // template, or the stored record predates the prefill. It only fills
+        // empty fields, so already-entered values are never overwritten.
+        if (mounted) {
+          _prefillVehicleDetails();
+          _initializeControllers();
         }
       }
 
@@ -808,6 +822,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     final pendingMedia = <String, PendingMedia>{};
     final saveStepItems = <String, dynamic>{};
+    // Media-less fields edited offline (values/options/remarks). Without this,
+    // an inspection initialized online then filled offline loses every answer
+    // that has no attached media, because nothing queues it for upload.
+    final answerStepItems = <String, dynamic>{};
 
     for (final section in _sections) {
       final sectionTitle = (section['title'] as String?) ?? '';
@@ -868,6 +886,20 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             'section': sectionSlug,
             'item': builtItems[uniqueId] ?? {'id': uniqueId},
           };
+        } else {
+          // No local media on this field — queue its answer/option/remark so an
+          // offline-edited value isn't lost. Media-bearing fields already carry
+          // their value inside the save-step item replayed after upload.
+          final value = (itemValues[uniqueId] ?? '').trim();
+          final remark = (itemRemarks[uniqueId] ?? '').trim();
+          final hasAnswer =
+              (value.isNotEmpty && value != 'N/A') || remark.isNotEmpty;
+          if (hasAnswer) {
+            answerStepItems[uniqueId] = {
+              'section': sectionSlug,
+              'item': builtItems[uniqueId] ?? {'id': uniqueId},
+            };
+          }
         }
       }
     }
@@ -878,6 +910,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         vehicleInfo: _buildQueueVehicleInfo(),
         pendingMedia: pendingMedia,
         saveStepItems: saveStepItems,
+        answerStepItems: answerStepItems,
       );
     } catch (e) {
       log('Error committing pending media to queue: $e');
@@ -3773,6 +3806,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             break;
           }
         }
+      }
+    }
+    // Fall back to the regno entered on the vehicle-details form. It lives in
+    // vehicleDetails and only reaches itemValues when the template happens to
+    // expose a matching field, so without this the regno is dropped from the
+    // (offline-stored and later uploaded) submission body.
+    if (registrationNumber.isEmpty) {
+      final fromVehicle = (vehicleDetails?['regno'] ?? '').toString().trim();
+      if (fromVehicle.isNotEmpty && fromVehicle != 'N/A') {
+        registrationNumber = fromVehicle;
       }
     }
 

@@ -50,6 +50,9 @@ class LocalStorageService {
         'sub': insp.isSubmitted,
         'pi': insp.pendingImages.isNotEmpty,
         'pm': insp.hasPendingMedia,
+        // Answer-only save-steps awaiting replay (offline-edited values/options/
+        // remarks on a field that has no local media). See [upsertMediaQueue].
+        'ps': (insp.data['pendingAnswerSteps'] as Map?)?.isNotEmpty ?? false,
       };
 
   /// Builds/repairs the index once per session. If counts disagree (first run
@@ -817,6 +820,7 @@ class LocalStorageService {
     required Map<String, dynamic> vehicleInfo,
     required Map<String, PendingMedia> pendingMedia,
     required Map<String, dynamic> saveStepItems,
+    Map<String, dynamic> answerStepItems = const {},
   }) async {
     final box = await _getBox();
     final id = mediaQueueId(serverInspectionId);
@@ -838,8 +842,16 @@ class LocalStorageService {
       merged[e.key] = e.value;
     }
 
-    if (merged.isEmpty) {
-      // Nothing left to upload — drop any stale container.
+    // Answer-only save-steps for media-less fields edited offline (values,
+    // options, remarks). These keep the container alive even when it has no
+    // media so the offline progress is replayed on reconnect.
+    final mergedAnswerSteps = <String, dynamic>{
+      ...?(existing?.data['pendingAnswerSteps'] as Map?)?.cast<String, dynamic>(),
+      ...answerStepItems,
+    };
+
+    if (merged.isEmpty && mergedAnswerSteps.isEmpty) {
+      // Nothing left to upload or replay — drop any stale container.
       if (existing != null && existing.status == MEDIA_PENDING_STATUS) {
         await _removeInspection(box, id);
       }
@@ -858,6 +870,7 @@ class LocalStorageService {
         'vehicleInfo': vehicleInfo,
         'inspection_id': serverInspectionId,
         'pendingSaveSteps': mergedSaveSteps,
+        'pendingAnswerSteps': mergedAnswerSteps,
       },
       images: const {},
       status: MEDIA_PENDING_STATUS,
@@ -867,6 +880,44 @@ class LocalStorageService {
     );
     await _writeInspection(box, id, container);
     return id;
+  }
+
+  /// Queue containers that still carry answer-only save-steps (media-less
+  /// fields edited offline) awaiting replay on the server. Drained by
+  /// [InspectionNotifier.syncPendingSaveSteps].
+  static Future<List<LocalInspection>> getInspectionsWithPendingSaveSteps() async {
+    final box = await _getBox();
+    return _collectByIndex(box, (e) => e['sub'] != true && e['ps'] == true);
+  }
+
+  /// Removes one answer-only save-step after it has been replayed on the
+  /// server. If the container then has neither pending media nor pending answer
+  /// steps, the whole (media-only) container is dropped.
+  static Future<void> removeAnswerStepFor(
+    String inspectionId,
+    String fieldKey,
+  ) async {
+    final box = await _getBox();
+    final insp = await box.get(inspectionId);
+    if (insp == null) return;
+
+    final steps = Map<String, dynamic>.from(
+        (insp.data['pendingAnswerSteps'] as Map?)?.cast<String, dynamic>() ??
+            const {});
+    if (!steps.containsKey(fieldKey)) return;
+    steps.remove(fieldKey);
+
+    final newData = Map<String, dynamic>.from(insp.data);
+    newData['pendingAnswerSteps'] = steps;
+    final updated = insp.copyWith(data: newData);
+
+    if (updated.pendingMedia.isEmpty &&
+        steps.isEmpty &&
+        updated.status == MEDIA_PENDING_STATUS) {
+      await _removeInspection(box, inspectionId);
+    } else {
+      await _writeInspection(box, inspectionId, updated);
+    }
   }
 
   /// Updates a single pending-media entry's status (and optionally URL/error).
@@ -914,7 +965,11 @@ class LocalStorageService {
       await _deleteFile(entry.localPath);
     }
 
-    if (updated.isEmpty && insp.status == MEDIA_PENDING_STATUS) {
+    // Don't drop the container while answer-only save-steps still await replay.
+    final answerSteps = (insp.data['pendingAnswerSteps'] as Map?) ?? const {};
+    if (updated.isEmpty &&
+        answerSteps.isEmpty &&
+        insp.status == MEDIA_PENDING_STATUS) {
       await _removeInspection(box, inspectionId);
     } else {
       await _writeInspection(

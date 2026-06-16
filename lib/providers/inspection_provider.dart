@@ -56,9 +56,11 @@ class InspectionNotifier extends _$InspectionNotifier {
                   await ConnectivityChecker.canReachServer();
               if (!hasInternet) return;
               // First drain the media-only upload queue (uploads each file and
-              // replays save-step, keeping the inspection resumable), then
-              // submit any inspections that were fully completed while offline.
+              // replays save-step, keeping the inspection resumable), replay any
+              // answer-only fields edited offline, then submit any inspections
+              // that were fully completed while offline.
               await syncPendingMedia();
+              await syncPendingSaveSteps();
               await _autoSubmitPending();
             } catch (e) {
               log('Connectivity listener error: $e');
@@ -130,6 +132,7 @@ class InspectionNotifier extends _$InspectionNotifier {
       if (hasInternet) {
         await syncPendingImages();
         await syncPendingMedia();
+        await syncPendingSaveSteps();
       }
     } catch (e) {
       log('Error loading inspections: $e');
@@ -236,6 +239,60 @@ class InspectionNotifier extends _$InspectionNotifier {
       log('Error syncing pending media: $e');
     } finally {
       _isSyncingMedia = false;
+    }
+  }
+
+  /// Replays answer-only save-steps (values/options/remarks edited offline on
+  /// media-less fields) for every queue container that has them, then clears
+  /// each one on success. Media-bearing fields are NOT touched here — their
+  /// save-step is replayed by [_uploadContainerMedia] after upload, so this
+  /// only handles the answers that would otherwise never reach the server.
+  Future<void> syncPendingSaveSteps() async {
+    try {
+      final hasInternet = await ConnectivityChecker.canReachServer();
+      if (!hasInternet) return;
+
+      final containers =
+          await LocalStorageService.getInspectionsWithPendingSaveSteps();
+      for (final container in containers) {
+        final serverId = container.serverInspectionId;
+        final steps = (container.data['pendingAnswerSteps'] as Map?)
+                ?.cast<String, dynamic>() ??
+            const <String, dynamic>{};
+        // Iterate a snapshot — removeAnswerStepFor mutates the stored container.
+        for (final entry in steps.entries.toList()) {
+          final fieldKey = entry.key;
+          final desc = entry.value;
+          final section =
+              (desc is Map ? desc['section']?.toString() : null) ?? '';
+          // Unusable descriptor (no server id / section) — drop it rather than
+          // retry forever.
+          if (serverId == null || desc is! Map || section.isEmpty) {
+            await LocalStorageService.removeAnswerStepFor(
+                container.id, fieldKey);
+            continue;
+          }
+          final item = Map<String, dynamic>.from((desc['item'] as Map?) ?? {});
+          // Never POST a local filesystem path; any media here is http or null.
+          _stripLocalMediaPaths(item);
+          try {
+            final r = await ApiService.saveInspectionStep(
+              serverId,
+              section: section,
+              items: [item],
+            );
+            if (r['success'] != false) {
+              await LocalStorageService.removeAnswerStepFor(
+                  container.id, fieldKey);
+            }
+          } catch (e) {
+            log('Answer save-step replay error ($fieldKey): $e');
+          }
+        }
+      }
+      await _reloadMediaQueue();
+    } catch (e) {
+      log('Error syncing pending save-steps: $e');
     }
   }
 

@@ -1,0 +1,223 @@
+// Verifies the offline-after-init durability fix at the storage layer.
+//
+// Scenario being protected: an inspection is initialized online (so a server
+// inspection id exists), the device goes offline, and the inspector fills in
+// values/options (and possibly media) before leaving the screen WITHOUT
+// pressing Submit. Previously, answer-only fields (no attached media) were
+// dropped entirely and the queue container was deleted whenever it had no
+// pending media, so that offline progress never synced.
+//
+// These tests exercise the pure-Hive queue logic that now preserves those
+// answers (`pendingAnswerSteps`) and keeps the container alive until they are
+// replayed on reconnect. No network / path_provider is involved.
+
+import 'dart:io';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:hive/hive.dart';
+
+import 'package:certifide_inspektor/models/local_inspection.dart';
+import 'package:certifide_inspektor/models/pending_image.dart';
+import 'package:certifide_inspektor/models/pending_media.dart';
+import 'package:certifide_inspektor/services/local_storage_services.dart';
+
+void main() {
+  late Directory tmp;
+
+  Map<String, dynamic> answerStep(String id, String section, String value) => {
+        'section': section,
+        'item': {'id': id, 'title': id, 'value': value},
+      };
+
+  setUpAll(() {
+    tmp = Directory.systemTemp.createTempSync('offline_answer_queue_test');
+    Hive.init(tmp.path);
+    if (!Hive.isAdapterRegistered(3)) Hive.registerAdapter(LocalInspectionAdapter());
+    if (!Hive.isAdapterRegistered(4)) Hive.registerAdapter(PendingImageAdapter());
+    if (!Hive.isAdapterRegistered(5)) Hive.registerAdapter(PendingMediaAdapter());
+  });
+
+  // Each test starts from empty boxes so they stay isolated and deterministic.
+  setUp(() async {
+    await (await Hive.openLazyBox<LocalInspection>(
+            LocalStorageService.INSPECTIONS_BOX))
+        .clear();
+    await (await Hive.openBox(LocalStorageService.INSPECTIONS_INDEX_BOX)).clear();
+  });
+
+  tearDownAll(() async {
+    await Hive.close();
+    tmp.deleteSync(recursive: true);
+  });
+
+  group('upsertMediaQueue — answer-only offline progress', () {
+    test(
+        'Given media-less values entered offline, When queued, Then the '
+        'container persists and surfaces in getInspectionsWithPendingSaveSteps',
+        () async {
+      // When
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 101,
+        vehicleInfo: const {'registration_number': 'KA01AB1234'},
+        pendingMedia: const {},
+        saveStepItems: const {},
+        answerStepItems: {
+          'f1': answerStep('f1', 'documents', 'yes'),
+          'f2': answerStep('f2', 'engine', 'pass'),
+        },
+      );
+
+      // Then — the container exists and carries both answers.
+      final container = await LocalStorageService.getMediaQueueById(id);
+      expect(container, isNotNull);
+      expect(container!.serverInspectionId, 101);
+      final steps = (container.data['pendingAnswerSteps'] as Map);
+      expect(steps.keys, containsAll(<String>['f1', 'f2']));
+
+      // Then — it is found by the save-step drain query (ps flag set)...
+      final pending =
+          await LocalStorageService.getInspectionsWithPendingSaveSteps();
+      expect(pending.map((e) => e.id), contains(id));
+
+      // ...but is NOT treated as a full offline submission, nor as pending media.
+      expect(await LocalStorageService.getPendingInspections(), isEmpty);
+      expect(await LocalStorageService.getInspectionsWithPendingMedia(), isEmpty);
+    });
+
+    test(
+        'Given nothing to upload or replay, When queued, Then no container is '
+        'created', () async {
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 303,
+        vehicleInfo: const {},
+        pendingMedia: const {},
+        saveStepItems: const {},
+        answerStepItems: const {},
+      );
+      expect(await LocalStorageService.getMediaQueueById(id), isNull);
+      expect(await LocalStorageService.getInspectionsWithPendingSaveSteps(),
+          isEmpty);
+    });
+
+    test(
+        'Given two offline commits for the same inspection, When queued, Then '
+        'their answers accumulate (merge, not overwrite)', () async {
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 404,
+        vehicleInfo: const {},
+        pendingMedia: const {},
+        saveStepItems: const {},
+        answerStepItems: {'a': answerStep('a', 'documents', 'yes')},
+      );
+      await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 404,
+        vehicleInfo: const {},
+        pendingMedia: const {},
+        saveStepItems: const {},
+        answerStepItems: {'b': answerStep('b', 'engine', 'fail')},
+      );
+
+      final container = await LocalStorageService.getMediaQueueById(id);
+      final steps = (container!.data['pendingAnswerSteps'] as Map);
+      expect(steps.keys, containsAll(<String>['a', 'b']));
+    });
+  });
+
+  group('removeAnswerStepFor — draining replayed answers', () {
+    test(
+        'Given an answer-only container, When the last answer is removed, Then '
+        'the whole container is deleted', () async {
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 202,
+        vehicleInfo: const {},
+        pendingMedia: const {},
+        saveStepItems: const {},
+        answerStepItems: {
+          'f1': answerStep('f1', 'documents', 'yes'),
+          'f2': answerStep('f2', 'engine', 'pass'),
+        },
+      );
+
+      // Removing one leaves the container (f2 still pending).
+      await LocalStorageService.removeAnswerStepFor(id, 'f1');
+      expect(await LocalStorageService.getMediaQueueById(id), isNotNull);
+      expect(
+          await LocalStorageService.getInspectionsWithPendingSaveSteps(),
+          hasLength(1));
+
+      // Removing the last one drops the container entirely.
+      await LocalStorageService.removeAnswerStepFor(id, 'f2');
+      expect(await LocalStorageService.getMediaQueueById(id), isNull);
+      expect(await LocalStorageService.getInspectionsWithPendingSaveSteps(),
+          isEmpty);
+    });
+  });
+
+  group('removePendingMedia — answer-step regression guard', () {
+    test(
+        'Given a container with media AND answers, When all media is drained, '
+        'Then the container survives for the still-pending answers', () async {
+      final file = File('${tmp.path}/regression_guard.jpg')
+        ..writeAsBytesSync(const [1, 2, 3]);
+
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 505,
+        vehicleInfo: const {},
+        pendingMedia: {
+          'image_x': PendingMedia(
+            localPath: file.path,
+            section: 'documents',
+            itemId: 'x',
+            mediaType: 'image',
+            fieldKey: 'x',
+          ),
+        },
+        saveStepItems: {'x': answerStep('x', 'documents', 'yes')},
+        answerStepItems: {'y': answerStep('y', 'engine', 'pass')},
+      );
+
+      // Drain the only media entry (don't touch the local file in the test).
+      await LocalStorageService.removePendingMedia(id, 'image_x',
+          deleteLocalFile: false);
+
+      // The container must NOT be deleted: answer-step 'y' is still unreplayed.
+      final container = await LocalStorageService.getMediaQueueById(id);
+      expect(container, isNotNull);
+      expect(container!.pendingMedia, isEmpty);
+      expect((container.data['pendingAnswerSteps'] as Map).containsKey('y'),
+          isTrue);
+      expect(
+          await LocalStorageService.getInspectionsWithPendingSaveSteps(),
+          hasLength(1));
+    });
+
+    test(
+        'Given a media-only container (no answers), When its last media is '
+        'drained, Then the container is deleted (existing behavior preserved)',
+        () async {
+      final file = File('${tmp.path}/media_only.jpg')
+        ..writeAsBytesSync(const [4, 5, 6]);
+
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 606,
+        vehicleInfo: const {},
+        pendingMedia: {
+          'image_z': PendingMedia(
+            localPath: file.path,
+            section: 'documents',
+            itemId: 'z',
+            mediaType: 'image',
+            fieldKey: 'z',
+          ),
+        },
+        saveStepItems: {'z': answerStep('z', 'documents', 'yes')},
+        answerStepItems: const {},
+      );
+
+      await LocalStorageService.removePendingMedia(id, 'image_z',
+          deleteLocalFile: false);
+
+      expect(await LocalStorageService.getMediaQueueById(id), isNull);
+    });
+  });
+}
