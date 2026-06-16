@@ -131,53 +131,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
       if (!mounted) return;
 
       if (hasExisting) {
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) {
-            return AlertDialog(
-              backgroundColor: CarSpyColors.surface,
-              surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: const Text(
-                'Continue saved inspection?',
-                style: TextStyle(
-                  color: CarSpyColors.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              content: const Text(
-                'You have an unfinished inspection. Continue where you left off, or start a new scan.',
-                style: TextStyle(
-                  color: CarSpyColors.onSurfaceVariant,
-                  height: 1.35,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                    _clearSavedInspectionAndStartNew();
-                  },
-                  child: const Text('Start new'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                    _navigateToInspection(false);
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: CarSpyColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Continue'),
-                ),
-              ],
-            );
-          },
-        );
+        _clearSavedInspectionAndStartNew();
       } else {
         _navigateToInspection(true);
       }
