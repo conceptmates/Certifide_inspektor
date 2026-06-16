@@ -67,7 +67,9 @@ class LocalStorageService {
       final result = await FlutterImageCompress.compressAndGetFile(
         filePath,
         finalPath,
-        quality: 100,
+        quality: 85,
+        minWidth: 1920,
+        minHeight: 1920,
         autoCorrectionAngle: true,
         keepExif: false,
         rotate: rotateAngle,
