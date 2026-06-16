@@ -16,6 +16,7 @@ part 'inspection_provider.g.dart';
 @Riverpod(keepAlive: true)
 class InspectionNotifier extends _$InspectionNotifier {
   Timer? _cooldownTimer;
+  Timer? _connectivityDebounce;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isAutoSubmitting = false;
   bool _isSyncingMedia = false;
@@ -29,6 +30,7 @@ class InspectionNotifier extends _$InspectionNotifier {
   InspectionState build() {
     ref.onDispose(() {
       _cooldownTimer?.cancel();
+      _connectivityDebounce?.cancel();
       _connectivitySubscription?.cancel();
     });
     _startConnectivityListener();
@@ -41,22 +43,28 @@ class InspectionNotifier extends _$InspectionNotifier {
         .onConnectivityChanged
         .listen((List<ConnectivityResult> results) {
       if (results.isNotEmpty && results.first != ConnectivityResult.none) {
-        // Stream listeners must be synchronous; async work is scheduled via
-        // unawaited() and all errors are caught explicitly inside.
-        unawaited(Future(() async {
-          try {
-            final hasInternet =
-                await ConnectivityChecker.hasInternetConnection();
-            if (!hasInternet) return;
-            // First drain the media-only upload queue (uploads each file and
-            // replays save-step, keeping the inspection resumable), then submit
-            // any inspections that were fully completed while offline.
-            await syncPendingMedia();
-            await _autoSubmitPending();
-          } catch (e) {
-            log('Connectivity listener error: $e');
-          }
-        }));
+        // Debounce: a Wi-Fi/cellular handoff emits a burst of events, and each
+        // sync runs full-box scans. Coalesce bursts into one sync after a short
+        // quiet period (the syncing flags still guard against overlap).
+        _connectivityDebounce?.cancel();
+        _connectivityDebounce = Timer(const Duration(seconds: 2), () {
+          // Stream listeners must be synchronous; async work is scheduled via
+          // unawaited() and all errors are caught explicitly inside.
+          unawaited(Future(() async {
+            try {
+              final hasInternet =
+                  await ConnectivityChecker.hasInternetConnection();
+              if (!hasInternet) return;
+              // First drain the media-only upload queue (uploads each file and
+              // replays save-step, keeping the inspection resumable), then
+              // submit any inspections that were fully completed while offline.
+              await syncPendingMedia();
+              await _autoSubmitPending();
+            } catch (e) {
+              log('Connectivity listener error: $e');
+            }
+          }));
+        });
       }
     });
   }
