@@ -805,23 +805,26 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       );
     }
 
-    final children = <Widget>[];
+    // Build a list of cheap row *builders* rather than the heavy widgets
+    // themselves, so ListView.builder constructs each card (and runs its
+    // per-card pendingMedia sort) lazily, only for rows in the viewport.
+    final rowBuilders = <Widget Function()>[];
     if (hasAwaiting) {
-      children.add(_buildSectionHeader('AWAITING UPLOAD', mediaQueue.length));
+      rowBuilders
+          .add(() => _buildSectionHeader('AWAITING UPLOAD', mediaQueue.length));
       for (final container in mediaQueue) {
-        children.add(
-          _buildAwaitingUploadCard(container, media.progress[container.id]),
-        );
+        final progress = media.progress[container.id];
+        rowBuilders.add(() => _buildAwaitingUploadCard(container, progress));
       }
     }
     if (hasServer) {
       if (hasAwaiting) {
-        children.add(_buildSectionHeader('ON SERVER', _pendingItems.length));
+        rowBuilders
+            .add(() => _buildSectionHeader('ON SERVER', _pendingItems.length));
       }
       for (final history in _pendingItems) {
-        children.add(
-          _buildPendingCard(history, _resumingIds.contains(history.id)),
-        );
+        rowBuilders.add(
+            () => _buildPendingCard(history, _resumingIds.contains(history.id)));
       }
     }
 
@@ -833,13 +836,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
         physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.fromLTRB(
             16, 8, 16, MediaQuery.of(context).padding.bottom + 24),
-        itemCount: children.length +
+        itemCount: rowBuilders.length +
             (_isPendingLoadingMore &&
                     _pendingPagination.currentPage < _pendingPagination.lastPage
                 ? 1
                 : 0),
         itemBuilder: (context, index) {
-          if (index == children.length) {
+          if (index == rowBuilders.length) {
             return const Center(
               child: Padding(
                 padding: EdgeInsets.all(16),
@@ -847,7 +850,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
               ),
             );
           }
-          return children[index];
+          return rowBuilders[index]();
         },
       ),
     );
