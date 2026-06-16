@@ -24,6 +24,7 @@ class VehicleDetailsForm extends StatefulWidget {
 class _VehicleDetailsFormState extends State<VehicleDetailsForm>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+  final _regNoController = TextEditingController();
   final _makeController = TextEditingController();
   final _modelController = TextEditingController();
   final _yearController = TextEditingController();
@@ -133,6 +134,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
   @override
   void dispose() {
     _animationController.dispose();
+    _regNoController.dispose();
     _makeController.dispose();
     _modelController.dispose();
     _yearController.dispose();
@@ -165,6 +167,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
       }
 
       final vehicleData = {
+        'regno': _regNoController.text.trim().toUpperCase(),
         'make': _selectedMake!.name,
         'model': _selectedModel!.name,
         'year': _yearController.text.trim(),
@@ -186,6 +189,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         variant: _variantController.text.trim().toUpperCase(),
         colour: _colourController.text.trim().toUpperCase(),
         transmission: _selectedTransmission,
+        regNo: _regNoController.text.trim().toUpperCase(),
       );
 
       setState(() {
@@ -198,6 +202,10 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         // Merge server-returned vehicle_info into form fields and vehicleData
         if (inspectionData is InspectionInitializationResponse) {
           final vi = inspectionData.vehicleInfo;
+          if (vi.regNo != null && vi.regNo!.isNotEmpty) {
+            vehicleData['regno'] = vi.regNo!.toUpperCase();
+            _regNoController.text = vi.regNo!.toUpperCase();
+          }
           if (vi.year != null && vi.year!.isNotEmpty) {
             vehicleData['year'] = vi.year!;
             _yearController.text = vi.year!;
@@ -533,6 +541,20 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                       ),
                       child: Column(
                         children: [
+                          // Registration Number
+                          _buildTextField(
+                            controller: _regNoController,
+                            label: 'Registration Number',
+                            hint: 'e.g., KA01AB1234',
+                            icon: Icons.confirmation_number,
+                            inputFormatters: [_uppercaseFormatter],
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Please enter registration number';
+                              }
+                              return null;
+                            },
+                          ),
                           // Make Dropdown
                           _buildMakeDropdown(),
                           // Model Dropdown
@@ -564,9 +586,15 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                           _buildTextField(
                             controller: _variantController,
                             label: 'Variant',
-                            hint: 'e.g., LX, EX, SE (Optional)',
+                            hint: 'e.g., LX, EX, SE',
                             icon: Icons.tune,
                             inputFormatters: [_uppercaseFormatter],
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Please enter vehicle variant';
+                              }
+                              return null;
+                            },
                           ),
                           _buildTextField(
                             controller: _colourController,

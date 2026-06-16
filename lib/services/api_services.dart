@@ -110,6 +110,7 @@ class ApiService {
     String? variant,
     String? colour,
     String? transmission,
+    String? regNo,
   }) async {
     try {
       log('Initializing inspection for brand_id: $vehicleBrandId, model_id: $vehicleModelId');
@@ -122,6 +123,7 @@ class ApiService {
         if (colour != null && colour.isNotEmpty) 'color': colour,
         if (transmission != null && transmission.isNotEmpty)
           'transmission': transmission,
+        if (regNo != null && regNo.isNotEmpty) 'registration_number': regNo,
       };
 
       final response = await http.post(

@@ -52,6 +52,7 @@ class VehicleInfo {
   final String? variant;
   final String? colour;
   final String? transmission;
+  final String? regNo;
 
   VehicleInfo({
     required this.brand,
@@ -61,6 +62,7 @@ class VehicleInfo {
     this.variant,
     this.colour,
     this.transmission,
+    this.regNo,
   });
 
   factory VehicleInfo.fromJson(Map<String, dynamic> json) {
@@ -71,6 +73,10 @@ class VehicleInfo {
     final transmission = txRaw != null && txRaw.isNotEmpty
         ? txRaw[0].toUpperCase() + txRaw.substring(1).toLowerCase()
         : null;
+    // Server may return "registration_number", "regno" or "regNo"
+    final regNoRaw =
+        (json['registration_number'] ?? json['regno'] ?? json['regNo'])
+            ?.toString();
     return VehicleInfo(
       brand: json['brand'] ?? '',
       model: json['model'] ?? '',
@@ -79,6 +85,7 @@ class VehicleInfo {
       variant: json['variant']?.toString(),
       colour: colourRaw,
       transmission: transmission,
+      regNo: regNoRaw,
     );
   }
 
@@ -91,6 +98,7 @@ class VehicleInfo {
       if (variant != null) 'variant': variant,
       if (colour != null) 'colour': colour,
       if (transmission != null) 'transmission': transmission,
+      if (regNo != null) 'registration_number': regNo,
     };
   }
 }

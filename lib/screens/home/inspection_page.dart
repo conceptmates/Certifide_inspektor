@@ -1324,6 +1324,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
     }
 
+    add(['regno', 'registration', 'reg_no', 'regnumber'],
+        vd['regno']?.toString());
     add(['make', 'brand'], vd['make']?.toString());
     add(['model'], vd['model']?.toString());
     add(['year'], vd['year']?.toString());
