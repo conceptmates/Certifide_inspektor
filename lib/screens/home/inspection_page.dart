@@ -231,8 +231,30 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
 
-  // Get sections - either from dynamic template or default
+  // Memoized result of [_buildSections] plus the inputs it was built from.
+  // The template object is always replaced wholesale (never mutated in place),
+  // so identity of the template + the dynamic flag is a sufficient cache key.
+  List<Map<String, dynamic>>? _cachedSections;
+  InspectionInitializationResponse? _cachedSectionsTemplate;
+  bool? _cachedSectionsUseDynamic;
+
+  // Get sections - either from dynamic template or default.
+  // Memoized: the heavy sort/deep-copy/map runs once per template, not on
+  // every read (this getter is read 5+ times per setState).
   List<Map<String, dynamic>> get _sections {
+    if (_cachedSections != null &&
+        identical(_cachedSectionsTemplate, _inspectionTemplate) &&
+        _cachedSectionsUseDynamic == _useDynamicTemplate) {
+      return _cachedSections!;
+    }
+    final sections = _buildSections();
+    _cachedSections = sections;
+    _cachedSectionsTemplate = _inspectionTemplate;
+    _cachedSectionsUseDynamic = _useDynamicTemplate;
+    return sections;
+  }
+
+  List<Map<String, dynamic>> _buildSections() {
     if (_useDynamicTemplate && _inspectionTemplate != null) {
       final sections = _inspectionTemplate!.structure.sections;
       // Sort sections by order
