@@ -20,11 +20,85 @@ class LocalStorageService {
   static const String IMAGES_DIR = 'inspection_images';
   static const String PENDING_IMAGES_BOX = 'pending_images';
 
-  static Future<Box<LocalInspection>> _getBox() async {
-    if (Hive.isBoxOpen(INSPECTIONS_BOX)) {
-      return Hive.box<LocalInspection>(INSPECTIONS_BOX);
+  /// Lightweight index of just the flags the filter scans need, keyed by the
+  /// same id as [INSPECTIONS_BOX]. Lets getPendingInspections /
+  /// getInspectionsWithPending* find candidates without deserializing every
+  /// full record (the main box is now a LazyBox).
+  static const String INSPECTIONS_INDEX_BOX = 'inspections_index';
+
+  // Whether the index has been verified/rebuilt this session.
+  static bool _indexChecked = false;
+
+  static Future<LazyBox<LocalInspection>> _getBox() async {
+    final box = Hive.isBoxOpen(INSPECTIONS_BOX)
+        ? Hive.lazyBox<LocalInspection>(INSPECTIONS_BOX)
+        : await Hive.openLazyBox<LocalInspection>(INSPECTIONS_BOX);
+    await _ensureIndex(box);
+    return box;
+  }
+
+  static Future<Box> _getIndexBox() async {
+    if (Hive.isBoxOpen(INSPECTIONS_INDEX_BOX)) {
+      return Hive.box(INSPECTIONS_INDEX_BOX);
     }
-    return Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    return Hive.openBox(INSPECTIONS_INDEX_BOX);
+  }
+
+  // The flags every scan predicate needs, derived from a record.
+  static Map<String, dynamic> _indexEntry(LocalInspection insp) => {
+        's': insp.status,
+        'sub': insp.isSubmitted,
+        'pi': insp.pendingImages.isNotEmpty,
+        'pm': insp.hasPendingMedia,
+      };
+
+  /// Builds/repairs the index once per session. If counts disagree (first run
+  /// after upgrade, or a crash mid-write), the index is rebuilt from the box —
+  /// a one-time full read. Steady state: writes keep it in sync incrementally.
+  static Future<void> _ensureIndex(LazyBox<LocalInspection> box) async {
+    if (_indexChecked) return;
+    _indexChecked = true;
+    final idx = await _getIndexBox();
+    if (idx.length != box.length) {
+      await idx.clear();
+      for (final key in box.keys) {
+        final insp = await box.get(key);
+        if (insp != null) await idx.put(key, _indexEntry(insp));
+      }
+    }
+  }
+
+  /// Single write path: persists the record AND its index entry so the two
+  /// can never drift.
+  static Future<void> _writeInspection(
+      LazyBox<LocalInspection> box, dynamic id, LocalInspection insp) async {
+    await box.put(id, insp);
+    final idx = await _getIndexBox();
+    await idx.put(id, _indexEntry(insp));
+  }
+
+  /// Single delete path: removes the record AND its index entry.
+  static Future<void> _removeInspection(
+      LazyBox<LocalInspection> box, dynamic id) async {
+    await box.delete(id);
+    final idx = await _getIndexBox();
+    await idx.delete(id);
+  }
+
+  /// Collects full records whose index entry matches [match], deserializing
+  /// only the matches.
+  static Future<List<LocalInspection>> _collectByIndex(
+      LazyBox<LocalInspection> box, bool Function(Map) match) async {
+    final idx = await _getIndexBox();
+    final result = <LocalInspection>[];
+    for (final key in idx.keys) {
+      final e = idx.get(key);
+      if (e is Map && match(e)) {
+        final insp = await box.get(key);
+        if (insp != null) result.add(insp);
+      }
+    }
+    return result;
   }
 
   static Future<void> init() async {
@@ -38,7 +112,7 @@ class LocalStorageService {
     if (!Hive.isAdapterRegistered(5)) {
       Hive.registerAdapter(PendingMediaAdapter());
     }
-    await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    await Hive.openLazyBox<LocalInspection>(INSPECTIONS_BOX);
   }
 
   /// Status used for media-only queue containers created when an in-progress
@@ -332,7 +406,7 @@ class LocalStorageService {
         multiImages: savedMultiImages,
       );
 
-      await box.put(inspectionId, inspection);
+      await _writeInspection(box, inspectionId, inspection);
       return inspectionId;
     } catch (e) {
       print('Error saving inspection: $e');
@@ -393,45 +467,37 @@ class LocalStorageService {
 
   static Future<List<LocalInspection>> getPendingInspections() async {
     final box = await _getBox();
-    return box.values
-        .where(
-          (inspection) =>
-              !inspection.isSubmitted && inspection.status == 'offline',
-        )
-        .toList();
+    return _collectByIndex(
+        box, (e) => e['sub'] != true && e['s'] == 'offline');
   }
 
   static Future<List<LocalInspection>> getInspectionsWithPendingImages() async {
     final box = await _getBox();
-    return box.values
-        .where(
-          (inspection) =>
-              !inspection.isSubmitted &&
-              inspection.pendingImages.isNotEmpty &&
-              inspection.status == 'offline',
-        )
-        .toList();
+    return _collectByIndex(
+        box,
+        (e) =>
+            e['sub'] != true && e['pi'] == true && e['s'] == 'offline');
   }
 
   static Future<void> markInspectionAsSubmitted(String id) async {
     final box = await _getBox();
-    final inspection = box.get(id);
+    final inspection = await box.get(id);
 
     if (inspection != null) {
       // Delete images first
       await _deleteInspectionImages(inspection);
       // Then delete the inspection
-      await box.delete(id);
+      await _removeInspection(box, id);
     }
   }
 
   static Future<void> deleteInspection(String id) async {
     final box = await _getBox();
-    final inspection = box.get(id);
+    final inspection = await box.get(id);
 
     if (inspection != null) {
       await _deleteInspectionImages(inspection);
-      await box.delete(id);
+      await _removeInspection(box, id);
     }
   }
 
@@ -636,7 +702,7 @@ class LocalStorageService {
     required Map<String, String> uploadedImages,
   }) async {
     final box = await _getBox();
-    final inspection = box.get(inspectionId);
+    final inspection = await box.get(inspectionId);
 
     if (inspection != null) {
       // Update images map with uploaded URLs
@@ -651,7 +717,8 @@ class LocalStorageService {
         }
       }
 
-      await box.put(
+      await _writeInspection(
+        box,
         inspectionId,
         inspection.copyWith(
           images: updatedImages,
@@ -669,7 +736,7 @@ class LocalStorageService {
     Map<String, List<String>> uploadedMultiImages = const {},
   }) async {
     final box = await _getBox();
-    final inspection = box.get(inspectionId);
+    final inspection = await box.get(inspectionId);
     if (inspection == null) return;
 
     final updatedVideos = Map<String, String>.from(inspection.videos)
@@ -682,7 +749,8 @@ class LocalStorageService {
         Map<String, List<String>>.from(inspection.multiImages)
           ..addAll(uploadedMultiImages);
 
-    await box.put(
+    await _writeInspection(
+      box,
       inspectionId,
       inspection.copyWith(
         videos: updatedVideos,
@@ -701,7 +769,7 @@ class LocalStorageService {
     required String itemId,
   }) async {
     final box = await _getBox();
-    final inspection = box.get(inspectionId);
+    final inspection = await box.get(inspectionId);
 
     if (inspection != null) {
       final updatedPendingImages = Map<String, PendingImage>.from(inspection.pendingImages);
@@ -711,7 +779,8 @@ class LocalStorageService {
         itemId: itemId,
       );
 
-      await box.put(
+      await _writeInspection(
+        box,
         inspectionId,
         inspection.copyWith(pendingImages: updatedPendingImages),
       );
@@ -728,15 +797,13 @@ class LocalStorageService {
   /// still have at least one un-uploaded media item.
   static Future<List<LocalInspection>> getInspectionsWithPendingMedia() async {
     final box = await _getBox();
-    return box.values
-        .where((i) => !i.isSubmitted && i.hasPendingMedia)
-        .toList();
+    return _collectByIndex(box, (e) => e['sub'] != true && e['pm'] == true);
   }
 
   /// The media-only queue container for a server inspection, or null.
   static Future<LocalInspection?> getMediaQueueById(String id) async {
     final box = await _getBox();
-    return box.get(id);
+    return await box.get(id);
   }
 
   /// Creates or MERGES the media-only queue container for a server inspection.
@@ -753,7 +820,7 @@ class LocalStorageService {
   }) async {
     final box = await _getBox();
     final id = mediaQueueId(serverInspectionId);
-    final existing = box.get(id);
+    final existing = await box.get(id);
 
     // Merge: keep already-uploaded entries from the existing container so a
     // pending save-step is not lost; add newly-scanned local entries (skipping
@@ -774,7 +841,7 @@ class LocalStorageService {
     if (merged.isEmpty) {
       // Nothing left to upload — drop any stale container.
       if (existing != null && existing.status == MEDIA_PENDING_STATUS) {
-        await box.delete(id);
+        await _removeInspection(box, id);
       }
       return id;
     }
@@ -798,7 +865,7 @@ class LocalStorageService {
       pendingMedia: merged,
       serverInspectionId: serverInspectionId,
     );
-    await box.put(id, container);
+    await _writeInspection(box, id, container);
     return id;
   }
 
@@ -811,7 +878,7 @@ class LocalStorageService {
     String? error,
   }) async {
     final box = await _getBox();
-    final insp = box.get(inspectionId);
+    final insp = await box.get(inspectionId);
     final entry = insp?.pendingMedia[key];
     if (insp == null || entry == null) return;
 
@@ -824,7 +891,8 @@ class LocalStorageService {
           ? entry.retryCount + 1
           : entry.retryCount,
     );
-    await box.put(inspectionId, insp.copyWith(pendingMedia: updated));
+    await _writeInspection(
+        box, inspectionId, insp.copyWith(pendingMedia: updated));
   }
 
   /// Removes a fully-uploaded entry from the queue (and deletes its local
@@ -836,7 +904,7 @@ class LocalStorageService {
     bool deleteLocalFile = true,
   }) async {
     final box = await _getBox();
-    final insp = box.get(inspectionId);
+    final insp = await box.get(inspectionId);
     if (insp == null) return;
 
     final entry = insp.pendingMedia[key];
@@ -847,9 +915,10 @@ class LocalStorageService {
     }
 
     if (updated.isEmpty && insp.status == MEDIA_PENDING_STATUS) {
-      await box.delete(inspectionId);
+      await _removeInspection(box, inspectionId);
     } else {
-      await box.put(inspectionId, insp.copyWith(pendingMedia: updated));
+      await _writeInspection(
+          box, inspectionId, insp.copyWith(pendingMedia: updated));
     }
   }
 
@@ -860,7 +929,7 @@ class LocalStorageService {
     String fieldKey,
   ) async {
     final box = await _getBox();
-    final insp = box.get(inspectionId);
+    final insp = await box.get(inspectionId);
     final steps = insp?.data['pendingSaveSteps'];
     if (steps is Map && steps[fieldKey] is Map) {
       return Map<String, dynamic>.from(steps[fieldKey] as Map);
@@ -874,11 +943,11 @@ class LocalStorageService {
   static Future<void> clearMediaQueueFor(int serverInspectionId) async {
     final box = await _getBox();
     final id = mediaQueueId(serverInspectionId);
-    final insp = box.get(id);
+    final insp = await box.get(id);
     if (insp == null) return;
     for (final entry in insp.pendingMedia.values) {
       await _deleteFile(entry.localPath);
     }
-    await box.delete(id);
+    await _removeInspection(box, id);
   }
 }
