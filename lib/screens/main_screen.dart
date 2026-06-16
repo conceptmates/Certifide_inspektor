@@ -133,7 +133,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           final userState = ref.watch(userNotifierProvider);
           if (userState.isLoading) {
             return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
+              body: Center(child: CircularProgressIndicator.adaptive()),
             );
           }
 

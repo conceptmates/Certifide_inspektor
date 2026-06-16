@@ -19,8 +19,11 @@ class InspectionHistory {
     this.links,
   });
 
-  /// True when the inspection can be resumed (pending = submitted, awaiting review).
-  bool get isResumable => status == 'pending' || processingStatus == 'completed';
+  /// True when the inspection can be resumed. Drafts are initialised-but-not-
+  /// completed inspections shown in the Pending tab; 'pending' is kept for
+  /// backward compatibility with older server responses.
+  bool get isResumable =>
+      status == 'draft' || status == 'pending' || processingStatus == 'completed';
 
   int? get idAsInt => int.tryParse(id);
 

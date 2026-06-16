@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/local_inspection.dart';
 import '../models/pending_image.dart';
+import '../models/pending_media.dart';
 
 enum MediaType { image, video, audio, file }
 
@@ -34,8 +35,20 @@ class LocalStorageService {
     if (!Hive.isAdapterRegistered(4)) {
       Hive.registerAdapter(PendingImageAdapter());
     }
+    if (!Hive.isAdapterRegistered(5)) {
+      Hive.registerAdapter(PendingMediaAdapter());
+    }
     await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
   }
+
+  /// Status used for media-only queue containers created when an in-progress
+  /// inspection is closed with media still awaiting upload. These are NOT
+  /// returned by [getPendingInspections] (so they never trigger a full submit),
+  /// only by [getInspectionsWithPendingMedia].
+  static const String MEDIA_PENDING_STATUS = 'media_pending';
+
+  static String mediaQueueId(int serverInspectionId) =>
+      'mediaq_$serverInspectionId';
 
   static Future<String> saveImage(String filePath, {int rotateAngle = 0}) async {
     try {
@@ -636,21 +649,13 @@ class LocalStorageService {
         }
       }
 
-      final updatedInspection = LocalInspection(
-        id: inspection.id,
-        createdAt: inspection.createdAt,
-        data: inspection.data,
-        images: updatedImages,
-        pendingImages: updatedPendingImages,
-        status: inspection.status,
-        isSubmitted: inspection.isSubmitted,
-        videos: inspection.videos,
-        audios: inspection.audios,
-        files: inspection.files,
-        multiImages: inspection.multiImages,
+      await box.put(
+        inspectionId,
+        inspection.copyWith(
+          images: updatedImages,
+          pendingImages: updatedPendingImages,
+        ),
       );
-
-      await box.put(inspectionId, updatedInspection);
     }
   }
 
@@ -659,6 +664,7 @@ class LocalStorageService {
     Map<String, String> uploadedVideos = const {},
     Map<String, String> uploadedAudios = const {},
     Map<String, String> uploadedFiles = const {},
+    Map<String, List<String>> uploadedMultiImages = const {},
   }) async {
     final box = await _getBox();
     final inspection = box.get(inspectionId);
@@ -670,22 +676,19 @@ class LocalStorageService {
       ..addAll(uploadedAudios);
     final updatedFiles = Map<String, String>.from(inspection.files)
       ..addAll(uploadedFiles);
+    final updatedMultiImages =
+        Map<String, List<String>>.from(inspection.multiImages)
+          ..addAll(uploadedMultiImages);
 
-    final updatedInspection = LocalInspection(
-      id: inspection.id,
-      createdAt: inspection.createdAt,
-      data: inspection.data,
-      images: inspection.images,
-      pendingImages: inspection.pendingImages,
-      status: inspection.status,
-      isSubmitted: inspection.isSubmitted,
-      videos: updatedVideos,
-      audios: updatedAudios,
-      files: updatedFiles,
-      multiImages: inspection.multiImages,
+    await box.put(
+      inspectionId,
+      inspection.copyWith(
+        videos: updatedVideos,
+        audios: updatedAudios,
+        files: updatedFiles,
+        multiImages: updatedMultiImages,
+      ),
     );
-
-    await box.put(inspectionId, updatedInspection);
   }
 
   static Future<void> addPendingImage({
@@ -706,22 +709,174 @@ class LocalStorageService {
         itemId: itemId,
       );
 
-      final updatedInspection = LocalInspection(
-        id: inspection.id,
-        createdAt: inspection.createdAt,
-        data: inspection.data,
-        images: inspection.images,
-        pendingImages: updatedPendingImages,
-        status: inspection.status,
-        isSubmitted: inspection.isSubmitted,
-        videos: inspection.videos,
-        audios: inspection.audios,
-        files: inspection.files,
-        multiImages: inspection.multiImages,
+      await box.put(
+        inspectionId,
+        inspection.copyWith(pendingImages: updatedPendingImages),
       );
-
-      await box.put(inspectionId, updatedInspection);
     }
   }
 
+  // ===========================================================================
+  // Media-agnostic offline upload queue (images, videos, audios, files,
+  // multi-images). Used when an in-progress inspection is closed with media
+  // still awaiting upload, and drained by InspectionNotifier.syncPendingMedia.
+  // ===========================================================================
+
+  /// All inspections (queue containers and offline-submitted records) that
+  /// still have at least one un-uploaded media item.
+  static Future<List<LocalInspection>> getInspectionsWithPendingMedia() async {
+    final box = await _getBox();
+    return box.values
+        .where((i) => !i.isSubmitted && i.hasPendingMedia)
+        .toList();
+  }
+
+  /// The media-only queue container for a server inspection, or null.
+  static Future<LocalInspection?> getMediaQueueById(String id) async {
+    final box = await _getBox();
+    return box.get(id);
+  }
+
+  /// Creates or MERGES the media-only queue container for a server inspection.
+  /// [pendingMedia] is the freshly-scanned set of still-local media; existing
+  /// already-uploaded entries (awaiting save-step) are preserved, entries whose
+  /// local file has vanished are skipped, and the sync engine's removals are
+  /// never resurrected. [saveStepItems] maps each fieldKey to
+  /// `{'section': <slug>, 'item': <save-step item map>}` for save-step replay.
+  static Future<String> upsertMediaQueue({
+    required int serverInspectionId,
+    required Map<String, dynamic> vehicleInfo,
+    required Map<String, PendingMedia> pendingMedia,
+    required Map<String, dynamic> saveStepItems,
+  }) async {
+    final box = await _getBox();
+    final id = mediaQueueId(serverInspectionId);
+    final existing = box.get(id);
+
+    // Merge: keep already-uploaded entries from the existing container so a
+    // pending save-step is not lost; add newly-scanned local entries (skipping
+    // any whose file no longer exists); never downgrade an uploaded entry.
+    final merged = <String, PendingMedia>{};
+    if (existing != null) {
+      for (final e in existing.pendingMedia.entries) {
+        if (e.value.isUploaded) merged[e.key] = e.value;
+      }
+    }
+    for (final e in pendingMedia.entries) {
+      final ex = merged[e.key];
+      if (ex != null && ex.isUploaded) continue;
+      if (!File(e.value.localPath).existsSync()) continue;
+      merged[e.key] = e.value;
+    }
+
+    if (merged.isEmpty) {
+      // Nothing left to upload — drop any stale container.
+      if (existing != null && existing.status == MEDIA_PENDING_STATUS) {
+        await box.delete(id);
+      }
+      return id;
+    }
+
+    final mergedSaveSteps = <String, dynamic>{
+      ...?(existing?.data['pendingSaveSteps'] as Map?)?.cast<String, dynamic>(),
+      ...saveStepItems,
+    };
+
+    final container = LocalInspection(
+      id: id,
+      createdAt: existing?.createdAt ?? DateTime.now(),
+      data: {
+        'vehicleInfo': vehicleInfo,
+        'inspection_id': serverInspectionId,
+        'pendingSaveSteps': mergedSaveSteps,
+      },
+      images: const {},
+      status: MEDIA_PENDING_STATUS,
+      isSubmitted: false,
+      pendingMedia: merged,
+      serverInspectionId: serverInspectionId,
+    );
+    await box.put(id, container);
+    return id;
+  }
+
+  /// Updates a single pending-media entry's status (and optionally URL/error).
+  static Future<void> setPendingMediaStatus({
+    required String inspectionId,
+    required String key,
+    required String status,
+    String? url,
+    String? error,
+  }) async {
+    final box = await _getBox();
+    final insp = box.get(inspectionId);
+    final entry = insp?.pendingMedia[key];
+    if (insp == null || entry == null) return;
+
+    final updated = Map<String, PendingMedia>.from(insp.pendingMedia);
+    updated[key] = entry.copyWith(
+      uploadStatus: status,
+      uploadedUrl: url ?? entry.uploadedUrl,
+      lastError: error,
+      retryCount: status == PendingMediaStatus.failed
+          ? entry.retryCount + 1
+          : entry.retryCount,
+    );
+    await box.put(inspectionId, insp.copyWith(pendingMedia: updated));
+  }
+
+  /// Removes a fully-uploaded entry from the queue (and deletes its local
+  /// file). If the container is a media-only queue and becomes empty, the
+  /// whole container is deleted.
+  static Future<void> removePendingMedia(
+    String inspectionId,
+    String key, {
+    bool deleteLocalFile = true,
+  }) async {
+    final box = await _getBox();
+    final insp = box.get(inspectionId);
+    if (insp == null) return;
+
+    final entry = insp.pendingMedia[key];
+    final updated = Map<String, PendingMedia>.from(insp.pendingMedia)
+      ..remove(key);
+    if (deleteLocalFile && entry != null) {
+      await _deleteFile(entry.localPath);
+    }
+
+    if (updated.isEmpty && insp.status == MEDIA_PENDING_STATUS) {
+      await box.delete(inspectionId);
+    } else {
+      await box.put(inspectionId, insp.copyWith(pendingMedia: updated));
+    }
+  }
+
+  /// Reads the save-step replay descriptor for a field, or null.
+  /// Returns `{'section': <slug>, 'item': <map>}`.
+  static Future<Map<String, dynamic>?> getSaveStepFor(
+    String inspectionId,
+    String fieldKey,
+  ) async {
+    final box = await _getBox();
+    final insp = box.get(inspectionId);
+    final steps = insp?.data['pendingSaveSteps'];
+    if (steps is Map && steps[fieldKey] is Map) {
+      return Map<String, dynamic>.from(steps[fieldKey] as Map);
+    }
+    return null;
+  }
+
+  /// Deletes the media-only queue container for a server inspection, if any
+  /// (e.g. after the inspection is finally submitted). Local queued files are
+  /// removed too.
+  static Future<void> clearMediaQueueFor(int serverInspectionId) async {
+    final box = await _getBox();
+    final id = mediaQueueId(serverInspectionId);
+    final insp = box.get(id);
+    if (insp == null) return;
+    for (final entry in insp.pendingMedia.values) {
+      await _deleteFile(entry.localPath);
+    }
+    await box.delete(id);
+  }
 }

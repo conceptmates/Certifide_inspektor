@@ -17,6 +17,12 @@ import '../models/vehicle_model.dart';
 import '../utils/exception_handler.dart';
 import '../screens/auth/login_page.dart';
 
+/// Thrown inside [ApiService.uploadImage] when no auth token can be read while
+/// (re)building a multipart upload request.
+class _SessionExpired implements Exception {
+  const _SessionExpired();
+}
+
 class ApiService {
   // static const String baseUrl = 'https://api.estelledarcy.com/api';
   static const String baseUrl = 'https://api.certifide.in/api';
@@ -607,15 +613,23 @@ class ApiService {
     }
   }
 
+  /// Uploads a single media file (image / video / audio / file) to the shared
+  /// upload endpoint and returns `{success, url, path, message}`.
+  ///
+  /// Works for every media type — the endpoint keys media by [section] +
+  /// [itemId] (+ optional [inspectionId]). On a 401 it refreshes the token and
+  /// retries the upload ONCE so a token expiry mid-sync doesn't silently drop a
+  /// queued upload. [mediaType] is accepted for logging/diagnostics.
   static Future<Map<String, dynamic>> uploadImage(
     String imagePath, {
     int? inspectionId,
     required String section,
     required String itemId,
     String fieldName = 'image',
+    String? mediaType,
   }) async {
     try {
-      log('Uploading media ($fieldName) to: $baseUrl$uploadImageEndPoint');
+      log('Uploading media (${mediaType ?? fieldName}) to: $baseUrl$uploadImageEndPoint');
       log('Section: $section, ItemId: $itemId');
 
       final file = File(imagePath);
@@ -651,59 +665,84 @@ class ApiService {
         }
       }
 
-      final newToken = await _storage.read(key: 'jwt_token');
-      if (newToken == null) {
-        return {'success': false, 'message': 'Session expired. Please login again.'};
-      }
-
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('$baseUrl$uploadImageEndPoint'),
-      );
-
-      request.headers['Authorization'] = 'Bearer $newToken';
-      request.headers['Accept'] = 'application/json';
-
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          fieldName,
-          bytes,
-          filename: fileName,
-        ),
-      );
-
-      request.fields['section'] = section;
-      request.fields['itemId'] = itemId;
-
-      if (inspectionId != null) {
-        request.fields['inspection_id'] = inspectionId.toString();
-        log('Adding inspection_id to request: ${inspectionId.toString()}');
+      // Builds and sends a fresh multipart request with the current token.
+      // Defined as a closure so we can re-issue it after a 401 refresh.
+      Future<({int status, String body})> send() async {
+        final authToken = await _storage.read(key: 'jwt_token');
+        if (authToken == null) {
+          throw const _SessionExpired();
+        }
+        final request = http.MultipartRequest(
+          'POST',
+          Uri.parse('$baseUrl$uploadImageEndPoint'),
+        );
+        request.headers['Authorization'] = 'Bearer $authToken';
+        request.headers['Accept'] = 'application/json';
+        request.files.add(
+          http.MultipartFile.fromBytes(fieldName, bytes, filename: fileName),
+        );
+        request.fields['section'] = section;
+        request.fields['itemId'] = itemId;
+        if (inspectionId != null) {
+          request.fields['inspection_id'] = inspectionId.toString();
+        }
+        final response = await request.send();
+        final body = await response.stream.bytesToString();
+        return (status: response.statusCode, body: body);
       }
 
       log('Upload request fields: section=$section, itemId=$itemId, inspectionId=$inspectionId');
 
-      final response = await request.send();
+      ({int status, String body}) result;
+      try {
+        result = await send();
+        // Refresh + retry ONCE on auth failure.
+        if (result.status == 401) {
+          final refreshResult = await refreshToken();
+          if (!refreshResult['success']) {
+            await _storage.deleteAll();
+            return {
+              'success': false,
+              'message': 'Session expired. Please login again.',
+            };
+          }
+          result = await send();
+        }
+      } on _SessionExpired {
+        return {
+          'success': false,
+          'message': 'Session expired. Please login again.',
+        };
+      }
 
-      final responseBody = await response.stream.bytesToString();
-      log('Upload response status: ${response.statusCode}');
-      log('Upload response body: $responseBody');
+      log('Upload response status: ${result.status}');
+      log('Upload response body: ${result.body}');
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = json.decode(responseBody);
+      if (result.status == 200 || result.status == 201) {
+        final responseData = json.decode(result.body);
 
-        // Server returns imagePath for all media types on this endpoint
+        // Server returns imagePath for all media types on this endpoint;
+        // honour any media-path key the backend might use.
         final mediaPath = responseData['imagePath'] ??
             responseData['videoPath'] ??
             responseData['audioPath'] ??
-            responseData['filePath'];
+            responseData['filePath'] ??
+            responseData['url'] ??
+            responseData['path'];
 
-        if (responseData['status'] == 'success' && mediaPath != null) {
+        // Treat as success when a media path is present, even if the backend
+        // omits/renames the `status` flag.
+        final bool ok = mediaPath != null &&
+            (responseData['status'] == null ||
+                responseData['status'] == 'success' ||
+                responseData['success'] == true);
+
+        if (ok) {
           final String? url = mediaPath is Map
               ? mediaPath['url']?.toString()
-              : mediaPath?.toString();
-          final String? path = mediaPath is Map
-              ? mediaPath['path']?.toString()
-              : null;
+              : mediaPath.toString();
+          final String? path =
+              mediaPath is Map ? mediaPath['path']?.toString() : null;
           log('Upload successful. URL: $url');
           return {
             'success': true,
@@ -717,18 +756,17 @@ class ApiService {
             'message': responseData['message'] ?? 'Failed to upload',
           };
         }
-      } else if (response.statusCode == 401) {
-        final refreshResult = await refreshToken();
-        if (!refreshResult['success']) {
-          await _storage.deleteAll();
-          return {'success': false, 'message': 'Session expired. Please login again.'};
-        }
-        return {'success': false, 'message': 'Authentication refreshed — please retry upload.'};
-      } else {
-        log('Error response: $responseBody');
+      } else if (result.status == 401) {
+        await _storage.deleteAll();
         return {
           'success': false,
-          'message': _handleErrorFromString(responseBody, response.statusCode),
+          'message': 'Session expired. Please login again.',
+        };
+      } else {
+        log('Error response: ${result.body}');
+        return {
+          'success': false,
+          'message': _handleErrorFromString(result.body, result.status),
         };
       }
     } catch (e) {
@@ -801,10 +839,10 @@ class ApiService {
       log('getInspectionHistory body: ${response.body}');
 
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
 
         if (responseData['status'] == 'success') {
-          final data = responseData['data'];
+          final data = (responseData['data'] as Map).cast<String, dynamic>();
           final rawList = data['inspections'] ?? data['data'] ?? [];
           if (rawList is! List) {
             return {'success': false, 'message': 'Unexpected response shape'};
@@ -812,14 +850,7 @@ class ApiService {
           final inspections = rawList
               .map((item) => InspectionHistory.fromJson(item))
               .toList();
-          final pagination = data['pagination'] != null
-              ? PaginationData.fromJson(data['pagination'])
-              : PaginationData(
-                  currentPage: data['current_page'] ?? 1,
-                  lastPage: data['last_page'] ?? 1,
-                  perPage: data['per_page'] ?? 10,
-                  total: data['total'] ?? 0,
-                );
+          final pagination = _extractPagination(responseData, data);
 
           return {
             'success': true,
@@ -855,6 +886,31 @@ class ApiService {
     }
   }
 
+  /// Extracts pagination metadata from a response that may nest it in several
+  /// shapes: a `pagination`/`meta` object (under `data` or top-level), or
+  /// Laravel-style sibling keys (`current_page`, `last_page`, ...).
+  static PaginationData _extractPagination(
+      Map<String, dynamic> responseData, Map<String, dynamic> data) {
+    for (final candidate in [
+      data['pagination'],
+      data['meta'],
+      responseData['pagination'],
+      responseData['meta'],
+    ]) {
+      if (candidate is Map<String, dynamic> &&
+          (candidate['last_page'] != null || candidate['current_page'] != null)) {
+        return PaginationData.fromJson(candidate);
+      }
+    }
+    // Fall back to flat sibling keys (raw paginator serialized under `data`).
+    return PaginationData(
+      currentPage: data['current_page'] ?? responseData['current_page'] ?? 1,
+      lastPage: data['last_page'] ?? responseData['last_page'] ?? 1,
+      perPage: data['per_page'] ?? responseData['per_page'] ?? 10,
+      total: data['total'] ?? responseData['total'] ?? 0,
+    );
+  }
+
   static Future<Map<String, dynamic>> getDynamicInspectionMyHistory(
       BuildContext context,
       {int page = 1, String? status}) async {
@@ -872,10 +928,10 @@ class ApiService {
           .timeout(_requestTimeout);
 
       if (response.statusCode == 200) {
-        final responseData = json.decode(response.body);
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
 
         if (responseData['status'] == 'success') {
-          final data = responseData['data'];
+          final data = (responseData['data'] as Map).cast<String, dynamic>();
           final rawList = data['inspections'] ?? data['data'] ?? [];
           if (rawList is! List) {
             return {'success': false, 'message': 'Unexpected response shape'};
@@ -883,14 +939,7 @@ class ApiService {
           final inspections = rawList
               .map((item) => InspectionHistory.fromJson(item))
               .toList();
-          final pagination = data['pagination'] != null
-              ? PaginationData.fromJson(data['pagination'])
-              : PaginationData(
-                  currentPage: data['current_page'] ?? 1,
-                  lastPage: data['last_page'] ?? 1,
-                  perPage: data['per_page'] ?? 10,
-                  total: data['total'] ?? 0,
-                );
+          final pagination = _extractPagination(responseData, data);
 
           return {
             'success': true,

@@ -20,6 +20,7 @@ import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
 import '../../models/inspection_item.dart';
 import '../../models/inspection_template_model.dart';
+import '../../models/pending_media.dart';
 import '../../providers/inspection_provider.dart';
 import '../../providers/inspection_session_provider.dart';
 import '../../providers/user_provider.dart';
@@ -675,16 +676,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
     }
 
+    // Only push media that has finished uploading (http URLs). Local paths are
+    // never sent to the server — the offline media queue uploads them and
+    // replays save-step with the real URL once online. See [_commitPendingMediaToQueue].
     final singleItem = {
       'id': uniqueId,
       'title': _getItemTitle(resolvedItem),
       'value': value,
       'remarks': (itemRemarks[uniqueId]?.isNotEmpty ?? false) ? itemRemarks[uniqueId] : null,
-      'imagePath': itemImages[uniqueId],
-      'multiImages': itemMultiImages[uniqueId],
-      'videoPath': itemVideos[uniqueId],
-      'audioPath': itemAudios[uniqueId],
-      'filePath': filePath,
+      'imagePath': _httpOrNull(itemImages[uniqueId]),
+      'multiImages': _allHttpOrNull(itemMultiImages[uniqueId]),
+      'videoPath': _httpOrNull(itemVideos[uniqueId]),
+      'audioPath': _httpOrNull(itemAudios[uniqueId]),
+      'filePath': _httpOrNull(filePath),
     };
 
     final capturedSection = sectionName;
@@ -728,6 +732,136 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
+  // --- Offline media upload queue --------------------------------------------
+
+  /// Returns [v] only when it is an already-uploaded http URL, else null.
+  String? _httpOrNull(String? v) =>
+      (v != null && v.startsWith('http')) ? v : null;
+
+  /// Returns the list only when EVERY entry is an http URL (fully uploaded);
+  /// otherwise null, so a partial multi-image set is never pushed mid-upload.
+  List<String>? _allHttpOrNull(List<String>? v) {
+    if (v == null || v.isEmpty) return null;
+    if (v.any((e) => !e.startsWith('http'))) return null;
+    return v;
+  }
+
+  bool _isLocalMediaPath(String? v) =>
+      v != null && v.isNotEmpty && !v.startsWith('http');
+
+  String? _filePathFromPayload(String? payload) {
+    if (payload == null) return null;
+    try {
+      return (json.decode(payload) as Map<String, dynamic>)['filePath']
+          as String?;
+    } catch (_) {
+      return payload;
+    }
+  }
+
+  /// Minimal vehicle info for displaying the queued inspection in the reports
+  /// "Awaiting Upload" section.
+  Map<String, dynamic> _buildQueueVehicleInfo() {
+    final v = vehicleDetails ?? const {};
+    final make = (v['make'] ?? v['brand'] ?? '').toString();
+    final model = (v['model'] ?? '').toString();
+    return {
+      'registration_number':
+          (v['registrationNumber'] ?? v['registration_number'] ?? '')
+              .toString(),
+      'make_model': [make, model].where((s) => s.isNotEmpty).join(' '),
+      'variant': (v['variant'] ?? '').toString(),
+      'manufacturing_year': (v['year'] ?? v['manufacturing_year'] ?? '')
+          .toString(),
+    };
+  }
+
+  /// Persists every still-local media item (any type) into the offline upload
+  /// queue so an upload interrupted by closing the inspection survives an app
+  /// restart and auto-syncs when the device is back online. Pure Hive write —
+  /// safe to call from dispose() without touching `ref`.
+  Future<void> _commitPendingMediaToQueue() async {
+    final serverId = _effectiveInspectionId;
+    if (serverId == null) return; // need a server id to upload + save-step
+
+    final pendingMedia = <String, PendingMedia>{};
+    final saveStepItems = <String, dynamic>{};
+
+    for (final section in _sections) {
+      final sectionTitle = (section['title'] as String?) ?? '';
+      final sectionSlug = (section['name'] as String?) ??
+          sectionTitle.toLowerCase().replaceAll(' ', '_');
+
+      // Reuse the canonical save-step item builder for snapshots.
+      final builtItems = <String, Map<String, dynamic>>{
+        for (final it in _buildSectionItems(section)) it['id'].toString(): it,
+      };
+
+      for (final item in section['items'] as List<dynamic>) {
+        final uniqueId = _getItemUniqueId(item);
+        final fieldId = _getItemFieldId(item);
+        bool hasPending = false;
+
+        PendingMedia entry(String localPath, String mediaType) => PendingMedia(
+              localPath: localPath,
+              section: sectionTitle,
+              itemId: fieldId,
+              mediaType: mediaType,
+              fieldKey: uniqueId,
+            );
+
+        final img = itemImages[uniqueId];
+        if (_isLocalMediaPath(img)) {
+          pendingMedia['image_$uniqueId'] = entry(img!, 'image');
+          hasPending = true;
+        }
+        final vid = itemVideos[uniqueId];
+        if (_isLocalMediaPath(vid)) {
+          pendingMedia['video_$uniqueId'] = entry(vid!, 'video');
+          hasPending = true;
+        }
+        final aud = itemAudios[uniqueId];
+        if (_isLocalMediaPath(aud)) {
+          pendingMedia['audio_$uniqueId'] = entry(aud!, 'audio');
+          hasPending = true;
+        }
+        final filePath = _filePathFromPayload(itemFiles[uniqueId]);
+        if (_isLocalMediaPath(filePath)) {
+          pendingMedia['file_$uniqueId'] = entry(filePath!, 'file');
+          hasPending = true;
+        }
+        final multi = itemMultiImages[uniqueId];
+        if (multi != null) {
+          for (var i = 0; i < multi.length; i++) {
+            if (_isLocalMediaPath(multi[i])) {
+              pendingMedia['multi_${uniqueId}_$i'] =
+                  entry(multi[i], 'multiImage');
+              hasPending = true;
+            }
+          }
+        }
+
+        if (hasPending) {
+          saveStepItems[uniqueId] = {
+            'section': sectionSlug,
+            'item': builtItems[uniqueId] ?? {'id': uniqueId},
+          };
+        }
+      }
+    }
+
+    try {
+      await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: serverId,
+        vehicleInfo: _buildQueueVehicleInfo(),
+        pendingMedia: pendingMedia,
+        saveStepItems: saveStepItems,
+      );
+    } catch (e) {
+      log('Error committing pending media to queue: $e');
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.inactive ||
@@ -738,6 +872,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // Hive keeps data in memory, so the write succeeds even if the OS
       // suspends the process before the disk flush completes.
       unawaited(_flushPendingAutoSave());
+      // Queue still-local media so a backgrounded/killed app doesn't lose the
+      // upload intent; it auto-syncs on the next reconnect.
+      if (!_sessionCompleted) unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -3773,6 +3910,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           files: finalItemFiles,
           multiImages: finalMultiImages,
         );
+        // The offline record now owns this inspection's media; drop any
+        // media-only queue container so media isn't uploaded twice.
+        final sidOffline = _effectiveInspectionId;
+        if (sidOffline != null) {
+          await LocalStorageService.clearMediaQueueFor(sidOffline);
+        }
         if (mounted) {
           ref.read(inspectionNotifierProvider.notifier).markDirty();
         }
@@ -3799,6 +3942,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         log(result.toString());
 
         if (result['success']) {
+          final sid = _effectiveInspectionId;
+          if (sid != null) {
+            await LocalStorageService.clearMediaQueueFor(sid);
+          }
           await _completeInspection();
           await _cleanupCurrentInspection();
 
@@ -3860,6 +4007,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             files: finalItemFiles,
             multiImages: finalMultiImages,
           );
+          final sidFailed = _effectiveInspectionId;
+          if (sidFailed != null) {
+            await LocalStorageService.clearMediaQueueFor(sidFailed);
+          }
           if (mounted) {
             ref.read(inspectionNotifierProvider.notifier).markDirty();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -5054,6 +5205,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         if (shouldClose) {
           await _saveDataLocally();
+          await _commitPendingMediaToQueue();
+          if (mounted) {
+            ref.read(inspectionNotifierProvider.notifier).markDirty();
+            unawaited(ref
+                .read(inspectionNotifierProvider.notifier)
+                .refreshMediaQueue());
+          }
           if (!mounted) return;
           Navigator.of(context).pop();
         }
@@ -5296,6 +5454,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _saveDebouncer?.cancel();
     if (!_sessionCompleted) {
       _flushPendingAutoSave();
+      // Persist any still-local media so an interrupted upload auto-syncs later.
+      unawaited(_commitPendingMediaToQueue());
     }
     if (!_sessionCompleted) {
       // ref is not guaranteed to be valid during dispose() in Riverpod — guard it.
@@ -5337,6 +5497,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   void _handleClose() async {
     try {
       await _saveDataLocally();
+      await _commitPendingMediaToQueue();
+      if (mounted) {
+        ref.read(inspectionNotifierProvider.notifier).markDirty();
+        // Surface the just-queued media in the Pending tab and start syncing.
+        unawaited(
+            ref.read(inspectionNotifierProvider.notifier).refreshMediaQueue());
+      }
       if (!mounted) return;
       Navigator.of(context).pop();
       Navigator.of(context).pop();

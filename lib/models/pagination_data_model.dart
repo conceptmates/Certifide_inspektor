@@ -19,4 +19,11 @@ class PaginationData {
       total: json['total'] ?? 0,
     );
   }
+
+  bool get hasMore => currentPage < lastPage;
+
+  @override
+  String toString() =>
+      'PaginationData(currentPage: $currentPage, lastPage: $lastPage, '
+      'perPage: $perPage, total: $total)';
 }

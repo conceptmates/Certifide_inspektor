@@ -6,6 +6,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/inspection_state.dart';
 import '../models/local_inspection.dart';
+import '../models/pending_media.dart';
 import '../services/api_services.dart';
 import '../services/local_storage_services.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -18,6 +19,12 @@ class InspectionNotifier extends _$InspectionNotifier {
   Timer? _cooldownTimer;
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isAutoSubmitting = false;
+  bool _isSyncingMedia = false;
+
+  /// Per-container locks so the connectivity-driven [syncPendingMedia] and the
+  /// manual [uploadInspectionMedia] never process the same queue container
+  /// concurrently (which would double-upload its files).
+  final Set<String> _uploadingContainerIds = {};
 
   @override
   InspectionState build() {
@@ -41,7 +48,12 @@ class InspectionNotifier extends _$InspectionNotifier {
           try {
             final hasInternet =
                 await ConnectivityChecker.hasInternetConnection();
-            if (hasInternet) await _autoSubmitPending();
+            if (!hasInternet) return;
+            // First drain the media-only upload queue (uploads each file and
+            // replays save-step, keeping the inspection resumable), then submit
+            // any inspections that were fully completed while offline.
+            await syncPendingMedia();
+            await _autoSubmitPending();
           } catch (e) {
             log('Connectivity listener error: $e');
           }
@@ -87,19 +99,357 @@ class InspectionNotifier extends _$InspectionNotifier {
       final inspections = await LocalStorageService.getPendingInspections();
       inspections.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
+      // Merge (don't clobber) progress maps so an in-flight upload's flags
+      // survive a reload triggered mid-sync.
+      final submitting = {
+        for (var i in inspections) i.id: state.submittingStates[i.id] ?? false,
+      };
+      final uploading = {
+        for (var i in inspections)
+          i.id: state.uploadingImagesStates[i.id] ?? false,
+      };
+
       state = state.copyWith(
         inspections: inspections,
         isDirty: false,
         isLoading: false,
-        submittingStates: {for (var i in inspections) i.id: false},
-        uploadingImagesStates: {for (var i in inspections) i.id: false},
+        submittingStates: submitting,
+        uploadingImagesStates: uploading,
       );
 
+      await _reloadMediaQueue();
+
       final hasInternet = await ConnectivityChecker.hasInternetConnection();
-      if (hasInternet) await syncPendingImages();
+      if (hasInternet) {
+        await syncPendingImages();
+        await syncPendingMedia();
+      }
     } catch (e) {
       log('Error loading inspections: $e');
       state = state.copyWith(isLoading: false);
+    }
+  }
+
+  /// Reloads the "awaiting upload" media queue from local storage and tries to
+  /// sync it. Not gated by the refresh cooldown, so the Pending tab reflects a
+  /// just-closed inspection immediately.
+  Future<void> refreshMediaQueue() async {
+    await _reloadMediaQueue();
+    await syncPendingMedia();
+  }
+
+  /// Refreshes the "awaiting upload" media queue from local storage, pruning
+  /// progress entries for inspections that have fully drained.
+  Future<void> _reloadMediaQueue() async {
+    final queue = await LocalStorageService.getInspectionsWithPendingMedia();
+    queue.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final ids = queue.map((e) => e.id).toSet();
+    final prunedProgress = {
+      for (final e in state.mediaProgress.entries)
+        if (ids.contains(e.key)) e.key: e.value,
+    };
+    state = state.copyWith(mediaQueue: queue, mediaProgress: prunedProgress);
+  }
+
+  void _setMediaProgress(String id, MediaUploadProgress progress) {
+    state = state.copyWith(
+      mediaProgress: {...state.mediaProgress, id: progress},
+    );
+  }
+
+  /// Re-reads one queue container and replaces it in [InspectionState.mediaQueue]
+  /// so the per-file upload status (queued/uploading/uploaded/failed) shown in
+  /// the Pending tab updates live as each file is processed.
+  Future<void> _patchContainerInState(String id) async {
+    final updated = await LocalStorageService.getMediaQueueById(id);
+    if (updated == null) {
+      if (state.mediaQueue.any((c) => c.id == id)) {
+        state = state.copyWith(
+          mediaQueue: state.mediaQueue.where((c) => c.id != id).toList(),
+        );
+      }
+      return;
+    }
+    final list = state.mediaQueue.toList();
+    final idx = list.indexWhere((c) => c.id == id);
+    if (idx >= 0) {
+      list[idx] = updated;
+    } else {
+      list.insert(0, updated);
+    }
+    state = state.copyWith(mediaQueue: list);
+  }
+
+  /// Uploads every queued media file (any type) for inspections that have
+  /// pending media, WITHOUT submitting the inspection. Each uploaded file's URL
+  /// is recorded and the field is re-saved server-side via save-step so the
+  /// inspection stays resumable with its media already on the server.
+  Future<void> syncPendingMedia() async {
+    if (_isSyncingMedia) return;
+    _isSyncingMedia = true;
+    try {
+      final hasInternet = await ConnectivityChecker.hasInternetConnection();
+      if (!hasInternet) return;
+
+      final containers =
+          await LocalStorageService.getInspectionsWithPendingMedia();
+      // Surface in-flight containers as live cards BEFORE uploading so their
+      // progress spinner is visible during an auto-sync.
+      await _reloadMediaQueue();
+      for (final container in containers) {
+        await _uploadContainerMedia(container.id);
+      }
+      await _reloadMediaQueue();
+    } catch (e) {
+      log('Error syncing pending media: $e');
+    } finally {
+      _isSyncingMedia = false;
+    }
+  }
+
+  /// Manually triggers upload of a single inspection's queued media (the
+  /// Pending-tab "Upload" button). Returns true if the queue fully drained.
+  Future<bool> uploadInspectionMedia(LocalInspection container) async {
+    final hasInternet = await ConnectivityChecker.hasInternetConnection();
+    if (!hasInternet) {
+      // Seed progress from the container's real contents (not a 0/0 default).
+      _setMediaProgress(
+        container.id,
+        MediaUploadProgress(
+          total: container.pendingMedia.length,
+          uploaded: container.pendingMedia.values.where((m) => m.isUploaded).length,
+          isUploading: false,
+        ),
+      );
+      return false;
+    }
+    await _uploadContainerMedia(container.id);
+    await _reloadMediaQueue();
+    final remaining =
+        await LocalStorageService.getInspectionsWithPendingMedia();
+    return !remaining.any((c) => c.id == container.id);
+  }
+
+  /// Uploads all not-yet-uploaded media for one queue container, then — only
+  /// once EVERY entry of a field has uploaded — replays that field's save-step
+  /// (with each media type substituted into its own slot and any non-http path
+  /// stripped) and removes the field's entries (deleting their local files).
+  ///
+  /// Takes the container id and re-reads the record fresh from storage so
+  /// per-entry status guards reflect concurrent passes. Guarded by a
+  /// per-container lock so a manual upload can't race the auto-sync.
+  Future<void> _uploadContainerMedia(String id) async {
+    if (_uploadingContainerIds.contains(id)) return;
+    _uploadingContainerIds.add(id);
+    try {
+      var container = await LocalStorageService.getMediaQueueById(id);
+      if (container == null) return;
+      final serverId = container.serverInspectionId;
+
+      int total = container.pendingMedia.length;
+      int uploaded = container.pendingMedia.values.where((m) => m.isUploaded).length;
+      int failed = 0;
+      _setMediaProgress(
+        id,
+        MediaUploadProgress(total: total, uploaded: uploaded, isUploading: true),
+      );
+
+      // 1) Upload every not-yet-uploaded entry. Already-uploaded entries are
+      //    kept (their save-step may still be pending) and replayed below.
+      for (final entry in container.pendingMedia.entries.toList()) {
+        final key = entry.key;
+        final media = entry.value;
+        if (media.isUploaded && (media.uploadedUrl?.isNotEmpty ?? false)) {
+          continue;
+        }
+
+        await LocalStorageService.setPendingMediaStatus(
+          inspectionId: id,
+          key: key,
+          status: PendingMediaStatus.uploading,
+        );
+        await _patchContainerInState(id); // reflect "uploading" per-file
+
+        final result = await ApiService.uploadImage(
+          media.localPath,
+          inspectionId: serverId,
+          section: media.section,
+          itemId: media.itemId,
+          mediaType: media.mediaType,
+        );
+        final url = result['url']?.toString();
+
+        if (result['success'] == true && url != null && url.isNotEmpty) {
+          await LocalStorageService.setPendingMediaStatus(
+            inspectionId: id,
+            key: key,
+            status: PendingMediaStatus.uploaded,
+            url: url,
+          );
+          uploaded++;
+        } else {
+          await LocalStorageService.setPendingMediaStatus(
+            inspectionId: id,
+            key: key,
+            status: PendingMediaStatus.failed,
+            error: result['message']?.toString(),
+          );
+          failed++;
+        }
+        await _patchContainerInState(id); // reflect uploaded/failed per-file
+
+        _setMediaProgress(
+          id,
+          MediaUploadProgress(
+            total: total,
+            uploaded: uploaded,
+            failed: failed,
+            isUploading: true,
+          ),
+        );
+      }
+
+      // 2) Re-read and group remaining entries by their form field.
+      container = await LocalStorageService.getMediaQueueById(id) ?? container;
+      final byField = <String, List<MapEntry<String, PendingMedia>>>{};
+      for (final e in container.pendingMedia.entries) {
+        byField.putIfAbsent(e.value.fieldKey, () => []).add(e);
+      }
+
+      // 3) Replay save-step ONLY for fields whose every entry has uploaded
+      //    (so a multi-type / multi-image field is never sent half-local), then
+      //    remove that field's entries.
+      for (final fieldKey in byField.keys) {
+        final entries = byField[fieldKey]!;
+        final allUploaded = entries.every(
+          (e) => e.value.isUploaded && (e.value.uploadedUrl?.isNotEmpty ?? false),
+        );
+        if (!allUploaded) continue;
+
+        final desc = await LocalStorageService.getSaveStepFor(id, fieldKey);
+        final section = desc?['section']?.toString() ?? '';
+
+        bool persisted = false;
+        if (serverId != null && desc != null && section.isNotEmpty) {
+          final item = Map<String, dynamic>.from((desc['item'] as Map?) ?? {});
+          _applyUrlsToSaveStepItem(item, entries.map((e) => e.value).toList());
+          _stripLocalMediaPaths(item);
+          try {
+            final r = await ApiService.saveInspectionStep(
+              serverId,
+              section: section,
+              items: [item],
+            );
+            persisted = r['success'] != false;
+          } catch (e) {
+            log('Media save-step replay error ($fieldKey): $e');
+            persisted = false;
+          }
+        } else {
+          // No usable save-step descriptor — the upload itself already carried
+          // inspection_id/section/itemId, so drain rather than loop forever.
+          if (section.isEmpty) {
+            log('Media queue: empty section for field $fieldKey; draining.');
+          }
+          persisted = true;
+        }
+
+        if (persisted) {
+          for (final e in entries) {
+            await LocalStorageService.removePendingMedia(id, e.key);
+          }
+        }
+      }
+
+      // 4) Final progress from the post-drain state.
+      final after = await LocalStorageService.getMediaQueueById(id);
+      if (after == null) {
+        _setMediaProgress(
+          id,
+          MediaUploadProgress(total: total, uploaded: total, isUploading: false),
+        );
+      } else {
+        _setMediaProgress(
+          id,
+          MediaUploadProgress(
+            total: after.pendingMedia.length,
+            uploaded: after.pendingMedia.values.where((m) => m.isUploaded).length,
+            failed: after.pendingMedia.values
+                .where((m) => m.uploadStatus == PendingMediaStatus.failed)
+                .length,
+            isUploading: false,
+          ),
+        );
+      }
+    } catch (e) {
+      log('Error uploading container media ($id): $e');
+    } finally {
+      _uploadingContainerIds.remove(id);
+      // Always clear a lingering spinner even if something threw mid-pass.
+      final p = state.mediaProgress[id];
+      if (p != null && p.isUploading) {
+        _setMediaProgress(id, p.copyWith(isUploading: false));
+      }
+    }
+  }
+
+  /// Substitutes each uploaded entry's URL into its own slot of a save-step
+  /// item (image/video/audio/file/multiImages), so a field that owns several
+  /// media types gets all of them filled.
+  void _applyUrlsToSaveStepItem(
+    Map<String, dynamic> item,
+    List<PendingMedia> entries,
+  ) {
+    final multiUrls = <String, String>{}; // localPath -> url
+    for (final m in entries) {
+      final url = m.uploadedUrl;
+      if (url == null || url.isEmpty) continue;
+      switch (m.mediaType) {
+        case 'video':
+          item['videoPath'] = url;
+          break;
+        case 'audio':
+          item['audioPath'] = url;
+          break;
+        case 'file':
+          item['filePath'] = url;
+          break;
+        case 'multiImage':
+          multiUrls[m.localPath] = url;
+          break;
+        case 'image':
+        default:
+          item['imagePath'] = url;
+          break;
+      }
+    }
+    if (multiUrls.isNotEmpty) {
+      final existing =
+          (item['multiImages'] as List?)?.map((e) => e.toString()).toList();
+      if (existing != null && existing.isNotEmpty) {
+        // Preserve order; map local paths to URLs and keep only uploaded ones.
+        item['multiImages'] = existing
+            .map((p) => multiUrls[p] ?? p)
+            .where((u) => u.startsWith('http'))
+            .toList();
+      } else {
+        item['multiImages'] = multiUrls.values.toList();
+      }
+    }
+  }
+
+  /// Nulls out any single media slot still holding a local (non-http) path and
+  /// filters multiImages to http URLs, so a local filesystem path is never
+  /// POSTed to the server.
+  void _stripLocalMediaPaths(Map<String, dynamic> item) {
+    for (final k in const ['imagePath', 'videoPath', 'audioPath', 'filePath']) {
+      final v = item[k];
+      if (v is String && v.isNotEmpty && !v.startsWith('http')) item[k] = null;
+    }
+    final mi = item['multiImages'];
+    if (mi is List) {
+      item['multiImages'] =
+          mi.map((e) => e.toString()).where((u) => u.startsWith('http')).toList();
     }
   }
 
@@ -269,10 +619,38 @@ class InspectionNotifier extends _$InspectionNotifier {
         }
       }
 
+      // Upload local multi-images (each local path in the list -> URL).
+      final multiImageReplacements = <String, List<String>>{};
+      for (var entry in currentInspection.multiImages.entries) {
+        final newList = <String>[];
+        bool changed = false;
+        for (final p in entry.value) {
+          if (p.startsWith('http')) {
+            newList.add(p);
+            continue;
+          }
+          final result = await ApiService.uploadImage(
+            p,
+            section: '',
+            itemId: entry.key,
+            fieldName: 'image',
+          );
+          final url = result['url'] as String?;
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            newList.add(url);
+            changed = true;
+          } else {
+            newList.add(p);
+          }
+        }
+        if (changed) multiImageReplacements[entry.key] = newList;
+      }
+
       // Persist uploaded media URLs to local storage
       if (videoReplacements.isNotEmpty ||
           audioReplacements.isNotEmpty ||
-          fileReplacements.isNotEmpty) {
+          fileReplacements.isNotEmpty ||
+          multiImageReplacements.isNotEmpty) {
         await LocalStorageService.updateInspectionMedia(
           inspectionId: inspection.id,
           uploadedVideos: {
@@ -290,6 +668,7 @@ class InspectionNotifier extends _$InspectionNotifier {
               if (fileReplacements.containsKey(e.value))
                 e.key: fileReplacements[e.value]!,
           },
+          uploadedMultiImages: multiImageReplacements,
         );
       }
 
@@ -348,6 +727,13 @@ class InspectionNotifier extends _$InspectionNotifier {
       }
       for (var entry in fileReplacements.entries) {
         itemIndex[entry.key]?['filePath'] = entry.value;
+      }
+      for (var entry in multiImageReplacements.entries) {
+        final item = itemIndex[entry.key];
+        if (item != null) {
+          item['multiImages'] =
+              entry.value.map((u) => {'imagePath': u}).toList();
+        }
       }
 
       final result = await ApiService.submitInspection(inspectionData);

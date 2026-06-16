@@ -29,13 +29,15 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       files: (fields[9] as Map?)?.cast<String, String>(),
       multiImages: (fields[10] as Map?)?.map((dynamic k, dynamic v) =>
           MapEntry(k as String, (v as List).cast<String>())),
+      pendingMedia: (fields[11] as Map?)?.cast<String, PendingMedia>(),
+      serverInspectionId: fields[12] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, LocalInspection obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -57,7 +59,11 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       ..writeByte(9)
       ..write(obj.files)
       ..writeByte(10)
-      ..write(obj.multiImages);
+      ..write(obj.multiImages)
+      ..writeByte(11)
+      ..write(obj.pendingMedia)
+      ..writeByte(12)
+      ..write(obj.serverInspectionId);
   }
 
   @override
