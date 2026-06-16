@@ -222,7 +222,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
         const SizedBox(width: 5),
         Text(
           label,
-          style: TextStyle(fontSize: 11, color: CarSpyColors.onSurfaceVariant),
+          style: const TextStyle(fontSize: 11, color: CarSpyColors.onSurfaceVariant),
         ),
       ],
     );
@@ -281,7 +281,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
           children: [
             Text(
               value,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: CarSpyColors.onSurface,
@@ -290,7 +290,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
             ),
             Text(
               label,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
                 color: CarSpyColors.onSurfaceVariant,
               ),
@@ -409,7 +409,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'Inspections',
                     style: TextStyle(
                       fontSize: 17,
@@ -426,7 +426,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                                 DateFormat('yyyy-MM-dd').parse(dailyStats.from))
                             : 'Last 6 months')
                         : (isDaily ? 'Last 7 days' : 'Last 6 months'),
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
                       color: CarSpyColors.onSurfaceVariant,
                     ),
@@ -527,7 +527,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                               }
                               return Text(
                                 value.toInt().toString(),
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 11,
                                   color: CarSpyColors.onSurfaceVariant,
                                 ),
@@ -548,7 +548,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                                 padding: const EdgeInsets.only(top: 4),
                                 child: Text(
                                   labels[idx],
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 11,
                                     color: CarSpyColors.onSurfaceVariant,
                                   ),
@@ -641,7 +641,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                               }
                               return Text(
                                 value.toInt().toString(),
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 11,
                                   color: CarSpyColors.onSurfaceVariant,
                                 ),
@@ -662,7 +662,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                                 padding: const EdgeInsets.only(top: 6),
                                 child: Text(
                                   labels[idx],
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 11,
                                     color: CarSpyColors.onSurfaceVariant,
                                   ),

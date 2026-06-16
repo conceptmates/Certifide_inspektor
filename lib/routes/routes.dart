@@ -28,12 +28,12 @@ class Routes {
 class AppRoutes {
   static Map<String, WidgetBuilder> getRoutes() {
     return {
-      Routes.login: (context) => LoginPage(),
+      Routes.login: (context) => const LoginPage(),
       Routes.home: (context) => const CarSpyHome(),
       Routes.addUser: (context) => const AddUserPage(),
       Routes.addCredits: (context) => const AddCreditsPage(),
       Routes.profile: (context) => const ProfilePage(),
-      Routes.history: (context) => HistoryPage(),
+      Routes.history: (context) => const HistoryPage(),
       Routes.inspection: (context) {
         final args =
             ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>?;

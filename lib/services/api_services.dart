@@ -28,7 +28,7 @@ class ApiService {
   static const String baseUrl = 'https://api.certifide.in/api';
   static const Duration _requestTimeout = Duration(seconds: 30);
 
-  static final _storage = FlutterSecureStorage();
+  static const _storage = FlutterSecureStorage();
 
   static const String loginEndpoint = '/auth/login';
   static const String registerEndpoint = '/auth/register';

@@ -1954,8 +1954,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     }
                   }
                 } else {
-                  if (mounted)
+                  if (mounted) {
                     setState(() => _uploadingImages.remove(uniqueId));
+                  }
                 }
               },
             ),
@@ -2553,7 +2554,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (uploadSuccess) {
             final imgs = List<String>.from(itemMultiImages[uniqueId] ?? []);
             final idx = imgs.indexOf(savedPath);
-            if (idx != -1) imgs[idx] = url!;
+            if (idx != -1) imgs[idx] = url;
             itemMultiImages[uniqueId] = imgs;
           }
         });
@@ -3377,8 +3378,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (items.isEmpty) return true;
 
     final currentItem = items[_currentItemIndex];
-    if (!(_itemHasImage(currentItem) || _itemHasVideo(currentItem)))
+    if (!(_itemHasImage(currentItem) || _itemHasVideo(currentItem))) {
       return true;
+    }
 
     final uniqueId = _getItemUniqueId(currentItem);
     final hasMedia = (itemImages[uniqueId] != null) ||
@@ -3574,8 +3576,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _currentItemIndex = lastIdx;
       _showButton = false;
       _isScrollable = false;
-      if (lastItem != null)
+      if (lastItem != null) {
         _currentCaptureMode = _defaultCaptureModeForItem(lastItem);
+      }
     });
 
     if (_scrollController.hasClients) {

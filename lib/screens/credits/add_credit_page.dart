@@ -527,7 +527,7 @@ class _AddCreditsPageState extends State<AddCreditsPage> {
                               color: colorScheme.onSurface,
                             ),
                           ),
-                          Divider(),
+                          const Divider(),
                           const SizedBox(height: 24),
                           Wrap(
                             spacing: 12,

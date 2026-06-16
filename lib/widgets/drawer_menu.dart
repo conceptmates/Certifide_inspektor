@@ -80,10 +80,10 @@ class _DrawerMenuState extends State<DrawerMenu> {
       child: Row(
         children: [
           Icon(icon, color: Colors.white70, size: 24),
-          SizedBox(width: 15),
+          const SizedBox(width: 15),
           Text(
             title,
-            style: TextStyle(
+            style: const TextStyle(
               color: Colors.white70,
               fontSize: 16,
               fontWeight: FontWeight.w500,
@@ -121,7 +121,7 @@ class _DrawerMenuState extends State<DrawerMenu> {
                       children: [
                         // Background design
                         Container(
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             color: Colors.black,
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
@@ -164,7 +164,7 @@ class _DrawerMenuState extends State<DrawerMenu> {
                                     onTap: () => Navigator.push(
                                       context,
                                       MaterialPageRoute(
-                                        builder: (context) => HistoryPage(),
+                                        builder: (context) => const HistoryPage(),
                                       ),
                                     ),
                                     child: _buildMenuItem(
@@ -187,13 +187,13 @@ class _DrawerMenuState extends State<DrawerMenu> {
                               color: Colors.transparent,
                               child: InkWell(
                                 onTap: widget.toggleDrawer,
-                                customBorder: CircleBorder(),
+                                customBorder: const CircleBorder(),
                                 child: Container(
                                   width: 200,
                                   height: 200,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    gradient: RadialGradient(
+                                    gradient: const RadialGradient(
                                       colors: [
                                         Colors.black87,
                                         Colors.black,
@@ -212,7 +212,7 @@ class _DrawerMenuState extends State<DrawerMenu> {
                                     alignment: Alignment.center,
                                     children: [
                                       TweenAnimationBuilder<double>(
-                                        duration: Duration(milliseconds: 200),
+                                        duration: const Duration(milliseconds: 200),
                                         tween: Tween<double>(
                                             begin: 1.0,
                                             end: widget.isDrawerOpen
@@ -256,7 +256,7 @@ class _DrawerMenuState extends State<DrawerMenu> {
                                               MainAxisAlignment.center,
                                           children: [
                                             if (isLoading)
-                                              CircularProgressIndicator(
+                                              const CircularProgressIndicator(
                                                 valueColor:
                                                     AlwaysStoppedAnimation<
                                                         Color>(Colors.white),
@@ -264,23 +264,23 @@ class _DrawerMenuState extends State<DrawerMenu> {
                                             else ...[
                                               Text(
                                                 availableTokens.toString(),
-                                                style: TextStyle(
+                                                style: const TextStyle(
                                                   color: Colors.white,
                                                   fontSize: 32,
                                                   fontWeight: FontWeight.bold,
                                                 ),
                                               ),
-                                              Text(
+                                              const Text(
                                                 'available credits',
                                                 style: TextStyle(
                                                   color: Colors.white70,
                                                   fontSize: 14,
                                                 ),
                                               ),
-                                              SizedBox(height: 8),
+                                              const SizedBox(height: 8),
                                               Text(
                                                 'Used: $usedTokens',
-                                                style: TextStyle(
+                                                style: const TextStyle(
                                                   color: Colors.white54,
                                                   fontSize: 12,
                                                 ),
@@ -325,13 +325,13 @@ class DrawerMenuItem extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               title,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: Colors.white,
@@ -339,7 +339,7 @@ class DrawerMenuItem extends StatelessWidget {
             ),
             Text(
               subtitle,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 14,
                 color: Colors.grey,
               ),

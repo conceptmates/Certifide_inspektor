@@ -93,7 +93,7 @@ class NetworkLogger {
   static String formatJson(String jsonString) {
     try {
       final jsonData = json.decode(jsonString);
-      return JsonEncoder.withIndent('  ').convert(jsonData);
+      return const JsonEncoder.withIndent('  ').convert(jsonData);
     } catch (e) {
       return jsonString; // Return original if parsing fails
     }

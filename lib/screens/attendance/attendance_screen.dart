@@ -814,28 +814,28 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   _StatusConfig _statusConfig(_LogStatus status) {
     switch (status) {
       case _LogStatus.present:
-        return _StatusConfig(
+        return const _StatusConfig(
           label: 'Present',
           color: _green,
           bgColor: _greenLight,
           icon: Icons.check_circle_outline_rounded,
         );
       case _LogStatus.late:
-        return _StatusConfig(
+        return const _StatusConfig(
           label: 'Late',
           color: _amber,
           bgColor: _amberLight,
           icon: Icons.watch_later_outlined,
         );
       case _LogStatus.absent:
-        return _StatusConfig(
+        return const _StatusConfig(
           label: 'Absent',
           color: _red,
           bgColor: _redLight,
           icon: Icons.cancel_outlined,
         );
       case _LogStatus.leave:
-        return _StatusConfig(
+        return const _StatusConfig(
           label: 'Leave',
           color: _accent,
           bgColor: _accentLight,

@@ -414,7 +414,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                     alignment: Alignment.centerRight,
                     child: IconButton(
                       onPressed: () => _launchURL(inspection.links!['view']!),
-                      icon: Icon(
+                      icon: const Icon(
                         Icons.visibility_outlined,
                         color: CarSpyColors.primary,
                       ),
@@ -1159,7 +1159,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 if (canView)
                   IconButton(
                     onPressed: () => _launchURL(inspection.links!['view']!),
-                    icon: Icon(Icons.visibility_outlined,
+                    icon: const Icon(Icons.visibility_outlined,
                         color: CarSpyColors.primary),
                   ),
                 if (inspection.isResumable)

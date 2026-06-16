@@ -23,5 +23,11 @@ linter:
   rules:
     # avoid_log: false  # Uncomment to disable the `avoid_log` rule
     # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
+    # Const correctness: surfaces widgets/literals that can be const so they
+    # are built once instead of rebuilt every frame.
+    prefer_const_constructors: true
+    prefer_const_constructors_in_immutables: true
+    prefer_const_declarations: true
+    prefer_const_literals_to_create_immutables: true
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

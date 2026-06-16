@@ -107,7 +107,7 @@ class _CarSpyCoreServicesSectionState extends State<CarSpyCoreServicesSection>
                 color: CarSpyColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Row(
+              child: const Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
@@ -115,7 +115,7 @@ class _CarSpyCoreServicesSectionState extends State<CarSpyCoreServicesSection>
                     size: 14,
                     color: CarSpyColors.primary,
                   ),
-                  const SizedBox(width: 4),
+                  SizedBox(width: 4),
                   Text(
                     'Instant Access',
                     style: TextStyle(

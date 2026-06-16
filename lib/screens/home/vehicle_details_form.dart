@@ -516,9 +516,9 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Header Section
-                  FadeAnimation(
+                  const FadeAnimation(
                     1.0,
-                    const VehicleFormHeaderCard(),
+                    VehicleFormHeaderCard(),
                   ),
 
                   const SizedBox(height: 32),

@@ -96,7 +96,7 @@ class _LocalInspectionsScreenState
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Inspection Details'),
+          title: const Text('Inspection Details'),
           content: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -111,7 +111,7 @@ class _LocalInspectionsScreenState
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text('Close'),
+              child: const Text('Close'),
             ),
           ],
         );

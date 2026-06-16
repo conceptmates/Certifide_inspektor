@@ -26,7 +26,7 @@ class MainContent extends ConsumerStatefulWidget {
 
 class _MainContentState extends ConsumerState<MainContent>
     with TickerProviderStateMixin {
-  final _storage = FlutterSecureStorage();
+  final _storage = const FlutterSecureStorage();
   final _userName = ValueNotifier<String>('User');
   late AnimationController rippleController;
   late AnimationController scaleController;
@@ -513,8 +513,8 @@ class _MainContentState extends ConsumerState<MainContent>
           show: true,
           drawVerticalLine: false,
           horizontalInterval: maxY / 4,
-          getDrawingHorizontalLine: (_) => FlLine(
-            color: const Color(0xFFE2E8F0),
+          getDrawingHorizontalLine: (_) => const FlLine(
+            color: Color(0xFFE2E8F0),
             strokeWidth: 1,
           ),
         ),
@@ -942,9 +942,9 @@ class _MainContentState extends ConsumerState<MainContent>
               ),
 
               // ── Section heading ──────────────────────────────────────
-              FadeAnimation(
+              const FadeAnimation(
                 1.7,
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(bottom: 14),
                   child: Text(
                     'Quick Actions',

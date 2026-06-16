@@ -173,10 +173,10 @@ class _HeaderSection extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
         children: [
-          CircleAvatar(
+          const CircleAvatar(
             radius: 24,
             backgroundColor: CarSpyColors.surface,
-            child: const Icon(Icons.person,
+            child: Icon(Icons.person,
                 color: CarSpyColors.onSurfaceVariant, size: 28),
           ),
           const SizedBox(width: 14),
@@ -249,14 +249,14 @@ class _TaskList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (tasks.isEmpty) {
-      return Center(
+      return const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.assignment_turned_in_outlined,
                 size: 56, color: CarSpyColors.outlineVariant),
-            const SizedBox(height: 12),
-            const Text(
+            SizedBox(height: 12),
+            Text(
               'No tasks here',
               style: TextStyle(
                 fontSize: 16,

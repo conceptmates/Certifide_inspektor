@@ -19,19 +19,19 @@ class CustomBottomNavBar extends StatelessWidget {
 
   List<_NavItem> _getNavItems() {
     return [
-      _NavItem(
+      const _NavItem(
         index: 0,
         icon: Icons.home_outlined,
         selectedIcon: Icons.home,
         label: 'Home',
       ),
-      _NavItem(
+      const _NavItem(
         index: 1,
         icon: Icons.description_outlined,
         selectedIcon: Icons.description,
         label: 'Reports',
       ),
-      _NavItem(
+      const _NavItem(
         index: 2,
         icon: Icons.person_outline,
         selectedIcon: Icons.person,

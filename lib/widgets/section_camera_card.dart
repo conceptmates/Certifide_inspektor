@@ -772,12 +772,12 @@ class _FullscreenCameraViewState extends State<_FullscreenCameraView> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Expanded(
+                const Expanded(
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: Padding(
-                      padding: const EdgeInsets.only(right: 8, bottom: 8),
-                      child: const SizedBox(width: 56, height: 56),
+                      padding: EdgeInsets.only(right: 8, bottom: 8),
+                      child: SizedBox(width: 56, height: 56),
                     ),
                   ),
                 ),
@@ -818,11 +818,11 @@ class _FullscreenCameraViewState extends State<_FullscreenCameraView> {
                     ),
                   ),
                 ),
-                Expanded(
+                const Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 8, bottom: 8),
+                      padding: EdgeInsets.only(left: 8, bottom: 8),
                       child: SizedBox(
                         width: 56,
                         height: 56,

@@ -8,7 +8,7 @@ class UserRole {
   static const String INSPECTOR = 'inspector';
 
   // Create a single instance of FlutterSecureStorage
-  static final FlutterSecureStorage _storage = FlutterSecureStorage();
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
 
   static Future<bool> isAdmin() async {
     try {
