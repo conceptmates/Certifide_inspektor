@@ -10,6 +10,7 @@ import '../../constants/const.dart';
 
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
+import '../../utils/connectivity_checker.dart';
 import '../home/car_spy/car_spy_home.dart';
 
 // ─── Color Tokens ───────────────────────────────────────────────────────────
@@ -72,6 +73,36 @@ class _LoginPageState extends ConsumerState<LoginPage>
     } else {
       return "An unexpected error occurred. Please try again or contact support.";
     }
+  }
+
+  void _showNetworkSnackBar(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.surfaceContainerHigh,
+        content: Row(
+          children: [
+            const Icon(Icons.wifi_off_rounded,
+                color: AppColors.secondary, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: AppColors.onSurface),
+              ),
+            ),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: AppColors.primary,
+          onPressed: _login,
+        ),
+      ),
+    );
   }
 
   void _showErrorDialog(String message) {
@@ -172,6 +203,22 @@ class _LoginPageState extends ConsumerState<LoginPage>
       });
 
       try {
+        // Fast DNS-based reachability probe so we fail instantly when the
+        // device is offline or our server's host can't be resolved, instead
+        // of waiting out the 30s request timeout. The real request below is
+        // still the source of truth — this just shortcuts the obvious case.
+        final canReachServer = await ConnectivityChecker.canReachServer();
+        if (!mounted) return;
+        if (!canReachServer) {
+          setState(() {
+            _isLoading = false;
+          });
+          _showNetworkSnackBar(
+            "You're offline. Please check your internet connection.",
+          );
+          return;
+        }
+
         final response = await ApiService.login(
           _emailController.text,
           _passwordController.text,
@@ -189,6 +236,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
               response['data']['user'] as Map<String, dynamic>,
               response['data']['access_token'] as String,
             );
+            if (!mounted) return;
 
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(builder: (context) => const CarSpyHome()),
@@ -197,8 +245,21 @@ class _LoginPageState extends ConsumerState<LoginPage>
             _showErrorDialog('Unable to process login. Please try again.');
           }
         } else {
+          final rawMessage =
+              response['message']?.toString() ?? 'Unable to sign in. Please try again.';
+          // The API service wraps connectivity failures as "Network error: ...".
+          // Translate those into a graceful message instead of leaking the raw
+          // exception text; pass real server messages through unchanged.
+          final isNetworkFailure = rawMessage.startsWith('Network error:') ||
+              rawMessage.contains('SocketException') ||
+              rawMessage.contains('TimeoutException') ||
+              rawMessage.contains('HandshakeException') ||
+              rawMessage.contains('Failed host lookup');
           _showErrorDialog(
-              response['message'] ?? 'Unable to sign in. Please try again.');
+            isNetworkFailure
+                ? _getUserFriendlyErrorMessage(rawMessage)
+                : rawMessage,
+          );
         }
       } catch (e) {
         if (!mounted) return;

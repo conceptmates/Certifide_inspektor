@@ -53,7 +53,7 @@ class InspectionNotifier extends _$InspectionNotifier {
           unawaited(Future(() async {
             try {
               final hasInternet =
-                  await ConnectivityChecker.hasInternetConnection();
+                  await ConnectivityChecker.canReachServer();
               if (!hasInternet) return;
               // First drain the media-only upload queue (uploads each file and
               // replays save-step, keeping the inspection resumable), then
@@ -126,7 +126,7 @@ class InspectionNotifier extends _$InspectionNotifier {
 
       await _reloadMediaQueue();
 
-      final hasInternet = await ConnectivityChecker.hasInternetConnection();
+      final hasInternet = await ConnectivityChecker.canReachServer();
       if (hasInternet) {
         await syncPendingImages();
         await syncPendingMedia();
@@ -220,7 +220,7 @@ class InspectionNotifier extends _$InspectionNotifier {
     if (_isSyncingMedia) return;
     _isSyncingMedia = true;
     try {
-      final hasInternet = await ConnectivityChecker.hasInternetConnection();
+      final hasInternet = await ConnectivityChecker.canReachServer();
       if (!hasInternet) return;
 
       final containers =
@@ -242,7 +242,7 @@ class InspectionNotifier extends _$InspectionNotifier {
   /// Manually triggers upload of a single inspection's queued media (the
   /// Pending-tab "Upload" button). Returns true if the queue fully drained.
   Future<bool> uploadInspectionMedia(LocalInspection container) async {
-    final hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final hasInternet = await ConnectivityChecker.canReachServer();
     if (!hasInternet) {
       // Seed progress from the container's real contents (not a 0/0 default).
       _setMediaProgress(
@@ -567,7 +567,7 @@ class InspectionNotifier extends _$InspectionNotifier {
     );
 
     try {
-      final hasInternet = await ConnectivityChecker.hasInternetConnection();
+      final hasInternet = await ConnectivityChecker.canReachServer();
       if (!hasInternet) {
         state = state.copyWith(
           submittingStates: {...state.submittingStates, inspection.id: false},

@@ -622,7 +622,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _isSyncingToServer = true;
     unawaited(Future(() async {
       try {
-        final hasInternet = await ConnectivityChecker.hasInternetConnection();
+        final hasInternet = await ConnectivityChecker.canReachServer();
         if (!hasInternet) return;
 
         for (final section in _sections) {
@@ -716,7 +716,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final capturedSection = sectionName;
     unawaited(Future(() async {
       try {
-        final hasInternet = await ConnectivityChecker.hasInternetConnection();
+        final hasInternet = await ConnectivityChecker.canReachServer();
         if (!hasInternet) return;
         await ApiService.saveInspectionStep(
           inspectionId,
@@ -1066,7 +1066,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       return;
     }
 
-    final online = await ConnectivityChecker.hasInternetConnection();
+    final online = await ConnectivityChecker.canReachServer();
     if (!online) {
       log('Resume: offline — cannot refetch inspection template');
       return;
@@ -1935,7 +1935,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 if (mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
                 await _saveDataLocally();
                 final bool hasInternet =
-                    await ConnectivityChecker.hasInternetConnection();
+                    await ConnectivityChecker.canReachServer();
                 if (hasInternet) {
                   final result = await ApiService.uploadImage(
                     savedPath,
@@ -2525,7 +2525,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
       // Upload each image immediately, replacing local path with URL on success
       final sectionTitle = _sections[_currentSection]['title'] as String;
-      final hasInternet = await ConnectivityChecker.hasInternetConnection();
+      final hasInternet = await ConnectivityChecker.canReachServer();
 
       if (!hasInternet) {
         if (mounted) {
@@ -2655,7 +2655,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         await _saveDataLocally();
 
         final bool hasInternet =
-            await ConnectivityChecker.hasInternetConnection();
+            await ConnectivityChecker.canReachServer();
 
         if (hasInternet) {
           final result = await ApiService.uploadImage(
@@ -3147,7 +3147,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
     await _saveDataLocally();
 
-    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final bool hasInternet = await ConnectivityChecker.canReachServer();
     if (hasInternet) {
       final result = await ApiService.uploadImage(
         savedPath,
@@ -3213,7 +3213,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     await _saveDataLocally();
 
-    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final bool hasInternet = await ConnectivityChecker.canReachServer();
     if (hasInternet && sectionTitle.isNotEmpty) {
       final result = await ApiService.uploadImage(
         savedPath,
@@ -3274,7 +3274,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     await _saveDataLocally();
 
-    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final bool hasInternet = await ConnectivityChecker.canReachServer();
     if (hasInternet && sectionTitle.isNotEmpty) {
       final result = await ApiService.uploadImage(
         path,
@@ -3344,7 +3344,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     await _saveDataLocally();
 
-    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final bool hasInternet = await ConnectivityChecker.canReachServer();
     if (hasInternet && sectionTitle.isNotEmpty) {
       final result = await ApiService.uploadImage(
         path,
@@ -3940,7 +3940,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     });
 
     try {
-      bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+      bool hasInternet = await ConnectivityChecker.canReachServer();
 
       if (!hasInternet) {
         Map<String, String?> finalItemImages = Map.from(itemImages);

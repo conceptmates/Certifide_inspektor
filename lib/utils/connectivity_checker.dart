@@ -1,8 +1,30 @@
+import 'dart:io' show InternetAddress, SocketException;
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:http/http.dart' as http;
 
 class ConnectivityChecker {
+  /// Fast reachability probe for our own backend.
+  ///
+  /// A single DNS lookup of the API host fails in milliseconds when the device
+  /// is offline (instead of waiting out the request timeout) and — unlike a
+  /// Google ping — actually confirms our server's host can be resolved.
+  static Future<bool> canReachServer({
+    String host = 'api.certifide.in',
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    try {
+      final result =
+          await InternetAddress.lookup(host).timeout(timeout);
+      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
+    } on SocketException catch (_) {
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<bool> hasInternetConnection() async {
     final connectivityResult = await Connectivity().checkConnectivity();
     if (connectivityResult.contains(ConnectivityResult.none)) {
