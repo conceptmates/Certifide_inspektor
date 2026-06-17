@@ -343,7 +343,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
         inspection.links!['view'] != null;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -364,7 +364,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
           highlightColor: CarSpyColors.primary.withValues(alpha: 0.04),
           onTap: null,
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(13),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -403,16 +403,18 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 7),
                 _infoRow('Make & Model', vehicleInfo['make_model']),
                 _infoRow('Variant', vehicleInfo['variant']),
                 _infoRow('Year', vehicleInfo['manufacturing_year']),
                 _infoRow('Date', _formatDate(inspection.date)),
-                if (canView) ...[
-                  const SizedBox(height: 4),
+                if (canView)
                   Align(
                     alignment: Alignment.centerRight,
                     child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
                       onPressed: () => _launchURL(inspection.links!['view']!),
                       icon: const Icon(
                         Icons.visibility_outlined,
@@ -420,7 +422,6 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                       ),
                     ),
                   ),
-                ],
               ],
             ),
           ),
@@ -430,20 +431,23 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   }
 
   Widget _infoRow(String label, dynamic value) {
-    final text = (value == null || value.toString().trim().isEmpty)
-        ? 'N/A'
-        : value.toString();
+    // Hide rows the server didn't populate (e.g. the my-history endpoint omits
+    // variant/year) instead of rendering a bare "N/A" placeholder.
+    if (value == null || value.toString().trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final text = value.toString();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 90,
+            width: 80,
             child: Text(
               label,
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 12.5,
                 fontWeight: FontWeight.w500,
                 color: Colors.black45,
               ),
@@ -453,7 +457,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
             child: Text(
               text,
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 12.5,
                 color: Colors.black87,
               ),
             ),
@@ -944,7 +948,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -957,7 +961,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(13),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -996,11 +1000,11 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 7),
             _infoRow('Make & Model', vehicleInfo['make_model']),
             _infoRow('Variant', vehicleInfo['variant']),
             _infoRow('Year', vehicleInfo['manufacturing_year']),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             // Media upload progress
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -1119,7 +1123,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     final canView = inspection.links != null && inspection.links!['view'] != null;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -1132,7 +1136,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(13),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1170,17 +1174,19 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 7),
             _infoRow('Make & Model', vehicleInfo['make_model']),
             _infoRow('Variant', vehicleInfo['variant']),
             _infoRow('Year', vehicleInfo['manufacturing_year']),
             _infoRow('Date', _formatDate(inspection.date)),
-            const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (canView)
                   IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
                     onPressed: () => _launchURL(inspection.links!['view']!),
                     icon: const Icon(Icons.visibility_outlined,
                         color: CarSpyColors.primary),

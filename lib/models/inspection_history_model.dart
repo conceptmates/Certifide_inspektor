@@ -34,16 +34,67 @@ class InspectionHistory {
   int? get idAsInt => int.tryParse(id);
 
   factory InspectionHistory.fromJson(Map<String, dynamic> json) {
-    // Handle both old /inspections shape and new /dynamic-inspections shape
-    final vehicleInfo = json['vehicle_info'] as Map<String, dynamic>? ?? {
-      'registration_number': json['reference_number'] ?? json['registration_number'] ?? '',
-      'make_model': [
-        json['vehicle_brand']?['name'] ?? '',
-        json['vehicle_model']?['name'] ?? '',
-      ].where((s) => s.isNotEmpty).join(' '),
-      'variant': json['variant'] ?? '',
-      'manufacturing_year': json['year']?.toString() ?? '',
-      'fuel_type': json['fuel_type'] ?? '',
+    // Handle both the old /inspections shape and the new /dynamic-inspections
+    // shape. The server's `vehicle_info` keys are inconsistent across endpoints
+    // (history uses `manufacturing_year`, the template/resume shape uses `year`;
+    // brand/model come as nested objects in either snake_case or camelCase), so
+    // normalise everything here to the keys the UI reads — otherwise variant and
+    // year silently fall through to "N/A" in the report cards.
+    final rawVi = (json['vehicle_info'] as Map?)?.cast<String, dynamic>();
+
+    String firstNonEmpty(List<dynamic> candidates) {
+      for (final c in candidates) {
+        if (c != null && c.toString().trim().isNotEmpty) return c.toString();
+      }
+      return '';
+    }
+
+    final brandName = firstNonEmpty([
+      json['vehicle_brand']?['name'],
+      json['vehicleBrand']?['name'],
+    ]);
+    final modelName = firstNonEmpty([
+      json['vehicle_model']?['name'],
+      json['vehicleModel']?['name'],
+    ]);
+    final builtMakeModel =
+        [brandName, modelName].where((s) => s.isNotEmpty).join(' ');
+
+    final vehicleInfo = <String, dynamic>{
+      'registration_number': firstNonEmpty([
+        rawVi?['registration_number'],
+        json['registration_number'],
+        json['reference_number'],
+      ]),
+      'make_model': firstNonEmpty([
+        rawVi?['make_model'],
+        builtMakeModel,
+        [rawVi?['brand'], rawVi?['model']]
+            .where((s) => s != null && s.toString().trim().isNotEmpty)
+            .join(' '),
+      ]),
+      'variant': firstNonEmpty([
+        rawVi?['variant'],
+        json['variant'],
+        json['vehicle_variant']?['name'],
+        json['vehicleVariant']?['name'],
+      ]),
+      'manufacturing_year': firstNonEmpty([
+        rawVi?['manufacturing_year'],
+        rawVi?['year'],
+        json['manufacturing_year'],
+        json['manufacturingyear'],
+        json['year'],
+      ]),
+      'fuel_type': firstNonEmpty([rawVi?['fuel_type'], json['fuel_type']]),
+      'transmission':
+          firstNonEmpty([rawVi?['transmission'], json['transmission']]),
+      'color': firstNonEmpty([
+        rawVi?['color'],
+        rawVi?['colour'],
+        json['color'],
+        json['colour'],
+      ]),
     };
 
     final inspectorName = json['inspector']?['name'] ?? json['user']?['name'] ?? '';
