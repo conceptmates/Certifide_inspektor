@@ -466,7 +466,12 @@ class InspectionNotifier extends _$InspectionNotifier {
 
         if (persisted) {
           for (final e in entries) {
-            await LocalStorageService.removePendingMedia(id, e.key);
+            // Keep the local file: the live working copy (current_inspection)
+            // still references this path to display the image on resume, even
+            // offline. Deleting it here orphaned the path and lost the image.
+            // The file is cleaned when the inspection is finalised/discarded.
+            await LocalStorageService.removePendingMedia(id, e.key,
+                deleteLocalFile: false);
           }
         }
       }

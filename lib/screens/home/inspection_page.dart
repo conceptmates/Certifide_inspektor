@@ -4204,11 +4204,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           files: finalItemFiles,
           multiImages: finalMultiImages,
         );
-        // The offline record now owns this inspection's media; drop any
-        // media-only queue container so media isn't uploaded twice.
+        // The offline record now owns this inspection's media; drop the queue
+        // container WITHOUT deleting the files — the offline record references
+        // those same paths and still needs them to upload later.
         final sidOffline = _effectiveInspectionId;
         if (sidOffline != null) {
-          await LocalStorageService.clearMediaQueueFor(sidOffline);
+          await LocalStorageService.clearMediaQueueFor(sidOffline,
+              deleteLocalFiles: false);
         }
         if (mounted) {
           ref.read(inspectionNotifierProvider.notifier).markDirty();
@@ -4246,6 +4248,20 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (sid != null) {
             await LocalStorageService.clearMediaQueueFor(sid);
           }
+          // Submitted to the server — now safe to delete the local working-copy
+          // media files (the queue no longer owns them since drain keeps files).
+          await LocalStorageService.deleteLocalMediaFiles([
+            ...itemImages.values.whereType<String>(),
+            ...itemVideos.values.whereType<String>(),
+            ...itemAudios.values.whereType<String>(),
+            ...itemFiles.values
+                .whereType<String>()
+                .map(_filePathFromPayload)
+                .whereType<String>(),
+            ...itemMultiImages.values
+                .whereType<List<String>>()
+                .expand((l) => l),
+          ]);
           await _completeInspection();
           await _cleanupCurrentInspection();
 

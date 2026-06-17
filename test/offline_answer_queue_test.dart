@@ -241,6 +241,72 @@ void main() {
     });
   });
 
+  group('local file retention — image survives queue drain', () {
+    // Regression: draining an uploaded media entry used to delete the local
+    // file, but the live working copy still references that path to display the
+    // image on resume. The file must survive the drain and only be removed when
+    // the inspection is finalised.
+    test(
+        'Given an uploaded media entry, When drained with deleteLocalFile:false, '
+        'Then the local file is kept for the working copy', () async {
+      final file = File('${tmp.path}/keep_on_drain.jpg')
+        ..writeAsBytesSync(const [1, 2, 3]);
+
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 909,
+        vehicleInfo: const {},
+        pendingMedia: {
+          'image_k': PendingMedia(
+            localPath: file.path,
+            section: 'documents',
+            itemId: 'k',
+            mediaType: 'image',
+            fieldKey: 'k',
+          ),
+        },
+        saveStepItems: const {},
+      );
+
+      await LocalStorageService.removePendingMedia(id, 'image_k',
+          deleteLocalFile: false);
+
+      expect(file.existsSync(), isTrue,
+          reason: 'file must survive the queue drain so resume can show it');
+    });
+
+    test(
+        'Given an offline submission owns the files, When clearMediaQueueFor '
+        'is called with deleteLocalFiles:false, Then the files are kept',
+        () async {
+      final file = File('${tmp.path}/keep_on_clear.jpg')
+        ..writeAsBytesSync(const [4, 5, 6]);
+
+      await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 910,
+        vehicleInfo: const {},
+        pendingMedia: {
+          'image_c': PendingMedia(
+            localPath: file.path,
+            section: 'documents',
+            itemId: 'c',
+            mediaType: 'image',
+            fieldKey: 'c',
+          ),
+        },
+        saveStepItems: const {},
+      );
+
+      await LocalStorageService.clearMediaQueueFor(910, deleteLocalFiles: false);
+
+      expect(file.existsSync(), isTrue,
+          reason: 'offline record still references these files');
+      expect(await LocalStorageService.getMediaQueueById(
+              LocalStorageService.mediaQueueId(910)),
+          isNull,
+          reason: 'the queue container itself is still removed');
+    });
+  });
+
   group('removeAnswerStepFor — draining replayed answers', () {
     test(
         'Given an answer-only container, When the last answer is removed, Then '

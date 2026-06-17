@@ -1068,16 +1068,33 @@ class LocalStorageService {
   }
 
   /// Deletes the media-only queue container for a server inspection, if any
-  /// (e.g. after the inspection is finally submitted). Local queued files are
-  /// removed too.
-  static Future<void> clearMediaQueueFor(int serverInspectionId) async {
+  /// (e.g. after the inspection is finally submitted).
+  ///
+  /// [deleteLocalFiles] removes the queued files too. Pass `false` when another
+  /// record has taken ownership of the same files (e.g. an offline submission
+  /// record references the same paths) — deleting them would orphan that record.
+  static Future<void> clearMediaQueueFor(
+    int serverInspectionId, {
+    bool deleteLocalFiles = true,
+  }) async {
     final box = await _getBox();
     final id = mediaQueueId(serverInspectionId);
     final insp = await box.get(id);
     if (insp == null) return;
-    for (final entry in insp.pendingMedia.values) {
-      await _deleteFile(entry.localPath);
+    if (deleteLocalFiles) {
+      for (final entry in insp.pendingMedia.values) {
+        await _deleteFile(entry.localPath);
+      }
     }
     await _removeInspection(box, id);
+  }
+
+  /// Deletes local (non-http) media files referenced by a set of paths. Used to
+  /// clean a finalised working copy whose files are no longer needed locally.
+  static Future<void> deleteLocalMediaFiles(Iterable<String> paths) async {
+    for (final p in paths) {
+      if (p.isEmpty || p.startsWith('http')) continue;
+      await _deleteFile(p);
+    }
   }
 }
