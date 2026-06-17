@@ -3,15 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../constants/hive_constants.dart';
 import '../../models/inspection_history_model.dart';
 import '../../models/inspection_state.dart';
 import '../../models/inspection_template_model.dart';
 import '../../models/local_inspection.dart';
 import '../../models/pending_media.dart';
 import '../../models/pagination_data_model.dart';
+import '../../providers/connectivity_provider.dart';
 import '../../providers/inspection_provider.dart';
 import '../../routes/routes.dart';
 import '../../services/api_services.dart';
+import '../../services/local_cache_service.dart';
 import '../../utils/loading_animation.dart';
 import '../../widgets/error_widget.dart';
 import 'car_spy/car_spy_data.dart';
@@ -520,27 +523,52 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       final result = await ApiService.getDynamicInspectionMyHistory(context, page: 1);
       if (_isCancelled) return;
       if (result['success']) {
+        // Drafts (initialised-but-not-completed inspections) live in the
+        // Pending tab only; keep them out of History so the two are exclusive.
+        final items = List<InspectionHistory>.from(result['inspections'])
+            .where((i) => i.status != 'draft')
+            .toList();
         _safeSetState(() {
-          // Drafts (initialised-but-not-completed inspections) live in the
-          // Pending tab only; keep them out of History so the two are exclusive.
-          _historyItems = List<InspectionHistory>.from(result['inspections'])
-              .where((i) => i.status != 'draft')
-              .toList();
+          _historyItems = items;
           _paginationData = result['pagination'];
           _isHistoryLoading = false;
         });
-      } else {
+        // Cache the first page so the History tab isn't blank when offline.
+        await LocalCacheService.write(
+          HiveConstants.REPORTS_HISTORY_KEY,
+          items.map((i) => i.toCacheJson()).toList(),
+        );
+      } else if (!await _restoreCachedHistory()) {
         _safeSetState(() {
           _historyError = result['message'];
           _isHistoryLoading = false;
         });
       }
     } catch (e) {
-      _safeSetState(() {
-        _historyError = 'Failed to load history';
-        _isHistoryLoading = false;
-      });
+      if (!await _restoreCachedHistory()) {
+        _safeSetState(() {
+          _historyError = 'Failed to load history';
+          _isHistoryLoading = false;
+        });
+      }
     }
+  }
+
+  /// Loads the last-cached History page so an offline tab shows real data
+  /// instead of an error screen. Returns true when cached items were shown.
+  Future<bool> _restoreCachedHistory() async {
+    final cached = await LocalCacheService.readList(HiveConstants.REPORTS_HISTORY_KEY);
+    if (_isCancelled || cached.isEmpty) return false;
+    final items = cached
+        .map((e) =>
+            InspectionHistory.fromCacheJson((e as Map).cast<String, dynamic>()))
+        .toList();
+    _safeSetState(() {
+      _historyItems = items;
+      _historyError = '';
+      _isHistoryLoading = false;
+    });
+    return true;
   }
 
   // --- Pending ---
@@ -561,23 +589,47 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       );
       if (_isCancelled) return;
       if (result['success'] == true) {
+        final items = List<InspectionHistory>.from(result['inspections']);
         _safeSetState(() {
-          _pendingItems = List<InspectionHistory>.from(result['inspections']);
+          _pendingItems = items;
           _pendingPagination = result['pagination'];
           _isPendingLoading = false;
         });
-      } else {
+        await LocalCacheService.write(
+          HiveConstants.REPORTS_PENDING_KEY,
+          items.map((i) => i.toCacheJson()).toList(),
+        );
+      } else if (!await _restoreCachedPending()) {
         _safeSetState(() {
           _pendingError = result['message'] ?? 'Failed to load pending inspections';
           _isPendingLoading = false;
         });
       }
     } catch (e) {
-      _safeSetState(() {
-        _pendingError = 'Failed to load pending inspections';
-        _isPendingLoading = false;
-      });
+      if (!await _restoreCachedPending()) {
+        _safeSetState(() {
+          _pendingError = 'Failed to load pending inspections';
+          _isPendingLoading = false;
+        });
+      }
     }
+  }
+
+  /// Loads the last-cached Pending (server drafts) page for offline display.
+  /// Returns true when cached items were shown.
+  Future<bool> _restoreCachedPending() async {
+    final cached = await LocalCacheService.readList(HiveConstants.REPORTS_PENDING_KEY);
+    if (_isCancelled || cached.isEmpty) return false;
+    final items = cached
+        .map((e) =>
+            InspectionHistory.fromCacheJson((e as Map).cast<String, dynamic>()))
+        .toList();
+    _safeSetState(() {
+      _pendingItems = items;
+      _pendingError = '';
+      _isPendingLoading = false;
+    });
+    return true;
   }
 
   void _onPendingScroll() {
@@ -780,7 +832,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     // Show the server error only when there's nothing at all to display.
     if (_pendingError.isNotEmpty && !hasAwaiting && !hasServer) {
       return ErrorDisplayWidget(
-        message: _pendingError,
+        message: _getReadableErrorMessage(_pendingError),
         onRetry: _refreshPending,
       );
     }
@@ -1216,6 +1268,20 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
 
   @override
   Widget build(BuildContext context) {
+    // Driven by the single app-wide connectivity event: when the connection is
+    // restored (e.g. via the home page's Retry button), reload whichever tab
+    // failed or came up empty while offline — History and Pending both react.
+    ref.listen(connectivityStatusProvider, (previous, next) {
+      if (next == true && previous == false) {
+        if (_historyError.isNotEmpty || _historyItems.isEmpty) {
+          _loadHistory();
+        }
+        if (_pendingError.isNotEmpty || _pendingItems.isEmpty) {
+          _refreshPending();
+        }
+      }
+    });
+
     final isOnPendingTab = _tabController.index == 1;
 
     return ColoredBox(

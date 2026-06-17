@@ -8,16 +8,14 @@ import '../models/local_inspection.dart';
 import '../models/pending_media.dart';
 import '../services/api_services.dart';
 import '../services/local_storage_services.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import '../utils/connectivity_checker.dart';
+import 'connectivity_provider.dart';
 
 part 'inspection_provider.g.dart';
 
 @Riverpod(keepAlive: true)
 class InspectionNotifier extends _$InspectionNotifier {
   Timer? _cooldownTimer;
-  Timer? _connectivityDebounce;
-  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isAutoSubmitting = false;
   bool _isSyncingMedia = false;
 
@@ -30,45 +28,30 @@ class InspectionNotifier extends _$InspectionNotifier {
   InspectionState build() {
     ref.onDispose(() {
       _cooldownTimer?.cancel();
-      _connectivityDebounce?.cancel();
-      _connectivitySubscription?.cancel();
     });
-    _startConnectivityListener();
-    return const InspectionState();
-  }
-
-  void _startConnectivityListener() {
-    _connectivitySubscription?.cancel();
-    _connectivitySubscription = Connectivity()
-        .onConnectivityChanged
-        .listen((List<ConnectivityResult> results) {
-      if (results.isNotEmpty && results.first != ConnectivityResult.none) {
-        // Debounce: a Wi-Fi/cellular handoff emits a burst of events, and each
-        // sync runs full-box scans. Coalesce bursts into one sync after a short
-        // quiet period (the syncing flags still guard against overlap).
-        _connectivityDebounce?.cancel();
-        _connectivityDebounce = Timer(const Duration(seconds: 2), () {
-          // Stream listeners must be synchronous; async work is scheduled via
-          // unawaited() and all errors are caught explicitly inside.
-          unawaited(Future(() async {
-            try {
-              final hasInternet =
-                  await ConnectivityChecker.canReachServer();
-              if (!hasInternet) return;
-              // First drain the media-only upload queue (uploads each file and
-              // replays save-step, keeping the inspection resumable), replay any
-              // answer-only fields edited offline, then submit any inspections
-              // that were fully completed while offline.
-              await syncPendingMedia();
-              await syncPendingSaveSteps();
-              await _autoSubmitPending();
-            } catch (e) {
-              log('Connectivity listener error: $e');
-            }
-          }));
-        });
+    // React to the app-wide connectivity source instead of owning a second
+    // subscription: when it flips offline -> online (debounce + reachability
+    // probe already done there), drain everything queued while offline.
+    ref.listen(connectivityStatusProvider, (previous, next) {
+      if (next == true && previous != true) {
+        // Provider listeners must stay synchronous; async work is scheduled via
+        // unawaited() and all errors are caught explicitly inside.
+        unawaited(Future(() async {
+          try {
+            // First drain the media-only upload queue (uploads each file and
+            // replays save-step, keeping the inspection resumable), replay any
+            // answer-only fields edited offline, then submit any inspections
+            // that were fully completed while offline.
+            await syncPendingMedia();
+            await syncPendingSaveSteps();
+            await _autoSubmitPending();
+          } catch (e) {
+            log('Connectivity sync error: $e');
+          }
+        }));
       }
     });
+    return const InspectionState();
   }
 
   Future<void> _autoSubmitPending() async {

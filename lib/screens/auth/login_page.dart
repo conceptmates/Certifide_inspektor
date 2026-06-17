@@ -1,6 +1,4 @@
 import 'dart:developer';
-import 'dart:async' show TimeoutException;
-import 'dart:io' show HandshakeException, SocketException;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -11,6 +9,7 @@ import '../../constants/const.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
 import '../../utils/connectivity_checker.dart';
+import '../../utils/network_error_helper.dart';
 import '../home/car_spy/car_spy_home.dart';
 
 // ─── Color Tokens ───────────────────────────────────────────────────────────
@@ -51,29 +50,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
 
-  String _getUserFriendlyErrorMessage(dynamic error) {
-    // Check for specific network-related exceptions
-    if (error is SocketException) {
-      return "No internet connection. Please check your network settings and try again.";
-    } else if (error.toString().contains('SocketException') ||
-        error.toString().contains('Failed host lookup')) {
-      return "Unable to connect to the server. Please check your internet connection.";
-    } else if (error is TimeoutException) {
-      return "Connection timed out. Please check your internet connection and try again.";
-    } else if (error.toString().contains('TimeoutException')) {
-      return "The request took too long. Please check your internet speed and try again.";
-    } else if (error is HandshakeException) {
-      return "Secure connection failed. Please check your network settings.";
-    } else if (error.toString().contains('HandshakeException')) {
-      return "We're having trouble establishing a secure connection. Please try again.";
-    } else if (error.toString().contains('Certificate')) {
-      return "Security certificate issue. Please check your network or try again later.";
-    } else if (error.toString().contains('No internet connection')) {
-      return "No internet connection. Please check your network settings and try again.";
-    } else {
-      return "An unexpected error occurred. Please try again or contact support.";
-    }
-  }
+  String _getUserFriendlyErrorMessage(dynamic error) =>
+      NetworkErrorHelper.friendlyMessage(error);
 
   void _showNetworkSnackBar(String message) {
     if (!mounted) return;
@@ -250,13 +228,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
           // The API service wraps connectivity failures as "Network error: ...".
           // Translate those into a graceful message instead of leaking the raw
           // exception text; pass real server messages through unchanged.
-          final isNetworkFailure = rawMessage.startsWith('Network error:') ||
-              rawMessage.contains('SocketException') ||
-              rawMessage.contains('TimeoutException') ||
-              rawMessage.contains('HandshakeException') ||
-              rawMessage.contains('Failed host lookup');
           _showErrorDialog(
-            isNetworkFailure
+            NetworkErrorHelper.isNetworkFailure(rawMessage)
                 ? _getUserFriendlyErrorMessage(rawMessage)
                 : rawMessage,
           );

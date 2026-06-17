@@ -137,4 +137,36 @@ class InspectionHistory {
       modelId: parseId(json['vehicle_model_id'], json['vehicle_model']),
     );
   }
+
+  /// Serializes the already-normalised fields for the offline cache. Unlike
+  /// [fromJson] (which parses the raw server shape), this round-trips through
+  /// [fromCacheJson] so a cached report list renders identically when offline.
+  Map<String, dynamic> toCacheJson() => {
+        'id': id,
+        'inspectorName': inspectorName,
+        'status': status,
+        'processingStatus': processingStatus,
+        'referenceNumber': referenceNumber,
+        'date': date.toIso8601String(),
+        'vehicleInfo': vehicleInfo,
+        'links': links,
+        'brandId': brandId,
+        'modelId': modelId,
+      };
+
+  factory InspectionHistory.fromCacheJson(Map<String, dynamic> json) =>
+      InspectionHistory(
+        id: json['id'].toString(),
+        inspectorName: json['inspectorName']?.toString() ?? '',
+        status: json['status']?.toString() ?? '',
+        processingStatus: json['processingStatus']?.toString() ?? '',
+        referenceNumber: json['referenceNumber']?.toString(),
+        date: DateTime.parse(json['date'] as String),
+        vehicleInfo:
+            (json['vehicleInfo'] as Map?)?.cast<String, dynamic>() ?? const {},
+        links: (json['links'] as Map?)
+            ?.map((k, v) => MapEntry(k.toString(), v.toString())),
+        brandId: json['brandId'] as int?,
+        modelId: json['modelId'] as int?,
+      );
 }

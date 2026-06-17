@@ -8,9 +8,11 @@ import '../../../constants/hive_constants.dart';
 import '../../../data/inspection_storage_model.dart';
 import '../../../models/inspection_stats_model.dart';
 import '../../../models/local_inspection.dart';
+import '../../../providers/connectivity_provider.dart';
 import '../../../providers/inspection_provider.dart';
 import '../../../providers/stats_provider.dart';
 import '../../../routes/routes.dart';
+import '../../../utils/network_error_helper.dart';
 import '../../attendance/attendance_screen.dart';
 import '../../work_assigned/work_assigned_screen.dart';
 import '../reports_page.dart';
@@ -126,6 +128,17 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
   Future<void> _handleInitializeScanTap() async {
     try {
       if (!mounted) return;
+
+      // An inspection cannot be started offline, so fail fast with a clear
+      // message instead of letting the user fill in a form that can't begin.
+      // Reads the shared connectivity state — no extra reachability probe.
+      if (!ref.read(connectivityStatusProvider)) {
+        NetworkErrorHelper.showOfflineSnackBar(
+          context,
+          'Internet required to start the inspection.',
+        );
+        return;
+      }
 
       final hasExisting = await _hasExistingInspection();
       if (!mounted) return;
@@ -801,6 +814,23 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
 
   @override
   Widget build(BuildContext context) {
+    // One connectivity source drives the whole screen: when it drops we surface
+    // the offline snackbar; when it is restored we refresh the dashboard data
+    // at once. This single listener replaces any per-screen polling.
+    ref.listen(connectivityStatusProvider, (previous, next) {
+      if (!next) {
+        NetworkErrorHelper.showOfflineSnackBar(
+          context,
+          NetworkErrorHelper.offlineMessage,
+          onRetry: () =>
+              ref.read(connectivityStatusProvider.notifier).refresh(),
+        );
+      } else if (previous == false) {
+        ref.invalidate(inspectionStatsProvider);
+        ref.invalidate(monthlyInspectionStatsProvider);
+      }
+    });
+
     return Scaffold(
       backgroundColor: Colors.white,
       extendBody: true,
