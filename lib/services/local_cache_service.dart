@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:developer';
 
-import 'package:hive/hive.dart';
+import 'package:hive_ce/hive.dart';
 
 import '../constants/hive_constants.dart';
 

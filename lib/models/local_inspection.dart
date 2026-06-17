@@ -1,5 +1,5 @@
 // lib/models/local_inspection.dart
-import 'package:hive/hive.dart';
+import 'package:hive_ce/hive.dart';
 
 import 'pending_image.dart';
 import 'pending_media.dart';

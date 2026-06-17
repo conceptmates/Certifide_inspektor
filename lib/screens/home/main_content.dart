@@ -5,12 +5,13 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
+import '../../hive_registrar.g.dart';
 import '../../models/inspection_stats_model.dart';
 import '../../providers/inspection_provider.dart';
 import '../../providers/stats_provider.dart';
@@ -60,7 +61,7 @@ class _MainContentState extends ConsumerState<MainContent>
         // Deferred so the first frame paints before these secure-storage /
         // platform-channel reads kick off.
         _loadUserName();
-        ref.read(inspectionNotifierProvider.notifier).loadInspections();
+        ref.read(inspectionProvider.notifier).loadInspections();
         // Surface a force-closed in-progress inspection as a Continue card on
         // launch — without this the only resume path is the online-only reports
         // list, so an offline force-close left the work unrecoverable.
@@ -135,7 +136,7 @@ class _MainContentState extends ConsumerState<MainContent>
         await Hive.initFlutter();
 
         if (!Hive.isAdapterRegistered(0)) {
-          Hive.registerAdapter(InspectionStorageModelAdapter());
+          Hive.registerAdapters();
         }
 
         _inspectionBox = await Hive.openBox<InspectionStorageModel>(

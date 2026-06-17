@@ -1,5 +1,5 @@
 // lib/models/pending_media.dart
-import 'package:hive/hive.dart';
+import 'package:hive_ce/hive.dart';
 
 part 'pending_media.g.dart';
 

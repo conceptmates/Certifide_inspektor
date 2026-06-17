@@ -9,7 +9,7 @@ part of 'inspection_storage_model.dart';
 class InspectionStorageModelAdapter
     extends TypeAdapter<InspectionStorageModel> {
   @override
-  final int typeId = 0;
+  final typeId = 0;
 
   @override
   InspectionStorageModel read(BinaryReader reader) {
@@ -21,7 +21,7 @@ class InspectionStorageModelAdapter
       itemValues: (fields[0] as Map?)?.cast<String, String>(),
       itemImages: (fields[1] as Map?)?.cast<String, String?>(),
       itemRemarks: (fields[2] as Map?)?.cast<String, String>(),
-      currentSection: fields[3] as int?,
+      currentSection: (fields[3] as num?)?.toInt(),
       textFieldValues: (fields[4] as Map?)?.cast<String, String>(),
       timestamp: fields[5] as DateTime?,
       isCompleted: fields[6] as bool?,
@@ -33,7 +33,7 @@ class InspectionStorageModelAdapter
       itemFiles: (fields[11] as Map?)?.cast<String, String?>(),
       vehicleDetails: (fields[12] as Map?)?.cast<String, dynamic>(),
       inspectionTemplate: (fields[13] as Map?)?.cast<String, dynamic>(),
-      inspectionId: fields[14] as int?,
+      inspectionId: (fields[14] as num?)?.toInt(),
       itemFlaggedIssues: (fields[15] as Map?)?.map((dynamic k, dynamic v) =>
           MapEntry(k as String, (v as List).cast<String>())),
     );

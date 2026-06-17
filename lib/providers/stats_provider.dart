@@ -26,7 +26,7 @@ Future<InspectionStats?> _cachedStats(String key) async {
 
 // Daily stats for the current month (used by the Daily tab)
 @riverpod
-Future<InspectionStats?> inspectionStats(InspectionStatsRef ref) async {
+Future<InspectionStats?> inspectionStats(Ref ref) async {
   final now = DateTime.now();
   final from = _fmt(DateTime(now.year, now.month, 1));
   final to = _fmt(DateTime(now.year, now.month + 1, 0));
@@ -48,8 +48,7 @@ Future<InspectionStats?> inspectionStats(InspectionStatsRef ref) async {
 
 // Monthly stats for the last 6 months (used by the Monthly tab)
 @riverpod
-Future<InspectionStats?> monthlyInspectionStats(
-    MonthlyInspectionStatsRef ref) async {
+Future<InspectionStats?> monthlyInspectionStats(Ref ref) async {
   final now = DateTime.now();
   final from = _fmt(DateTime(now.year, now.month - 5, 1));
   final to = _fmt(DateTime(now.year, now.month + 1, 0));

@@ -6,39 +6,78 @@ part of 'stats_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$inspectionStatsHash() => r'2eeff4d72804a3c3fe076252cc03993b0906fcec';
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: type=lint, type=warning
 
-/// See also [inspectionStats].
 @ProviderFor(inspectionStats)
-final inspectionStatsProvider =
-    AutoDisposeFutureProvider<InspectionStats?>.internal(
-  inspectionStats,
-  name: r'inspectionStatsProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$inspectionStatsHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
+const inspectionStatsProvider = InspectionStatsProvider._();
 
-typedef InspectionStatsRef = AutoDisposeFutureProviderRef<InspectionStats?>;
-String _$monthlyInspectionStatsHash() =>
-    r'82ac522b0a259535b5920037e1611d61ee719c0c';
+final class InspectionStatsProvider extends $FunctionalProvider<
+        AsyncValue<InspectionStats?>,
+        InspectionStats?,
+        FutureOr<InspectionStats?>>
+    with $FutureModifier<InspectionStats?>, $FutureProvider<InspectionStats?> {
+  const InspectionStatsProvider._()
+      : super(
+          from: null,
+          argument: null,
+          retry: null,
+          name: r'inspectionStatsProvider',
+          isAutoDispose: true,
+          dependencies: null,
+          $allTransitiveDependencies: null,
+        );
 
-/// See also [monthlyInspectionStats].
+  @override
+  String debugGetCreateSourceHash() => _$inspectionStatsHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<InspectionStats?> $createElement(
+          $ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<InspectionStats?> create(Ref ref) {
+    return inspectionStats(ref);
+  }
+}
+
+String _$inspectionStatsHash() => r'734fe3bdce14cfcb3b06878338431d1b6931ddd0';
+
 @ProviderFor(monthlyInspectionStats)
-final monthlyInspectionStatsProvider =
-    AutoDisposeFutureProvider<InspectionStats?>.internal(
-  monthlyInspectionStats,
-  name: r'monthlyInspectionStatsProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$monthlyInspectionStatsHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
+const monthlyInspectionStatsProvider = MonthlyInspectionStatsProvider._();
 
-typedef MonthlyInspectionStatsRef
-    = AutoDisposeFutureProviderRef<InspectionStats?>;
-// ignore_for_file: type=lint
-// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member
+final class MonthlyInspectionStatsProvider extends $FunctionalProvider<
+        AsyncValue<InspectionStats?>,
+        InspectionStats?,
+        FutureOr<InspectionStats?>>
+    with $FutureModifier<InspectionStats?>, $FutureProvider<InspectionStats?> {
+  const MonthlyInspectionStatsProvider._()
+      : super(
+          from: null,
+          argument: null,
+          retry: null,
+          name: r'monthlyInspectionStatsProvider',
+          isAutoDispose: true,
+          dependencies: null,
+          $allTransitiveDependencies: null,
+        );
+
+  @override
+  String debugGetCreateSourceHash() => _$monthlyInspectionStatsHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<InspectionStats?> $createElement(
+          $ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<InspectionStats?> create(Ref ref) {
+    return monthlyInspectionStats(ref);
+  }
+}
+
+String _$monthlyInspectionStatsHash() =>
+    r'20e44c52c9218f6cc992687430230fafe59ae9d1';

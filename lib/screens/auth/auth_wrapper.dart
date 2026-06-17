@@ -17,13 +17,13 @@ class _AuthWrapperState extends ConsumerState<AuthWrapper> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(userNotifierProvider.notifier).initializeAuth(context);
+      ref.read(userProvider.notifier).initializeAuth(context);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final userState = ref.watch(userNotifierProvider);
+    final userState = ref.watch(userProvider);
     if (userState.isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator.adaptive()),

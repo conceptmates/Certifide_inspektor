@@ -49,16 +49,16 @@ flutter pub outdated
 
 ### Core Architecture Patterns
 - **State Management**: Riverpod — code-generated `Notifier`s (`@riverpod`) plus `FutureProvider`s. (No legacy `package:provider`.)
-- **Data Layer**: Repository pattern with Hive (local) + HTTP API (remote)
-- **Storage**: Hive NoSQL database for offline capabilities
+- **Data Layer**: Repository pattern with Hive CE (`hive_ce`, local) + HTTP API (remote)
+- **Storage**: Hive CE NoSQL database for offline capabilities (migrated from the abandoned `hive`/`hive_generator`; same on-disk format and `@HiveType`/`registerAdapter` API)
 - **Authentication**: JWT with auto-refresh mechanism stored in flutter_secure_storage
 
 ### Key Providers (lib/providers/)
-- **`userNotifierProvider`** (`user_provider.dart`, `UserNotifier`/`UserState`) - Authentication, JWT management, role-based access
-- **`inspectionNotifierProvider`** (`inspection_provider.dart`, `InspectionNotifier`/`InspectionState`) - Inspection CRUD, offline sync, auto-retry logic
-- **`inspectionSessionNotifierProvider`** (`inspection_session_provider.dart`) - Active inspection session snapshot
+- **`userProvider`** (`user_provider.dart`, `UserNotifier`/`UserState`) - Authentication, JWT management, role-based access
+- **`inspectionProvider`** (`inspection_provider.dart`, `InspectionNotifier`/`InspectionState`) - Inspection CRUD, offline sync, auto-retry logic
+- **`inspectionSessionProvider`** (`inspection_session_provider.dart`) - Active inspection session snapshot
 - **`inspectionStatsProvider` / `monthlyInspectionStatsProvider`** (`stats_provider.dart`) - `@riverpod` async providers for dashboard stats
-- Codegen: every provider uses `@riverpod`; regenerate `*.g.dart` part files via `dart run build_runner build --delete-conflicting-outputs`.
+- Codegen: every provider uses `@riverpod` (Riverpod 3). The generator strips the `Notifier` suffix, so class `InspectionNotifier` → `inspectionProvider`. Regenerate the `*.g.dart` files via `dart run build_runner build` (the `--delete-conflicting-outputs` flag is no longer needed and is ignored).
 
 ### Directory Structure
 ```

@@ -8,7 +8,7 @@ part of 'pending_image.dart';
 
 class PendingImageAdapter extends TypeAdapter<PendingImage> {
   @override
-  final int typeId = 4;
+  final typeId = 4;
 
   @override
   PendingImage read(BinaryReader reader) {

@@ -8,7 +8,7 @@ part of 'pending_media.dart';
 
 class PendingMediaAdapter extends TypeAdapter<PendingMedia> {
   @override
-  final int typeId = 5;
+  final typeId = 5;
 
   @override
   PendingMedia read(BinaryReader reader) {
@@ -22,9 +22,10 @@ class PendingMediaAdapter extends TypeAdapter<PendingMedia> {
       itemId: fields[2] as String,
       mediaType: fields[3] as String,
       fieldKey: fields[4] as String,
-      uploadStatus: fields[5] as String,
+      uploadStatus:
+          fields[5] == null ? PendingMediaStatus.queued : fields[5] as String,
       uploadedUrl: fields[6] as String?,
-      retryCount: fields[7] as int,
+      retryCount: fields[7] == null ? 0 : (fields[7] as num).toInt(),
       lastError: fields[8] as String?,
     );
   }

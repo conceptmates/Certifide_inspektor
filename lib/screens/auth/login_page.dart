@@ -210,7 +210,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           if (response['data'] != null &&
               response['data']['user'] != null &&
               response['data']['access_token'] != null) {
-            await ref.read(userNotifierProvider.notifier).setUserData(
+            await ref.read(userProvider.notifier).setUserData(
               response['data']['user'] as Map<String, dynamic>,
               response['data']['access_token'] as String,
             );

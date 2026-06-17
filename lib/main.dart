@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:media_store_plus/media_store_plus.dart';
 
-import 'data/inspection_storage_model.dart';
+import 'hive_registrar.g.dart';
 import 'routes/routes.dart';
 import 'screens/auth/auth_wrapper.dart';
 import 'services/local_storage_services.dart';
@@ -25,7 +25,7 @@ void main() async {
   await LocalStorageService.init();
 
   if (!Hive.isAdapterRegistered(0)) {
-    Hive.registerAdapter(InspectionStorageModelAdapter());
+    Hive.registerAdapters();
   }
 
   // INSPECTION_BOX / INSPECTION_HISTORY_BOX are opened lazily on first access

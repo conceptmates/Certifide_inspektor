@@ -1,5 +1,5 @@
 // lib/models/inspection_storage_model.dart
-import 'package:hive/hive.dart';
+import 'package:hive_ce/hive.dart';
 
 part 'inspection_storage_model.g.dart';
 

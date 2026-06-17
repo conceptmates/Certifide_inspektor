@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -21,7 +21,6 @@ import '../../data/inspection_storage_model.dart';
 import '../../models/inspection_item.dart';
 import '../../models/inspection_template_model.dart';
 import '../../models/pending_media.dart';
-import '../../providers/connectivity_provider.dart';
 import '../../providers/inspection_provider.dart';
 import '../../providers/inspection_session_provider.dart';
 import '../../providers/user_provider.dart';
@@ -378,7 +377,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
       if (widget.isNewInspection && !resumesLocalCopy) {
         // Fresh start — discard any leftover session from a previous run.
-        ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
+        ref.read(inspectionSessionProvider.notifier).clearSession();
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
         if (!mounted) return;
         // Load the API template (with sections, fields, and options) for new inspections.
@@ -403,7 +402,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         // Resume the SAME inspection: keep the locally-saved values + images.
         // The server template (from /resume) provides the up-to-date structure;
         // _loadDataFromStorage layers the offline-entered answers + media on top.
-        ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
+        ref.read(inspectionSessionProvider.notifier).clearSession();
         if (widget.inspectionTemplate != null) {
           _inspectionTemplate = widget.inspectionTemplate;
           _useDynamicTemplate = true;
@@ -420,7 +419,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       } else {
         // Resume path: prefer in-memory snapshot over Hive to avoid I/O.
-        final snap = ref.read(inspectionSessionNotifierProvider);
+        final snap = ref.read(inspectionSessionProvider);
         if (snap != null) {
           _restoreFromSnapshot(snap);
         } else {
@@ -491,7 +490,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // While online, warm the disk cache for every reference-media URL in the
       // template so the admin guide images/videos/audio stay visible after the
       // inspector goes offline mid-job. Fire-and-forget — never block the UI.
-      _prefetchReferenceMedia();
+      unawaited(_prefetchReferenceMedia());
 
       // Request camera + mic permissions while the loading screen is still
       // shown so the camera card renders with permissions already resolved.
@@ -505,27 +504,20 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     });
   }
 
-  /// Pre-downloads admin-uploaded reference media (image/video/audio) for the
-  /// whole template so it remains viewable offline. No-op when offline (the
-  /// next online load will warm it) or when there is no dynamic template.
-  void _prefetchReferenceMedia() {
+  /// Secondary safety net for caching reference media: the primary warm happens
+  /// at the API layer when the template is fetched online (see ApiService). This
+  /// covers templates restored from storage that the inspector opens while still
+  /// online. Verifies real connectivity first (the provider is optimistic until
+  /// its first probe), so it never fires doomed downloads — and the Socket
+  /// exceptions they caused — while offline.
+  Future<void> _prefetchReferenceMedia() async {
     if (!_useDynamicTemplate) return;
     final template = _inspectionTemplate;
     if (template == null) return;
-    if (!ref.read(connectivityStatusProvider)) return;
-
-    final urls = <String>[];
-    for (final section in template.structure.sections) {
-      for (final field in section.fields) {
-        for (final media in field.referenceMedia) {
-          // YouTube/external links stream from their own host — not cacheable.
-          if (media.mediaType.toLowerCase() == 'link') continue;
-          if (media.url.isNotEmpty) urls.add(media.url);
-        }
-      }
-    }
+    final urls = template.referenceMediaUrls;
     if (urls.isEmpty) return;
-    unawaited(ReferenceMediaCache.prefetch(urls));
+    if (!await ConnectivityChecker.canReachServer()) return;
+    await ReferenceMediaCache.prefetch(urls);
   }
 
   Future<void> _initHive() async {
@@ -1434,7 +1426,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   Future<void> _cleanupCurrentInspection() async {
     try {
       _sessionCompleted = true;
-      ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
+      ref.read(inspectionSessionProvider.notifier).clearSession();
 
       if (_inspectionBox?.isOpen ?? false) {
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
@@ -4271,7 +4263,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               deleteLocalFiles: false);
         }
         if (mounted) {
-          ref.read(inspectionNotifierProvider.notifier).markDirty();
+          ref.read(inspectionProvider.notifier).markDirty();
         }
 
         await _completeInspection();
@@ -4386,7 +4378,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             await LocalStorageService.clearMediaQueueFor(sidFailed);
           }
           if (mounted) {
-            ref.read(inspectionNotifierProvider.notifier).markDirty();
+            ref.read(inspectionProvider.notifier).markDirty();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Failed to submit: ${result['message']}')),
             );
@@ -4421,7 +4413,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => MainScreen(
-          initialIndex: ref.read(userNotifierProvider).isAdmin() ? 3 : 2,
+          initialIndex: ref.read(userProvider).isAdmin() ? 3 : 2,
         ),
       ),
     );
@@ -5636,9 +5628,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           await _saveDataLocally();
           await _commitPendingMediaToQueue();
           if (mounted) {
-            ref.read(inspectionNotifierProvider.notifier).markDirty();
+            ref.read(inspectionProvider.notifier).markDirty();
             unawaited(ref
-                .read(inspectionNotifierProvider.notifier)
+                .read(inspectionProvider.notifier)
                 .refreshMediaQueue());
           }
           if (!mounted) return;
@@ -5891,7 +5883,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (!_sessionCompleted) {
       // ref is not guaranteed to be valid during dispose() in Riverpod — guard it.
       try {
-        ref.read(inspectionSessionNotifierProvider.notifier).saveSnapshot(
+        ref.read(inspectionSessionProvider.notifier).saveSnapshot(
               InspectionSessionSnapshot(
                 itemImages: Map.from(itemImages),
                 itemVideos: Map.from(itemVideos),
@@ -5933,10 +5925,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       await _saveDataLocally();
       await _commitPendingMediaToQueue();
       if (mounted) {
-        ref.read(inspectionNotifierProvider.notifier).markDirty();
+        ref.read(inspectionProvider.notifier).markDirty();
         // Surface the just-queued media in the Pending tab and start syncing.
         unawaited(
-            ref.read(inspectionNotifierProvider.notifier).refreshMediaQueue());
+            ref.read(inspectionProvider.notifier).refreshMediaQueue());
       }
       if (!mounted) return;
       Navigator.of(context).pop();

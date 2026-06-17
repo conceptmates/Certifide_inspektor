@@ -73,7 +73,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     // it (the provider also auto-syncs on reconnect).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(inspectionNotifierProvider.notifier).refreshMediaQueue();
+        ref.read(inspectionProvider.notifier).refreshMediaQueue();
       }
     });
   }
@@ -206,7 +206,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     _safeSetState(() => _uploadingMediaIds.add(container.id));
     try {
       final ok = await ref
-          .read(inspectionNotifierProvider.notifier)
+          .read(inspectionProvider.notifier)
           .uploadInspectionMedia(container);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -231,7 +231,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   Future<void> _refreshPending() async {
     await Future.wait([
       _loadPendingInspections(),
-      ref.read(inspectionNotifierProvider.notifier).refreshMediaQueue(),
+      ref.read(inspectionProvider.notifier).refreshMediaQueue(),
     ]);
   }
 
@@ -817,7 +817,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
 
   Widget _buildPendingTab() {
     final media = ref.watch(
-      inspectionNotifierProvider.select(
+      inspectionProvider.select(
         (s) => (queue: s.mediaQueue, progress: s.mediaProgress),
       ),
     );

@@ -130,7 +130,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       onPopInvokedWithResult: _handlePopInvokedWithResult,
       child: Builder(
         builder: (context) {
-          final userState = ref.watch(userNotifierProvider);
+          final userState = ref.watch(userProvider);
           if (userState.isLoading) {
             return const Scaffold(
               body: Center(child: CircularProgressIndicator.adaptive()),

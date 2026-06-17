@@ -1,5 +1,5 @@
 // lib/services/reports_cache_service.dart
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 
 import '../constants/hive_constants.dart';
 

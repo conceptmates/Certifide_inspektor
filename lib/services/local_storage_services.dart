@@ -5,11 +5,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:media_store_plus/media_store_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../hive_registrar.g.dart';
 import '../models/local_inspection.dart';
 import '../models/pending_image.dart';
 import '../models/pending_media.dart';
@@ -170,14 +171,8 @@ class LocalStorageService {
     } catch (e) {
       log('Could not resolve documents directory: $e');
     }
-    if (!Hive.isAdapterRegistered(3)) {
-      Hive.registerAdapter(LocalInspectionAdapter());
-    }
-    if (!Hive.isAdapterRegistered(4)) {
-      Hive.registerAdapter(PendingImageAdapter());
-    }
-    if (!Hive.isAdapterRegistered(5)) {
-      Hive.registerAdapter(PendingMediaAdapter());
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapters();
     }
     await Hive.openLazyBox<LocalInspection>(INSPECTIONS_BOX);
   }

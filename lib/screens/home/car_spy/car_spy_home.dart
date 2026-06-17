@@ -1,11 +1,12 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '../../../constants/hive_constants.dart';
 import '../../../data/inspection_storage_model.dart';
+import '../../../hive_registrar.g.dart';
 import '../../../models/inspection_stats_model.dart';
 import '../../../models/local_inspection.dart';
 import '../../../providers/connectivity_provider.dart';
@@ -48,7 +49,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
         await Hive.initFlutter();
 
         if (!Hive.isAdapterRegistered(0)) {
-          Hive.registerAdapter(InspectionStorageModelAdapter());
+          Hive.registerAdapters();
         }
 
         _inspectionBox = await Hive.openBox<InspectionStorageModel>(
@@ -801,9 +802,9 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: _buildInspectionChart(
               ref.watch(
-                  inspectionNotifierProvider.select((s) => s.inspections)),
-              ref.watch(inspectionStatsProvider).valueOrNull,
-              ref.watch(monthlyInspectionStatsProvider).valueOrNull,
+                  inspectionProvider.select((s) => s.inspections)),
+              ref.watch(inspectionStatsProvider).value,
+              ref.watch(monthlyInspectionStatsProvider).value,
             ),
           ),
           const SizedBox(height: 24),
