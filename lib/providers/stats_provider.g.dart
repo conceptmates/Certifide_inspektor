@@ -6,7 +6,7 @@ part of 'stats_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$inspectionStatsHash() => r'3dc0fc6ceb05d752e8d2daafd77153fd314aadc8';
+String _$inspectionStatsHash() => r'2eeff4d72804a3c3fe076252cc03993b0906fcec';
 
 /// See also [inspectionStats].
 @ProviderFor(inspectionStats)
@@ -23,7 +23,7 @@ final inspectionStatsProvider =
 
 typedef InspectionStatsRef = AutoDisposeFutureProviderRef<InspectionStats?>;
 String _$monthlyInspectionStatsHash() =>
-    r'456902ebae1605a017c701390ef5b0c996a1c3c7';
+    r'82ac522b0a259535b5920037e1611d61ee719c0c';
 
 /// See also [monthlyInspectionStats].
 @ProviderFor(monthlyInspectionStats)

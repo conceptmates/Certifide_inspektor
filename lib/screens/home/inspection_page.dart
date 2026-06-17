@@ -21,11 +21,13 @@ import '../../data/inspection_storage_model.dart';
 import '../../models/inspection_item.dart';
 import '../../models/inspection_template_model.dart';
 import '../../models/pending_media.dart';
+import '../../providers/connectivity_provider.dart';
 import '../../providers/inspection_provider.dart';
 import '../../providers/inspection_session_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
 import '../../services/local_storage_services.dart';
+import '../../services/reference_media_cache.dart';
 import '../../services/reports_cache_service.dart';
 import '../../utils/connectivity_checker.dart';
 import '../../widgets/inspection_field_info_sheet.dart';
@@ -162,7 +164,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   VoidCallback? _triggerFlashToggle;
   bool _cameraFlashOn = false;
   VoidCallback? _triggerVideoToggle;
+  VoidCallback? _triggerVideoPauseResume;
   bool _isVideoRecording = false;
+  bool _isVideoPaused = false;
   AudioRecorder? _audioRecorder;
   bool _isRecordingAudio = false;
   Timer? _audioTimer;
@@ -484,6 +488,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
 
+      // While online, warm the disk cache for every reference-media URL in the
+      // template so the admin guide images/videos/audio stay visible after the
+      // inspector goes offline mid-job. Fire-and-forget — never block the UI.
+      _prefetchReferenceMedia();
+
       // Request camera + mic permissions while the loading screen is still
       // shown so the camera card renders with permissions already resolved.
       await _requestInspectionPermissions();
@@ -494,6 +503,29 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
       }
     });
+  }
+
+  /// Pre-downloads admin-uploaded reference media (image/video/audio) for the
+  /// whole template so it remains viewable offline. No-op when offline (the
+  /// next online load will warm it) or when there is no dynamic template.
+  void _prefetchReferenceMedia() {
+    if (!_useDynamicTemplate) return;
+    final template = _inspectionTemplate;
+    if (template == null) return;
+    if (!ref.read(connectivityStatusProvider)) return;
+
+    final urls = <String>[];
+    for (final section in template.structure.sections) {
+      for (final field in section.fields) {
+        for (final media in field.referenceMedia) {
+          // YouTube/external links stream from their own host — not cacheable.
+          if (media.mediaType.toLowerCase() == 'link') continue;
+          if (media.url.isNotEmpty) urls.add(media.url);
+        }
+      }
+    }
+    if (urls.isEmpty) return;
+    unawaited(ReferenceMediaCache.prefetch(urls));
   }
 
   Future<void> _initHive() async {
@@ -3727,7 +3759,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerFlashToggle = null;
         _cameraFlashOn = false;
         _triggerVideoToggle = null;
+        _triggerVideoPauseResume = null;
         _isVideoRecording = false;
+        _isVideoPaused = false;
         _isRecordingAudio = false;
         _audioElapsed.value = Duration.zero;
       });
@@ -3779,7 +3813,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerFlashToggle = null;
         _cameraFlashOn = false;
         _triggerVideoToggle = null;
+        _triggerVideoPauseResume = null;
         _isVideoRecording = false;
+        _isVideoPaused = false;
         _isRecordingAudio = false;
         _audioElapsed.value = Duration.zero;
         _highlightFlagIssues.value = false;
@@ -3902,7 +3938,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerFlashToggle = null;
         _cameraFlashOn = false;
         _triggerVideoToggle = null;
+        _triggerVideoPauseResume = null;
         _isVideoRecording = false;
+        _isVideoPaused = false;
         _isRecordingAudio = false;
         _audioElapsed.value = Duration.zero;
       });
@@ -4700,9 +4738,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             showControls: false,
             onRecordingToggleReady: (fn) =>
                 setState(() => _triggerVideoToggle = fn),
+            onPauseResumeReady: (fn) =>
+                setState(() => _triggerVideoPauseResume = fn),
             onFlashToggleReady: (fn) => setState(() => _triggerFlashToggle = fn),
-            onRecordingChanged: (recording) =>
-                setState(() => _isVideoRecording = recording),
+            onRecordingChanged: (recording) => setState(() {
+              _isVideoRecording = recording;
+              if (!recording) _isVideoPaused = false;
+            }),
+            onRecordingPausedChanged: (paused) =>
+                setState(() => _isVideoPaused = paused),
             onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
             onCapture: (XFile file) {
               setState(() {
@@ -4710,6 +4754,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 _pendingCapturedVideoUniqueId = uniqueId;
                 _isReviewingVideo = true;
                 _isVideoRecording = false;
+                _isVideoPaused = false;
               });
             },
           ),
@@ -4955,13 +5000,17 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.circle, color: Colors.red, size: 8),
-                        SizedBox(width: 5),
-                        Text('REC',
-                            style: TextStyle(
+                        Icon(
+                          _isVideoPaused ? Icons.pause : Icons.circle,
+                          color: _isVideoPaused ? Colors.amber : Colors.red,
+                          size: 8,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(_isVideoPaused ? 'PAUSED' : 'REC',
+                            style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700)),
@@ -5216,7 +5265,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               _triggerFlashToggle = null;
                               _cameraFlashOn = false;
                               _triggerVideoToggle = null;
+                              _triggerVideoPauseResume = null;
                               _isVideoRecording = false;
+                              _isVideoPaused = false;
                               _isRecordingAudio = false;
                               _audioElapsed.value = Duration.zero;
                             });
@@ -5262,8 +5313,33 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Left slot: gallery (PHOTO/VIDEO) or spacer (FILE/AUDIO)
-                      if (_currentCaptureMode == 'PHOTO' ||
+                      // Left slot: pause/resume while recording, otherwise
+                      // gallery (PHOTO/VIDEO) or spacer (FILE/AUDIO)
+                      if (_currentCaptureMode == 'VIDEO' && _isVideoRecording)
+                        GestureDetector(
+                          onTap: _triggerVideoPauseResume,
+                          child: Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _triggerVideoPauseResume != null
+                                    ? Colors.white54
+                                    : Colors.white24,
+                              ),
+                            ),
+                            child: Icon(
+                              _isVideoPaused ? Icons.play_arrow : Icons.pause,
+                              color: _triggerVideoPauseResume != null
+                                  ? Colors.white
+                                  : Colors.white38,
+                              size: 24,
+                            ),
+                          ),
+                        )
+                      else if (_currentCaptureMode == 'PHOTO' ||
                           _currentCaptureMode == 'VIDEO')
                         GestureDetector(
                           onTap: () => _currentCaptureMode == 'VIDEO'
@@ -5756,12 +5832,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _isScrollable = false;
       _showButton = true;
       _isVideoRecording = false;
+      _isVideoPaused = false;
       _isRecordingAudio = false;
       _triggerPhotoCapture = null;
       _triggerEnlarge = null;
       _triggerFlashToggle = null;
       _cameraFlashOn = false;
       _triggerVideoToggle = null;
+      _triggerVideoPauseResume = null;
       if (targetItem != null) {
         _currentCaptureMode = _defaultCaptureModeForItem(targetItem);
       }
