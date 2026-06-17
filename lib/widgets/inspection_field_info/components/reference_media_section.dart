@@ -6,6 +6,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../../utils/media_url.dart';
+
 class ReferenceMediaSectionView extends StatelessWidget {
   final List<Map<String, dynamic>> mediaList;
   final double imageHeight;
@@ -456,12 +458,31 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
   }
 
   Future<void> _init() async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
+    // Normalise the URL so spaces / special characters in admin-uploaded
+    // filenames don't make the native player reject the source. See mediaUri().
+    final controller = VideoPlayerController.networkUrl(mediaUri(widget.url));
+    _videoController = controller;
     try {
-      _videoController =
-          VideoPlayerController.networkUrl(Uri.parse(widget.url));
-      await _videoController!.initialize();
+      // Guard against the player hanging forever on an unreachable / malformed
+      // source — otherwise the user is stuck on an endless spinner.
+      await controller.initialize().timeout(const Duration(seconds: 30));
+      // On iOS initialize() can complete even when the asset failed to load,
+      // so check the controller's own error state too.
+      if (controller.value.hasError) {
+        throw Exception(
+            controller.value.errorDescription ?? 'Video failed to load');
+      }
+      // Surface errors that only appear after playback starts (e.g. an
+      // unsupported codec) instead of silently freezing.
+      controller.addListener(_onControllerUpdate);
       _chewieController = ChewieController(
-        videoPlayerController: _videoController!,
+        videoPlayerController: controller,
         autoPlay: true,
         looping: false,
         allowFullScreen: true,
@@ -469,7 +490,7 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
         showControlsOnInitialize: true,
       );
       if (mounted) setState(() => _isLoading = false);
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -479,8 +500,28 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
     }
   }
 
+  void _onControllerUpdate() {
+    final controller = _videoController;
+    if (controller != null &&
+        controller.value.hasError &&
+        _error == null &&
+        mounted) {
+      setState(() => _error = 'Unable to load video');
+    }
+  }
+
+  Future<void> _retry() async {
+    _videoController?.removeListener(_onControllerUpdate);
+    _chewieController?.dispose();
+    await _videoController?.dispose();
+    _chewieController = null;
+    _videoController = null;
+    await _init();
+  }
+
   @override
   void dispose() {
+    _videoController?.removeListener(_onControllerUpdate);
     _chewieController?.dispose();
     _videoController?.dispose();
     super.dispose();
@@ -499,8 +540,23 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
         aspectRatio: 16 / 9,
         child: Container(
           color: Colors.black12,
-          child: const Center(
-            child: Icon(Icons.broken_image, size: 40, color: Colors.grey),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.videocam_off_outlined,
+                    size: 40, color: Colors.grey),
+                const SizedBox(height: 8),
+                const Text('Unable to load video',
+                    style: TextStyle(color: Colors.grey, fontSize: 13)),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _retry,
+                  icon: const Icon(Icons.refresh, size: 18),
+                  label: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
         ),
       );

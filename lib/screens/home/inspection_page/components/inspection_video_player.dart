@@ -3,6 +3,8 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../../utils/media_url.dart';
+
 class InspectionVideoPlayer extends StatefulWidget {
   final String videoPath;
   final int rotationQuarterTurns;
@@ -36,10 +38,14 @@ class _InspectionVideoPlayerState extends State<InspectionVideoPlayer> {
   Future<void> _initPlayer() async {
     try {
       _videoController = widget.videoPath.startsWith('http')
-          ? VideoPlayerController.networkUrl(Uri.parse(widget.videoPath))
+          ? VideoPlayerController.networkUrl(mediaUri(widget.videoPath))
           : VideoPlayerController.file(File(widget.videoPath));
 
       await _videoController.initialize();
+      if (_videoController.value.hasError) {
+        throw Exception(
+            _videoController.value.errorDescription ?? 'Video failed to load');
+      }
 
       _chewieController = ChewieController(
         videoPlayerController: _videoController,

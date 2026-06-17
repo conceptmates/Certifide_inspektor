@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../../../utils/media_url.dart';
+
 class InspectionReferenceFullscreen extends StatefulWidget {
   final List<Map<String, dynamic>> mediaList;
   final int initialIndex;
@@ -385,11 +387,19 @@ class _NativePlayerState extends State<_NativePlayer> {
   }
 
   Future<void> _init() async {
+    // Normalise the URL so spaces / special characters in admin-uploaded
+    // filenames don't make the native player reject the source. See mediaUri().
+    final controller = VideoPlayerController.networkUrl(mediaUri(widget.url));
+    _vpc = controller;
     try {
-      _vpc = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-      await _vpc!.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 30));
+      // On iOS initialize() can succeed while the asset still failed to load.
+      if (controller.value.hasError) {
+        throw Exception(
+            controller.value.errorDescription ?? 'Video failed to load');
+      }
       _chewie = ChewieController(
-        videoPlayerController: _vpc!,
+        videoPlayerController: controller,
         autoPlay: true,
         looping: false,
         allowFullScreen: true,
