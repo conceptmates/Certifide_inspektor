@@ -34,6 +34,11 @@ class _MainContentState extends ConsumerState<MainContent>
   late Animation<double> scaleAnimation;
   Box<InspectionStorageModel>? _inspectionBox;
 
+  // True when a resumable in-progress inspection is saved locally. Drives the
+  // "Continue Inspection" card so a force-closed session is recoverable offline
+  // (the only resume path that does not require the network).
+  bool _hasExisting = false;
+
   // Design tokens
   static const _primary = Color(0xFF0F172A);
   static const _accent = Color(0xFF3B82F6);
@@ -54,8 +59,21 @@ class _MainContentState extends ConsumerState<MainContent>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         ref.read(inspectionNotifierProvider.notifier).loadInspections();
+        // Surface a force-closed in-progress inspection as a Continue card on
+        // launch — without this the only resume path is the online-only reports
+        // list, so an offline force-close left the work unrecoverable.
+        _refreshHasExisting();
       }
     });
+  }
+
+  /// Re-evaluates whether a resumable local inspection exists and updates the
+  /// Continue card visibility.
+  Future<void> _refreshHasExisting() async {
+    final exists = await hasExistingInspection();
+    if (mounted && exists != _hasExisting) {
+      setState(() => _hasExisting = exists);
+    }
   }
 
   @override
@@ -210,7 +228,7 @@ class _MainContentState extends ConsumerState<MainContent>
         Routes.vehicleDetails,
         arguments: {'isNew': isNew},
       ).then((_) {
-        if (mounted) hasExistingInspection();
+        if (mounted) _refreshHasExisting();
       });
     } else {
       Navigator.pushNamed(
@@ -218,7 +236,7 @@ class _MainContentState extends ConsumerState<MainContent>
         Routes.inspection,
         arguments: {'isNew': isNew},
       ).then((_) {
-        if (mounted) hasExistingInspection();
+        if (mounted) _refreshHasExisting();
       });
     }
   }
@@ -761,6 +779,66 @@ class _MainContentState extends ConsumerState<MainContent>
               ),
 
               const SizedBox(height: 28),
+
+              // ── Continue Inspection Card (resume a saved session) ────
+              if (_hasExisting) ...[
+                FadeAnimation(
+                  1.25,
+                  GestureDetector(
+                    onTap: () => _navigateToInspection(false),
+                    child: Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: _accentLight,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: _accent.withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: _accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.history_rounded,
+                                color: _accent, size: 24),
+                          ),
+                          const SizedBox(width: 14),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Continue Inspection',
+                                  style: TextStyle(
+                                    color: _textPrimary,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Resume your saved progress',
+                                  style: TextStyle(
+                                    color: _textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios_rounded,
+                              color: _accent, size: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
 
               // ── Start Inspection Hero Card ───────────────────────────
               FadeAnimation(

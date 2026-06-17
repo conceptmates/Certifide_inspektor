@@ -353,7 +353,20 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // Set vehicle details from widget
       vehicleDetails = widget.vehicleDetails;
 
-      if (widget.isNewInspection) {
+      // The reports/pending "Resume" path passes isNew:true with the server
+      // inspection id. If the local working copy (CURRENT_INSPECTION_KEY) belongs
+      // to THIS same inspection, it holds field values + images entered offline
+      // that the server template does not carry — so resume from it instead of
+      // wiping it. Only a genuinely new inspection (no matching local record)
+      // takes the fresh-start path that clears the key.
+      final storedForResume =
+          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+      final resumesLocalCopy = widget.isNewInspection &&
+          widget.inspectionId != null &&
+          storedForResume != null &&
+          storedForResume.inspectionId == widget.inspectionId;
+
+      if (widget.isNewInspection && !resumesLocalCopy) {
         // Fresh start — discard any leftover session from a previous run.
         ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
@@ -376,6 +389,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         // immediately. Previously this lived only in memory until the first
         // field edit, so going offline and resuming showed empty fields.
         await _saveDataLocally();
+      } else if (resumesLocalCopy) {
+        // Resume the SAME inspection: keep the locally-saved values + images.
+        // The server template (from /resume) provides the up-to-date structure;
+        // _loadDataFromStorage layers the offline-entered answers + media on top.
+        ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
+        if (widget.inspectionTemplate != null) {
+          _inspectionTemplate = widget.inspectionTemplate;
+          _useDynamicTemplate = true;
+        } else {
+          await _loadTemplateFromStorage();
+        }
+        await _fetchInspectionTemplateIfMissing();
+        await _loadDataFromStorage();
+        await _rehydratePendingMediaFromQueue();
+        if (mounted) {
+          _prefillVehicleDetails();
+          _initializeControllers();
+          await _saveDataLocally();
+        }
       } else {
         // Resume path: prefer in-memory snapshot over Hive to avoid I/O.
         final snap = ref.read(inspectionSessionNotifierProvider);
@@ -474,7 +506,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
-  Future<void> _saveDataLocally() async {
+  /// Persists the live inspection to Hive under CURRENT_INSPECTION_KEY.
+  ///
+  /// [useIsolate] runs the heavy map-copy + template toJson off the main thread
+  /// (the default for routine autosaves, to avoid jank). Pass `false` for the
+  /// app-lifecycle flush: a force-close gives only a short window, and spawning
+  /// an isolate adds round-trip latency that can cost the last save. Building on
+  /// the main thread reaches `box.put` sooner so the data is more likely to land.
+  Future<void> _saveDataLocally({bool useIsolate = true}) async {
     if (_inspectionBox == null) {
       await _initHive();
     }
@@ -494,8 +533,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       });
 
-      // Heavy map-copy + toJson work moved off the main thread.
-      final payload = await compute(_buildStoragePayload, {
+      final input = {
         'itemValues': itemValues,
         'itemImages': itemImages,
         'itemVideos': itemVideos,
@@ -509,7 +547,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         'inspectionTemplate': _inspectionTemplate?.toJson(),
         'currentSection': _currentSection,
         'inspectionId': _effectiveInspectionId,
-      });
+      };
+
+      // Heavy map-copy + toJson work; off the main thread by default.
+      final payload = useIsolate
+          ? await compute(_buildStoragePayload, input)
+          : _buildStoragePayload(input);
 
       final storageModel = InspectionStorageModel.fromMap(payload);
 
@@ -774,7 +817,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
 
     try {
-      await _saveDataLocally();
+      // Build on the main thread: this runs on app-pause/force-close where the
+      // process may die before an isolate round-trip completes.
+      await _saveDataLocally(useIsolate: false);
     } catch (e) {
       log('Error flushing auto save: $e');
     }
