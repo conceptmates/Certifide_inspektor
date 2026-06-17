@@ -173,6 +173,74 @@ void main() {
     });
   });
 
+  group('media-queue round-trip — resume rehydrate contract', () {
+    // The inspection screen re-attaches offline media on resume by reading
+    // back the queue's pendingMedia and mapping each entry by mediaType +
+    // fieldKey to a form field (see _rehydratePendingMediaFromQueue). This
+    // guards that those fields survive Hive persistence intact.
+    test(
+        'Given queued media of mixed types, When read back, Then each entry '
+        'retains fieldKey, mediaType and localPath for re-attachment', () async {
+      final img = File('${tmp.path}/r_img.jpg')..writeAsBytesSync(const [1]);
+      final vid = File('${tmp.path}/r_vid.mp4')..writeAsBytesSync(const [2]);
+      final m0 = File('${tmp.path}/r_m0.jpg')..writeAsBytesSync(const [3]);
+      final m1 = File('${tmp.path}/r_m1.jpg')..writeAsBytesSync(const [4]);
+
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 808,
+        vehicleInfo: const {},
+        pendingMedia: {
+          'image_engine': PendingMedia(
+            localPath: img.path,
+            section: 'Engine',
+            itemId: 'engine_photo',
+            mediaType: 'image',
+            fieldKey: 'engine_photo',
+          ),
+          'video_engine': PendingMedia(
+            localPath: vid.path,
+            section: 'Engine',
+            itemId: 'engine_video',
+            mediaType: 'video',
+            fieldKey: 'engine_video',
+          ),
+          'multi_damage_0': PendingMedia(
+            localPath: m0.path,
+            section: 'Damage',
+            itemId: 'damage',
+            mediaType: 'multiImage',
+            fieldKey: 'damage',
+          ),
+          'multi_damage_1': PendingMedia(
+            localPath: m1.path,
+            section: 'Damage',
+            itemId: 'damage',
+            mediaType: 'multiImage',
+            fieldKey: 'damage',
+          ),
+        },
+        saveStepItems: const {},
+      );
+
+      final container = await LocalStorageService.getMediaQueueById(id);
+      expect(container, isNotNull);
+      final pending = container!.pendingMedia;
+
+      // Single image/video re-attach by their own fieldKey.
+      expect(pending['image_engine']!.mediaType, 'image');
+      expect(pending['image_engine']!.fieldKey, 'engine_photo');
+      expect(pending['image_engine']!.localPath, img.path);
+      expect(pending['video_engine']!.fieldKey, 'engine_video');
+
+      // Both multi-image frames share one fieldKey so they rebuild as a list.
+      final multi = pending.values
+          .where((e) => e.mediaType == 'multiImage' && e.fieldKey == 'damage')
+          .map((e) => e.localPath)
+          .toList();
+      expect(multi, containsAll(<String>[m0.path, m1.path]));
+    });
+  });
+
   group('removeAnswerStepFor — draining replayed answers', () {
     test(
         'Given an answer-only container, When the last answer is removed, Then '

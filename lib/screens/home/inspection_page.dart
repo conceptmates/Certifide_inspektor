@@ -366,6 +366,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _initializeValues();
         _prefillVehicleDetails();
         _initializeControllers();
+        // Re-attach any offline-captured media from the durable upload queue.
+        // The reports-resume path arrives here (isNew:true) after deleting the
+        // CURRENT key, so without this, photos/videos taken offline and not yet
+        // uploaded would be missing from the rebuilt form.
+        await _rehydratePendingMediaFromQueue();
         // Persist the just-initialized inspection (the API template plus the
         // vehicle details returned by initialize — regno/make/model/etc.)
         // immediately. Previously this lived only in memory until the first
@@ -431,6 +436,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         if (mounted) {
           _prefillVehicleDetails();
           _initializeControllers();
+        }
+
+        // Safety net: if the CURRENT key lost media (e.g. a hard kill before it
+        // was written, or a stale record), re-attach it from the durable upload
+        // queue. Fills only empty fields, so restored media is never doubled.
+        if (mounted && await _rehydratePendingMediaFromQueue() && mounted) {
+          await _saveDataLocally();
         }
       }
 
@@ -1227,6 +1239,93 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       log('Error loading data: $e');
       _initializeValues();
       _initializeControllers();
+    }
+  }
+
+  /// Re-links offline-captured media from the durable upload queue
+  /// (mediaq_<serverId>) back into the field maps on resume.
+  ///
+  /// Why this is needed: media captured while offline is persisted in two
+  /// places — the CURRENT_INSPECTION_KEY (used to render the screen) and the
+  /// upload queue (used to send it to the server). The reports-resume path
+  /// (isNew:true) DELETES the CURRENT key and rebuilds the form purely from the
+  /// server template, which carries no `initialImage`/`initialVideo` for media
+  /// that was never uploaded. The files and their queue entries still exist on
+  /// disk, but the form has no reference to them, so offline photos/videos
+  /// vanish from the UI after a restart. This re-attaches them.
+  ///
+  /// Only fills fields the server (or a prior local restore) left empty, so it
+  /// never clobbers server-provided or already-restored media. Entries stay in
+  /// the queue, so they still upload on reconnect. Returns true if anything was
+  /// restored. setState-only — the caller persists.
+  Future<bool> _rehydratePendingMediaFromQueue() async {
+    final serverId = _effectiveInspectionId;
+    if (serverId == null) return false;
+    try {
+      final container = await LocalStorageService.getMediaQueueById(
+        LocalStorageService.mediaQueueId(serverId),
+      );
+      final pending = container?.pendingMedia;
+      if (pending == null || pending.isEmpty) return false;
+
+      final multiByField = <String, List<String>>{};
+      var changed = false;
+
+      for (final entry in pending.values) {
+        final fieldKey = entry.fieldKey;
+        if (fieldKey.isEmpty) continue;
+        // Prefer the uploaded URL when one exists, else the local file path.
+        final path =
+            (entry.isUploaded && (entry.uploadedUrl?.isNotEmpty ?? false))
+                ? entry.uploadedUrl!
+                : entry.localPath;
+
+        switch (entry.mediaType) {
+          case 'image':
+            if ((itemImages[fieldKey] ?? '').isEmpty) {
+              itemImages[fieldKey] = path;
+              changed = true;
+            }
+            break;
+          case 'video':
+            if ((itemVideos[fieldKey] ?? '').isEmpty) {
+              itemVideos[fieldKey] = path;
+              changed = true;
+            }
+            break;
+          case 'audio':
+            if ((itemAudios[fieldKey] ?? '').isEmpty) {
+              itemAudios[fieldKey] = path;
+              changed = true;
+            }
+            break;
+          case 'file':
+            if ((itemFiles[fieldKey] ?? '').isEmpty) {
+              itemFiles[fieldKey] = path;
+              changed = true;
+            }
+            break;
+          case 'multiImage':
+            (multiByField[fieldKey] ??= <String>[]).add(path);
+            break;
+        }
+      }
+
+      // Multi-images only restore into a field the server/local restore left
+      // empty, so a partially-synced set isn't duplicated.
+      multiByField.forEach((fieldKey, paths) {
+        final existing = itemMultiImages[fieldKey];
+        if ((existing == null || existing.isEmpty) && paths.isNotEmpty) {
+          itemMultiImages[fieldKey] = paths;
+          changed = true;
+        }
+      });
+
+      if (changed && mounted) setState(() {});
+      return changed;
+    } catch (e) {
+      log('Error rehydrating pending media from queue: $e');
+      return false;
     }
   }
 
@@ -2568,6 +2667,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 content: Text('Images saved locally. Will upload when online.')),
           );
         }
+        // Offline: persist to the durable upload queue right away so the photos
+        // survive a hard kill and are recoverable on resume.
+        unawaited(_commitPendingMediaToQueue());
         return;
       }
 
@@ -2730,6 +2832,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       Text('Image saved locally. Will upload when online.')),
             );
           }
+          // Offline: persist to the durable upload queue right away so the photo
+          // survives a hard kill and is recoverable on resume.
+          unawaited(_commitPendingMediaToQueue());
         }
       }
     } catch (e) {
@@ -3203,6 +3308,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
     } else {
       if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      // Offline: commit this media to the durable upload queue immediately so a
+      // hard kill before the next background/close still leaves it queued for
+      // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
+      unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -3270,6 +3379,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
     } else {
       if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      // Offline: commit this media to the durable upload queue immediately so a
+      // hard kill before the next background/close still leaves it queued for
+      // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
+      unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -3331,6 +3444,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
     } else {
       if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      // Offline: commit this media to the durable upload queue immediately so a
+      // hard kill before the next background/close still leaves it queued for
+      // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
+      unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -3405,6 +3522,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
     } else {
       if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      // Offline: commit this media to the durable upload queue immediately so a
+      // hard kill before the next background/close still leaves it queued for
+      // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
+      unawaited(_commitPendingMediaToQueue());
     }
   }
 
