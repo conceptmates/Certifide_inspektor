@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:media_store_plus/media_store_plus.dart';
@@ -28,6 +29,62 @@ class LocalStorageService {
 
   // Whether the index has been verified/rebuilt this session.
   static bool _indexChecked = false;
+
+  /// Absolute path of the app documents directory, cached once at [init].
+  /// The iOS sandbox container path changes between app launches/updates, so an
+  /// absolute media path persisted in a previous session no longer resolves.
+  /// Caching the *current* root lets [resolveMediaPath] re-base stale paths.
+  static String? _docsDirPath;
+
+  /// Test-only hook to set the cached documents root without booting
+  /// path_provider, so [resolveMediaPath]'s stale-container re-basing can be
+  /// exercised in unit tests.
+  @visibleForTesting
+  static set debugDocsDirPath(String? path) => _docsDirPath = path;
+
+  /// The media subdirectories under the documents root that [saveImage],
+  /// [saveVideo] and [_saveMediaFile] write into. Used to re-base stale
+  /// absolute paths onto the current container.
+  static const List<String> _mediaSubDirs = [
+    IMAGES_DIR, // inspection_images
+    'inspection_videos',
+    'inspection_audios',
+    'inspection_files',
+  ];
+
+  /// Resolves a stored media path to a usable absolute path against the current
+  /// documents directory. Handles three cases:
+  ///   * `http(s)` URLs and empty strings — returned unchanged.
+  ///   * paths that already exist on disk this session — returned unchanged.
+  ///   * stale absolute paths from a previous iOS container, or relative paths —
+  ///     re-based onto the current documents root by their known media subdir.
+  /// Safe to call on any path: a no-op when the path is already valid.
+  static String resolveMediaPath(String stored) {
+    if (stored.isEmpty || stored.startsWith('http')) return stored;
+
+    final root = _docsDirPath;
+    // Root not cached yet (init not awaited) — best effort, return as-is.
+    if (root == null) return stored;
+
+    // Fast path: the path is still valid this session.
+    if (stored.startsWith('/') && File(stored).existsSync()) return stored;
+
+    // Relative path stored against the documents root.
+    if (!stored.startsWith('/')) {
+      return '$root/$stored';
+    }
+
+    // Stale absolute path from a previous container: keep everything from the
+    // known media subdir onward and re-base onto the current root.
+    for (final seg in _mediaSubDirs) {
+      final marker = '/$seg/';
+      final idx = stored.indexOf(marker);
+      if (idx != -1) return '$root${stored.substring(idx)}';
+    }
+
+    // Last resort: assume an image and rebuild from the basename.
+    return '$root/$IMAGES_DIR/${stored.split('/').last}';
+  }
 
   static Future<LazyBox<LocalInspection>> _getBox() async {
     final box = Hive.isBoxOpen(INSPECTIONS_BOX)
@@ -106,6 +163,13 @@ class LocalStorageService {
 
   static Future<void> init() async {
     await Hive.initFlutter();
+    // Cache the current documents-directory root so media paths persisted in an
+    // earlier session (under a now-stale iOS container) can be re-based.
+    try {
+      _docsDirPath = (await getApplicationDocumentsDirectory()).path;
+    } catch (e) {
+      log('Could not resolve documents directory: $e');
+    }
     if (!Hive.isAdapterRegistered(3)) {
       Hive.registerAdapter(LocalInspectionAdapter());
     }
@@ -296,6 +360,10 @@ class LocalStorageService {
             filePath = entry.value!;
           }
 
+          // Re-base any stale/relative path onto the current container so a
+          // submit issued in a later session still finds the captured file.
+          filePath = resolveMediaPath(filePath);
+
           // Check if it's a local path (needs upload) or already a URL
           if (filePath.startsWith('/') || filePath.startsWith('var/')) {
             // Local file path - needs to be uploaded
@@ -437,6 +505,9 @@ class LocalStorageService {
         }
       }
 
+      // Re-base stale/relative paths onto the current container before copying.
+      actualPath = resolveMediaPath(actualPath);
+
       // Check if it's a local path or URL
       if (actualPath.startsWith('http')) {
         return actualPath; // Already a URL
@@ -539,7 +610,7 @@ class LocalStorageService {
   static Future<void> _deleteFile(String filePath) async {
     if (filePath.startsWith('http')) return;
     try {
-      await File(filePath).delete();
+      await File(resolveMediaPath(filePath)).delete();
     } on PathNotFoundException {
       // File already gone — nothing to do.
     } catch (e) {
@@ -838,7 +909,11 @@ class LocalStorageService {
     for (final e in pendingMedia.entries) {
       final ex = merged[e.key];
       if (ex != null && ex.isUploaded) continue;
-      if (!File(e.value.localPath).existsSync()) continue;
+      // Re-base before the existence check: the stored path may have been
+      // captured under a previous (now-stale) iOS container. Checking the raw
+      // path would report the file missing and silently drop offline media
+      // from the upload queue across an app relaunch.
+      if (!File(resolveMediaPath(e.value.localPath)).existsSync()) continue;
       merged[e.key] = e.value;
     }
 

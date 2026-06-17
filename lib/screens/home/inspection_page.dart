@@ -3090,7 +3090,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
     } else {
       return Image.file(
-        File(imagePath),
+        File(LocalStorageService.resolveMediaPath(imagePath)),
         fit: fit,
         width: double.infinity,
         cacheWidth: cacheWidth,
@@ -3140,7 +3140,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     maxScale: 4,
                     child: imagePath.startsWith('http')
                         ? Image.network(imagePath, fit: BoxFit.contain)
-                        : Image.file(File(imagePath), fit: BoxFit.contain),
+                        : Image.file(
+                            File(LocalStorageService.resolveMediaPath(
+                                imagePath)),
+                            fit: BoxFit.contain),
                   ),
                 ),
               ],
@@ -3821,8 +3824,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     return {
       'template_type': 'default',
-      'vehicle_brand_id': vehicleDetails?['brand_id'],
-      'vehicle_model_id': vehicleDetails?['model_id'],
+      // The server inspection id, when this draft already exists server-side
+      // (initialized online, or resumed). Lets the submit path finalise the
+      // existing draft via POST /{id}/submit instead of creating a duplicate,
+      // and lets the offline-queue drain know which inspection to finalise.
+      if (_effectiveInspectionId != null)
+        'inspection_id': _effectiveInspectionId,
+      // Only send brand/model ids when known. Emitting null would clobber the
+      // draft's existing brand/model on a submit-by-id call.
+      if (vehicleDetails?['brand_id'] != null)
+        'vehicle_brand_id': vehicleDetails!['brand_id'],
+      if (vehicleDetails?['model_id'] != null)
+        'vehicle_model_id': vehicleDetails!['model_id'],
       if ((vehicleDetails?['year'] ?? '').toString().isNotEmpty)
         'year': vehicleDetails!['year'],
       if ((vehicleDetails?['variant'] ?? '').toString().isNotEmpty)
@@ -4052,7 +4065,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       try {
         await _uploadRemainingImages();
         final body = _buildSubmissionBody();
-        final result = await ApiService.submitInspection(body);
+        // Finalise the existing server draft by id (POST /{id}/submit) so we
+        // never create a duplicate. Only fall back to the legacy all-at-once
+        // create when there is genuinely no server id yet.
+        final serverId = _effectiveInspectionId;
+        final result = serverId != null
+            ? await ApiService.submitInspectionById(serverId, body)
+            : await ApiService.submitInspection(body);
         log(body.toString());
         log(result.toString());
 

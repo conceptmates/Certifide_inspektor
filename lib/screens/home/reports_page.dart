@@ -629,7 +629,12 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
           arguments: {
             'isNew': true,
             'inspectionId': id,
-            'vehicleDetails': _buildResumeVehicleDetails(history, template),
+            'vehicleDetails': _buildResumeVehicleDetails(
+              history,
+              template,
+              brandId: result['vehicle_brand_id'] as int? ?? history.brandId,
+              modelId: result['vehicle_model_id'] as int? ?? history.modelId,
+            ),
             'inspectionTemplate': template,
           },
         );
@@ -653,11 +658,25 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
 
   Map<String, dynamic> _buildResumeVehicleDetails(
     InspectionHistory history,
-    InspectionInitializationResponse? template,
-  ) {
+    InspectionInitializationResponse? template, {
+    int? brandId,
+    int? modelId,
+  }) {
     final vi = history.vehicleInfo;
     final tvi = template?.vehicleInfo;
     return {
+      // brand_id/model_id are required by the submit body. Without them the
+      // server rejects the resumed inspection with "failed to create
+      // inspection". Fall back to the list payload's vehicle_brand/model ids.
+      if (brandId != null) 'brand_id': brandId,
+      if (modelId != null) 'model_id': modelId,
+      // regno is dropped by the resume template's VehicleInfo unless surfaced
+      // here, so a resumed draft would otherwise submit with an empty
+      // registration number. Fall back to the list payload's reg fields.
+      'regno': tvi?.regNo ??
+          vi['registration_number']?.toString() ??
+          vi['regno']?.toString() ??
+          '',
       'make': tvi?.brand ?? vi['make_model']?.toString().split(' ').first ?? '',
       'model': tvi?.model ?? vi['make_model']?.toString().split(' ').skip(1).join(' ') ?? '',
       'year': tvi?.year ?? vi['manufacturing_year']?.toString() ?? '',

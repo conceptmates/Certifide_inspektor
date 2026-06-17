@@ -848,7 +848,16 @@ class InspectionNotifier extends _$InspectionNotifier {
         }
       }
 
-      final result = await ApiService.submitInspection(inspectionData);
+      // Finalise the existing server draft by id when the stored body carries
+      // one (it was initialized online before going offline), so reconnecting
+      // never creates a duplicate. Only create when there is no server id.
+      final rawServerId = inspectionData['inspection_id'];
+      final int? serverId = rawServerId is int
+          ? rawServerId
+          : int.tryParse(rawServerId?.toString() ?? '');
+      final result = serverId != null
+          ? await ApiService.submitInspectionById(serverId, inspectionData)
+          : await ApiService.submitInspection(inspectionData);
 
       if (result['success'] == true) {
         await LocalStorageService.markInspectionAsSubmitted(inspection.id);

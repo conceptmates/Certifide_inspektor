@@ -7,6 +7,10 @@ class InspectionHistory {
   final DateTime date;
   final Map<String, dynamic> vehicleInfo;
   final Map<String, String>? links;
+  // Brand/model ids from the list payload — needed to rebuild a complete submit
+  // body when resuming a draft (vehicleInfo only carries display names).
+  final int? brandId;
+  final int? modelId;
 
   InspectionHistory({
     required this.id,
@@ -17,6 +21,8 @@ class InspectionHistory {
     required this.date,
     required this.vehicleInfo,
     this.links,
+    this.brandId,
+    this.modelId,
   });
 
   /// True when the inspection can be resumed. Drafts are initialised-but-not-
@@ -50,6 +56,17 @@ class InspectionHistory {
 
     final processingStatus = (json['processing_status'] ?? '').toString();
 
+    int? parseId(dynamic flat, dynamic obj) {
+      if (flat != null) {
+        return flat is int ? flat : int.tryParse(flat.toString());
+      }
+      if (obj is Map && obj['id'] != null) {
+        final id = obj['id'];
+        return id is int ? id : int.tryParse(id.toString());
+      }
+      return null;
+    }
+
     // /dynamic-inspections uses is_approved; map it to status when status is missing
     String status = (json['status'] ?? '').toString();
     if (status.isEmpty) {
@@ -65,6 +82,8 @@ class InspectionHistory {
       date: DateTime.parse(json['created_at']),
       vehicleInfo: vehicleInfo,
       links: links,
+      brandId: parseId(json['vehicle_brand_id'], json['vehicle_brand']),
+      modelId: parseId(json['vehicle_model_id'], json['vehicle_model']),
     );
   }
 }

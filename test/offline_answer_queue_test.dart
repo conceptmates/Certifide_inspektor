@@ -123,6 +123,56 @@ void main() {
     });
   });
 
+  group('upsertMediaQueue — stale-container media path (iOS relaunch)', () {
+    // Regression: on iOS the sandbox container path changes between launches,
+    // so a media path captured in a previous session is absolute-but-stale.
+    // upsertMediaQueue must re-base it onto the CURRENT documents root before
+    // the existence check — otherwise the file reads as "missing" and the
+    // offline media is silently dropped from the upload queue on relaunch.
+    test(
+        'Given media stored under a stale container prefix, When queued after '
+        'relaunch, Then the entry is kept (not dropped as missing)', () async {
+      // The file actually lives under the *current* docs root...
+      final docsRoot = Directory('${tmp.path}/Documents_current')
+        ..createSync(recursive: true);
+      final imagesDir = Directory('${docsRoot.path}/inspection_images')
+        ..createSync(recursive: true);
+      File('${imagesDir.path}/photo.jpg').writeAsBytesSync(const [1, 2, 3]);
+
+      // ...but it was persisted as an absolute path under a previous, now
+      // non-existent container.
+      const stalePath =
+          '/var/old-container/Documents/inspection_images/photo.jpg';
+      expect(File(stalePath).existsSync(), isFalse);
+
+      LocalStorageService.debugDocsDirPath = docsRoot.path;
+      addTearDown(() => LocalStorageService.debugDocsDirPath = null);
+
+      final id = await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: 707,
+        vehicleInfo: const {},
+        pendingMedia: {
+          'image_p': PendingMedia(
+            localPath: stalePath,
+            section: 'documents',
+            itemId: 'p',
+            mediaType: 'image',
+            fieldKey: 'p',
+          ),
+        },
+        saveStepItems: {'p': answerStep('p', 'documents', 'yes')},
+        answerStepItems: const {},
+      );
+
+      final container = await LocalStorageService.getMediaQueueById(id);
+      expect(container, isNotNull,
+          reason: 'stale-but-resolvable media must not be dropped');
+      expect(container!.pendingMedia.containsKey('image_p'), isTrue);
+      expect(await LocalStorageService.getInspectionsWithPendingMedia(),
+          hasLength(1));
+    });
+  });
+
   group('removeAnswerStepFor — draining replayed answers', () {
     test(
         'Given an answer-only container, When the last answer is removed, Then '

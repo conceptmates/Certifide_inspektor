@@ -16,6 +16,7 @@ import '../models/public_cars_models.dart';
 import '../models/vehicle_model.dart';
 import '../utils/exception_handler.dart';
 import '../screens/auth/login_page.dart';
+import 'local_storage_services.dart';
 
 /// Thrown inside [ApiService.uploadImage] when no auth token can be read while
 /// (re)building a multipart upload request.
@@ -634,6 +635,11 @@ class ApiService {
       log('Uploading media (${mediaType ?? fieldName}) to: $baseUrl$uploadImageEndPoint');
       log('Section: $section, ItemId: $itemId');
 
+      // Re-base any stale absolute path (captured under a previous iOS sandbox
+      // container) or relative path onto the current documents directory so
+      // offline-queued media still uploads after an app relaunch.
+      imagePath = LocalStorageService.resolveMediaPath(imagePath);
+
       final file = File(imagePath);
       if (!await file.exists()) {
         log('File does not exist: $imagePath');
@@ -1003,6 +1009,64 @@ class ApiService {
     }
   }
 
+  /// Normalises the various success/failure response shapes the submit + submit-
+  /// by-id endpoints can return into `{success, data, message}`.
+  static Map<String, dynamic> _parseSubmitResponse(http.Response response) {
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      Map<String, dynamic> responseData;
+      try {
+        responseData = Map<String, dynamic>.from(
+            json.decode(response.body) as Map<dynamic, dynamic>);
+      } catch (parseError) {
+        log('Error parsing submit response JSON: $parseError');
+        return {
+          'success': false,
+          'message':
+              'Invalid response from server (${response.statusCode}). Check logs.',
+        };
+      }
+
+      // Accept multiple response shapes from backend
+      Map<String, dynamic>? data =
+          responseData['data'] as Map<String, dynamic>?;
+      final bool hasWrappedData = (responseData['status'] == 'success' ||
+              responseData['success'] == true) &&
+          data != null;
+      final bool hasRootData = data == null &&
+          (responseData['inspection_id'] != null ||
+              responseData['redirect_url'] != null);
+      if (hasRootData) {
+        data = {
+          'inspection_id': responseData['inspection_id'],
+          'redirect_url': responseData['redirect_url'] ?? '',
+          'uuid': responseData['uuid'] ?? '',
+        };
+      }
+
+      if (hasWrappedData || hasRootData) {
+        return {
+          'success': true,
+          'data': data ?? responseData,
+          'message':
+              responseData['message'] ?? 'Inspection submitted successfully',
+        };
+      }
+
+      return {
+        'success': false,
+        'message': responseData['message'] ?? 'Failed to submit inspection',
+      };
+    }
+    return {
+      'success': false,
+      'message': _handleError(response),
+    };
+  }
+
+  /// Legacy all-at-once create: POST /dynamic-inspections. Used only when there
+  /// is no server inspection id yet (the draft was never initialized). When an
+  /// id exists, prefer [submitInspectionById] so the existing draft is finalised
+  /// instead of a duplicate inspection being created.
   static Future<Map<String, dynamic>> submitInspection(
       Map<String, dynamic> body) async {
     try {
@@ -1018,60 +1082,46 @@ class ApiService {
       log('Submit inspection response status: ${response.statusCode}');
       if (kDebugMode) log('Submit inspection response body: ${response.body}');
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        Map<String, dynamic> responseData;
-        try {
-          responseData = Map<String, dynamic>.from(
-              json.decode(response.body) as Map<dynamic, dynamic>);
-        } catch (parseError) {
-          log('Error parsing submit response JSON: $parseError');
-          return {
-            'success': false,
-            'message':
-                'Invalid response from server (${response.statusCode}). Check logs.',
-          };
-        }
-
-        // Accept multiple response shapes from backend
-        Map<String, dynamic>? data =
-            responseData['data'] as Map<String, dynamic>?;
-        final bool hasWrappedData = (responseData['status'] == 'success' ||
-                responseData['success'] == true) &&
-            data != null;
-        final bool hasRootData = data == null &&
-            (responseData['inspection_id'] != null ||
-                responseData['redirect_url'] != null);
-        if (hasRootData) {
-          data = {
-            'inspection_id': responseData['inspection_id'],
-            'redirect_url': responseData['redirect_url'] ?? '',
-            'uuid': responseData['uuid'] ?? '',
-          };
-        }
-
-        if (hasWrappedData || hasRootData) {
-          return {
-            'success': true,
-            'data': data ?? responseData,
-            'message':
-                responseData['message'] ?? 'Inspection created successfully',
-          };
-        }
-
-        return {
-          'success': false,
-          'message': responseData['message'] ?? 'Failed to submit inspection',
-        };
-      } else {
-        return {
-          'success': false,
-          'message': _handleError(response),
-        };
-      }
+      return _parseSubmitResponse(response);
     } on UnauthorizedException {
       rethrow;
     } catch (e) {
       log('Error submitting inspection: $e');
+      return {
+        'success': false,
+        'message': 'Network error: ${e.toString()}',
+      };
+    }
+  }
+
+  /// Finalises an existing draft: POST /dynamic-inspections/{id}/submit.
+  /// Sets processing_status = "completed". The data may already be on the server
+  /// (saved per-field via save-step); [body] is sent anyway so any field not yet
+  /// save-stepped (e.g. edited offline) is persisted in the same call. Idempotent
+  /// on an already-completed (un-approved) inspection.
+  static Future<Map<String, dynamic>> submitInspectionById(
+    int inspectionId,
+    Map<String, dynamic> body,
+  ) async {
+    try {
+      final url = '$baseUrl/dynamic-inspections/$inspectionId/submit';
+      log('Finalising inspection $inspectionId at: $url');
+      if (kDebugMode) log('Submission body: $body');
+
+      final response = await http.post(
+        Uri.parse(url),
+        headers: await _getHeaders(requiresAuth: true),
+        body: json.encode(body),
+      ).timeout(_requestTimeout);
+
+      log('Submit-by-id response status: ${response.statusCode}');
+      if (kDebugMode) log('Submit-by-id response body: ${response.body}');
+
+      return _parseSubmitResponse(response);
+    } on UnauthorizedException {
+      rethrow;
+    } catch (e) {
+      log('Error finalising inspection $inspectionId: $e');
       return {
         'success': false,
         'message': 'Network error: ${e.toString()}',
@@ -1503,6 +1553,22 @@ class ApiService {
     }
   }
 
+  /// Pulls a vehicle brand/model id out of a server payload, tolerating both a
+  /// flat `<idKey>` field and a nested `<objKey>: {id, name}` object.
+  static int? _extractVehicleId(
+      Map<String, dynamic> data, String idKey, String objKey) {
+    final flat = data[idKey];
+    if (flat != null) {
+      return flat is int ? flat : int.tryParse(flat.toString());
+    }
+    final obj = data[objKey];
+    if (obj is Map && obj['id'] != null) {
+      final id = obj['id'];
+      return id is int ? id : int.tryParse(id.toString());
+    }
+    return null;
+  }
+
   static Future<Map<String, dynamic>> resumeInspection(int inspectionId) async {
     try {
       final url = '$baseUrl/dynamic-inspections/$inspectionId/resume';
@@ -1533,6 +1599,13 @@ class ApiService {
             'success': true,
             'data': inspectionResponse ?? data,
             'inspection_id': data['inspection_id'],
+            // Brand/model IDs are required by the submit body but are dropped by
+            // InspectionInitializationResponse (it only keeps names). Surface
+            // them here so the resume flow can rebuild a complete vehicle map.
+            'vehicle_brand_id':
+                _extractVehicleId(data, 'vehicle_brand_id', 'vehicle_brand'),
+            'vehicle_model_id':
+                _extractVehicleId(data, 'vehicle_model_id', 'vehicle_model'),
             'processing_status': data['processing_status'],
             'saved_sections': data['saved_sections'],
             'message': 'Inspection resumed successfully',
