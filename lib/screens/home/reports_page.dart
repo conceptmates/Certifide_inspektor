@@ -936,8 +936,12 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
 
     // The per-file list auto-expands while uploading; can also be toggled.
     final expanded = isUploading || _expandedMediaIds.contains(container.id);
-    final mediaEntries = container.pendingMedia.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
+    // Only sort when the per-file list is actually shown. Collapsed cards (the
+    // common case) skip the O(n log n) sort on every rebuild during upload.
+    final mediaEntries = container.pendingMedia.entries.toList();
+    if (expanded) {
+      mediaEntries.sort((a, b) => a.key.compareTo(b.key));
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),

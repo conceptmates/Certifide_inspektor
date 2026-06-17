@@ -55,9 +55,11 @@ class _MainContentState extends ConsumerState<MainContent>
     super.initState();
     _initHive();
     _initializeAnimations();
-    _loadUserName();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        // Deferred so the first frame paints before these secure-storage /
+        // platform-channel reads kick off.
+        _loadUserName();
         ref.read(inspectionNotifierProvider.notifier).loadInspections();
         // Surface a force-closed in-progress inspection as a Continue card on
         // launch — without this the only resume path is the online-only reports

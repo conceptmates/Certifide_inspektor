@@ -133,7 +133,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   bool _showButton = true;
   bool _isScrollable = false;
   bool _isSubmitting = false;
-  final Set<String> _uploadingImages = {};
+  // ValueNotifier so upload spinners rebuild only their own widget (via
+  // ValueListenableBuilder), not the whole screen, on add/remove.
+  final ValueNotifier<Set<String>> _uploadingImages = ValueNotifier(<String>{});
   final Set<String> _uploadingMultiImagePaths = {};
   String? _verifyingRegNoUniqueId;
   final Map<String, String> _regNoVerifyMessage = {};
@@ -164,8 +166,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   AudioRecorder? _audioRecorder;
   bool _isRecordingAudio = false;
   Timer? _audioTimer;
-  Duration _audioElapsed = Duration.zero;
-  bool _highlightFlagIssues = false;
+  // ValueNotifier so the per-second timer tick only rebuilds the duration
+  // label (via ValueListenableBuilder), not the entire screen tree.
+  final ValueNotifier<Duration> _audioElapsed = ValueNotifier(Duration.zero);
+  // ValueNotifier so toggling the flag-issue highlight rebuilds only that
+  // button (via ValueListenableBuilder), not the whole screen.
+  final ValueNotifier<bool> _highlightFlagIssues = ValueNotifier(false);
   bool _isSyncingToServer = false;
 
   // Dynamic inspection template from API
@@ -2107,7 +2113,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     await LocalStorageService.saveImage(file.path);
                 setState(() {
                   itemImages[uniqueId] = savedPath;
-                  _uploadingImages.add(uniqueId);
+                  _markUploading(uniqueId);
                 });
                 if (mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
                 await _saveDataLocally();
@@ -2121,7 +2127,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     itemId: fieldId,
                   );
                   if (mounted) {
-                    setState(() => _uploadingImages.remove(uniqueId));
+                    _unmarkUploading(uniqueId);
                     final url = result['url']?.toString();
                     if (result['success'] == true && url != null && url.isNotEmpty) {
                       setState(() => itemImages[uniqueId] = url);
@@ -2132,7 +2138,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   }
                 } else {
                   if (mounted) {
-                    setState(() => _uploadingImages.remove(uniqueId));
+                    _unmarkUploading(uniqueId);
                   }
                 }
               },
@@ -2177,19 +2183,32 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           color: Theme.of(context).textTheme.bodyMedium?.color,
                         ),
                       ),
-                      if (_uploadingImages.contains(uniqueId)) ...[
-                        const SizedBox(width: 8),
-                        const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Uploading...',
-                          style: TextStyle(fontSize: 11, color: Colors.orange),
-                        ),
-                      ],
+                      ValueListenableBuilder<Set<String>>(
+                        valueListenable: _uploadingImages,
+                        builder: (context, uploading, _) {
+                          if (!uploading.contains(uniqueId)) {
+                            return const SizedBox.shrink();
+                          }
+                          return const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(width: 8),
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'Uploading...',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.orange),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -2381,9 +2400,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             minLines: _itemHasMultiImage(item) ? 4 : 1,
             maxLines: _itemHasMultiImage(item) ? null : 1,
             onChanged: (value) {
-              setState(() {
-                itemValues[uniqueId] = value;
-              });
+              // No setState: the controller already drives the field's own
+              // text, and nothing visible depends on itemValues live (the nav
+              // bar is index-based; completion indicators live in the drawer,
+              // which is closed while typing). Avoids rebuilding the whole
+              // screen on every keystroke. Mirrors the Remarks field below.
+              itemValues[uniqueId] = value;
               _autoSave();
               _saveFieldToServer(item, uniqueId);
             },
@@ -2828,7 +2850,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         setState(() {
           itemImages[uniqueId] = savedPath;
-          _uploadingImages.add(uniqueId);
+          _markUploading(uniqueId);
         });
         if (item != null && mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
 
@@ -2847,7 +2869,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(uniqueId);
+              _unmarkUploading(uniqueId);
             });
 
             final url = result['url']?.toString();
@@ -2869,7 +2891,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         } else {
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(uniqueId);
+              _unmarkUploading(uniqueId);
             });
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -2885,7 +2907,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     } catch (e) {
       if (mounted) {
         setState(() {
-          _uploadingImages.remove(uniqueId);
+          _unmarkUploading(uniqueId);
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to pick image: $e')),
@@ -2954,11 +2976,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final path =
           '${dir.path}/audio_${uniqueId}_${DateTime.now().millisecondsSinceEpoch}.m4a';
       await _audioRecorder!.start(const RecordConfig(), path: path);
-      _audioElapsed = Duration.zero;
+      _audioElapsed.value = Duration.zero;
       _audioTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) {
-          setState(() => _audioElapsed += const Duration(seconds: 1));
-        }
+        _audioElapsed.value += const Duration(seconds: 1);
       });
       if (mounted) setState(() => _isRecordingAudio = true);
     } catch (e) {
@@ -2999,17 +3019,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         );
       }
     }
-  }
-
-  Future<void> _cancelAudioRecording() async {
-    _audioTimer?.cancel();
-    _audioTimer = null;
-    try {
-      await _audioRecorder?.stop();
-    } catch (_) {}
-    await _audioRecorder?.dispose();
-    _audioRecorder = null;
-    if (mounted) setState(() => _isRecordingAudio = false);
   }
 
   Future<void> _pickAudio(dynamic item) async {
@@ -3213,6 +3222,17 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
+  // Mutating the Set in place wouldn't notify listeners, so assign a fresh Set.
+  void _markUploading(String id) {
+    if (_uploadingImages.value.contains(id)) return;
+    _uploadingImages.value = {..._uploadingImages.value, id};
+  }
+
+  void _unmarkUploading(String id) {
+    if (!_uploadingImages.value.contains(id)) return;
+    _uploadingImages.value = {..._uploadingImages.value}..remove(id);
+  }
+
   Widget _buildImageWidget(String imagePath,
       {BoxFit fit = BoxFit.fitWidth, int? cacheWidth}) {
     if (imagePath.startsWith('http')) {
@@ -3328,7 +3348,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     setState(() {
       itemImages[uniqueId] = savedPath;
-      _uploadingImages.add(uniqueId);
+      _markUploading(uniqueId);
     });
     if (mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
     await _saveDataLocally();
@@ -3342,7 +3362,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         itemId: fieldId,
       );
       if (mounted) {
-        setState(() => _uploadingImages.remove(uniqueId));
+        _unmarkUploading(uniqueId);
         final url = result['url']?.toString();
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemImages[uniqueId] = url);
@@ -3352,7 +3372,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
     } else {
-      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      if (mounted) _unmarkUploading(uniqueId);
       // Offline: commit this media to the durable upload queue immediately so a
       // hard kill before the next background/close still leaves it queued for
       // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
@@ -3397,7 +3417,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _pendingCapturedVideoUniqueId = null;
       itemVideos[uniqueId] = savedPath;
       itemVideoRotations[uniqueId] = quarterTurns;
-      _uploadingImages.add(uniqueId);
+      _markUploading(uniqueId);
     });
     if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
@@ -3413,7 +3433,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         fieldName: 'image',
       );
       if (mounted) {
-        setState(() => _uploadingImages.remove(uniqueId));
+        _unmarkUploading(uniqueId);
         final url = result['url']?.toString();
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemVideos[uniqueId] = url);
@@ -3423,7 +3443,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
     } else {
-      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      if (mounted) _unmarkUploading(uniqueId);
       // Offline: commit this media to the durable upload queue immediately so a
       // hard kill before the next background/close still leaves it queued for
       // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
@@ -3462,7 +3482,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _pendingCapturedAudioPath = null;
       _pendingCapturedAudioUniqueId = null;
       itemAudios[uniqueId] = path;
-      _uploadingImages.add(uniqueId);
+      _markUploading(uniqueId);
     });
     if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
@@ -3478,7 +3498,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         fieldName: 'image',
       );
       if (mounted) {
-        setState(() => _uploadingImages.remove(uniqueId));
+        _unmarkUploading(uniqueId);
         final url = result['url']?.toString();
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemAudios[uniqueId] = url);
@@ -3488,7 +3508,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
     } else {
-      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      if (mounted) _unmarkUploading(uniqueId);
       // Offline: commit this media to the durable upload queue immediately so a
       // hard kill before the next background/close still leaves it queued for
       // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
@@ -3536,7 +3556,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _pendingCapturedFileName = null;
       _pendingCapturedFileExtension = null;
       itemFiles[uniqueId] = payload;
-      _uploadingImages.add(uniqueId);
+      _markUploading(uniqueId);
     });
     if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
@@ -3552,7 +3572,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         fieldName: 'image',
       );
       if (mounted) {
-        setState(() => _uploadingImages.remove(uniqueId));
+        _unmarkUploading(uniqueId);
         final url = result['url']?.toString();
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemFiles[uniqueId] = json.encode({
@@ -3566,7 +3586,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
     } else {
-      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      if (mounted) _unmarkUploading(uniqueId);
       // Offline: commit this media to the durable upload queue immediately so a
       // hard kill before the next background/close still leaves it queued for
       // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
@@ -3595,7 +3615,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final issueMarked =
         conditionValue == 'no_issues' || conditionValue == 'flagged';
     if (!issueMarked) {
-      setState(() => _highlightFlagIssues = true);
+      _highlightFlagIssues.value = true;
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -3687,7 +3707,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
     if (!_checkCurrentItemFlagIssue()) return;
     if (!_checkCurrentItemRequired()) return;
-    setState(() => _highlightFlagIssues = false);
+    _highlightFlagIssues.value = false;
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
     if (items.isEmpty) return;
@@ -3709,7 +3729,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
-        _audioElapsed = Duration.zero;
+        _audioElapsed.value = Duration.zero;
       });
       _autoSave();
     } else {
@@ -3761,8 +3781,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
-        _audioElapsed = Duration.zero;
-        _highlightFlagIssues = false;
+        _audioElapsed.value = Duration.zero;
+        _highlightFlagIssues.value = false;
       });
       _autoSave();
       return;
@@ -3845,7 +3865,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   void _nextSection() {
     if (!_checkCurrentItemFlagIssue()) return;
-    setState(() => _highlightFlagIssues = false);
+    _highlightFlagIssues.value = false;
     final errors = _getRequiredFieldErrors();
     if (errors.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3884,7 +3904,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerVideoToggle = null;
         _isVideoRecording = false;
         _isRecordingAudio = false;
-        _audioElapsed = Duration.zero;
+        _audioElapsed.value = Duration.zero;
       });
 
       if (_scrollController.hasClients) {
@@ -4026,7 +4046,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         final imagePath = itemImages[uniqueId];
         if (imagePath != null && !imagePath.startsWith('http')) {
-          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          if (mounted) _markUploading(uniqueId);
           final result = await ApiService.uploadImage(
             imagePath,
             inspectionId: _effectiveInspectionId,
@@ -4035,7 +4055,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           );
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(uniqueId);
+              _unmarkUploading(uniqueId);
               final url = result['url']?.toString();
               if (result['success'] == true && url != null && url.isNotEmpty) {
                 itemImages[uniqueId] = url;
@@ -4069,7 +4089,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         final videoPath = itemVideos[uniqueId];
         if (videoPath != null && !videoPath.startsWith('http')) {
-          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          if (mounted) _markUploading(uniqueId);
           final result = await ApiService.uploadImage(
             videoPath,
             inspectionId: _effectiveInspectionId,
@@ -4079,7 +4099,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           );
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(uniqueId);
+              _unmarkUploading(uniqueId);
               final url = result['url']?.toString();
               if (result['success'] == true && url != null && url.isNotEmpty) {
                 itemVideos[uniqueId] = url;
@@ -4090,7 +4110,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         final audioPath = itemAudios[uniqueId];
         if (audioPath != null && !audioPath.startsWith('http')) {
-          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          if (mounted) _markUploading(uniqueId);
           final result = await ApiService.uploadImage(
             audioPath,
             inspectionId: _effectiveInspectionId,
@@ -4100,7 +4120,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           );
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(uniqueId);
+              _unmarkUploading(uniqueId);
               final url = result['url']?.toString();
               if (result['success'] == true && url != null && url.isNotEmpty) {
                 itemAudios[uniqueId] = url;
@@ -4126,7 +4146,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             if (!filePayload.startsWith('http')) localPath = filePayload;
           }
           if (localPath != null) {
-            if (mounted) setState(() => _uploadingImages.add(uniqueId));
+            if (mounted) _markUploading(uniqueId);
             final result = await ApiService.uploadImage(
               localPath,
               inspectionId: _effectiveInspectionId,
@@ -4136,7 +4156,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             );
             if (mounted) {
               setState(() {
-                _uploadingImages.remove(uniqueId);
+                _unmarkUploading(uniqueId);
                 final url = result['url']?.toString();
                 if (result['success'] == true && url != null && url.isNotEmpty) {
                   itemFiles[uniqueId] = json.encode({
@@ -4420,7 +4440,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           issueColors: issueColors.isEmpty ? null : issueColors,
           onConfirm: (issues, notes, markedNoIssues) {
             setState(() {
-              _highlightFlagIssues = false;
+              _highlightFlagIssues.value = false;
               if (markedNoIssues) {
                 itemFlaggedIssues[uniqueId] = [];
                 if (!isPureDropdownField) itemValues[uniqueId] = 'no_issues';
@@ -4619,7 +4639,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final hasRecordedAudio = itemAudios[uniqueId] != null;
     final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
     final conditionValue = itemValues[uniqueId] ?? '';
-    final isUploading = _uploadingImages.contains(uniqueId);
     final refUrl = referenceMedia.isNotEmpty
         ? (referenceMedia.first['url'] as String? ?? '')
         : '';
@@ -4770,13 +4789,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   children: [
                     const Icon(Icons.circle, color: Colors.red, size: 8),
                     const SizedBox(width: 8),
-                    Text(
-                      _formatAudioDuration(_audioElapsed),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w600,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                    ValueListenableBuilder<Duration>(
+                      valueListenable: _audioElapsed,
+                      builder: (context, elapsed, _) => Text(
+                        _formatAudioDuration(elapsed),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       ),
                     ),
                   ],
@@ -4989,31 +5011,37 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.white30),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (isUploading) ...[
-                            const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text('Uploading',
-                                style: TextStyle(
-                                    color: Colors.white, fontSize: 12)),
-                          ] else ...[
-                            const Icon(Icons.refresh,
-                                color: Colors.white, size: 14),
-                            const SizedBox(width: 4),
-                            const Text('Retake',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600)),
-                          ],
-                        ],
+                      child: ValueListenableBuilder<Set<String>>(
+                        valueListenable: _uploadingImages,
+                        builder: (context, uploading, _) {
+                          final uploadingNow = uploading.contains(uniqueId);
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (uploadingNow) ...[
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text('Uploading',
+                                    style: TextStyle(
+                                        color: Colors.white, fontSize: 12)),
+                              ] else ...[
+                                const Icon(Icons.refresh,
+                                    color: Colors.white, size: 14),
+                                const SizedBox(width: 4),
+                                const Text('Retake',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600)),
+                              ],
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -5093,39 +5121,42 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     const SizedBox(width: 8),
                     GestureDetector(
                       onTap: () {
-                        setState(() => _highlightFlagIssues = false);
+                        _highlightFlagIssues.value = false;
                         _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
                       },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _highlightFlagIssues
-                              ? Colors.orange.withValues(alpha: 0.2)
-                              : Colors.black54,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: _highlightFlagIssues
-                                  ? Colors.orange
-                                  : Colors.white24),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.flag_outlined,
-                                size: 13,
-                                color: _highlightFlagIssues
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _highlightFlagIssues,
+                        builder: (context, highlight, _) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: highlight
+                                ? Colors.orange.withValues(alpha: 0.2)
+                                : Colors.black54,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: highlight
                                     ? Colors.orange
-                                    : Colors.white70),
-                            const SizedBox(width: 4),
-                            Text('Flag Issue',
-                                style: TextStyle(
-                                    color: _highlightFlagIssues
-                                        ? Colors.orange
-                                        : Colors.white70,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500)),
-                          ],
+                                    : Colors.white24),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.flag_outlined,
+                                  size: 13,
+                                  color: highlight
+                                      ? Colors.orange
+                                      : Colors.white70),
+                              const SizedBox(width: 4),
+                              Text('Flag Issue',
+                                  style: TextStyle(
+                                      color: highlight
+                                          ? Colors.orange
+                                          : Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500)),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -5187,7 +5218,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               _triggerVideoToggle = null;
                               _isVideoRecording = false;
                               _isRecordingAudio = false;
-                              _audioElapsed = Duration.zero;
+                              _audioElapsed.value = Duration.zero;
                             });
                           }
                         },
@@ -5813,6 +5844,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _audioRecorder?.stop();
     }
     _audioRecorder?.dispose();
+    _audioElapsed.dispose();
+    _uploadingImages.dispose();
+    _highlightFlagIssues.dispose();
     super.dispose();
   }
 

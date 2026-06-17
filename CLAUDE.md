@@ -45,22 +45,25 @@ flutter pub outdated
 
 ## Architecture Overview
 
-**Certifide Open App** is a vehicle inspection Flutter application using **Provider pattern** for state management with an **offline-first architecture**.
+**Certifide Open App** is a vehicle inspection Flutter application using **Riverpod** for state management with an **offline-first architecture**.
 
 ### Core Architecture Patterns
-- **State Management**: Provider with ChangeNotifier
+- **State Management**: Riverpod — code-generated `Notifier`s (`@riverpod`) plus `FutureProvider`s. (No legacy `package:provider`.)
 - **Data Layer**: Repository pattern with Hive (local) + HTTP API (remote)
 - **Storage**: Hive NoSQL database for offline capabilities
 - **Authentication**: JWT with auto-refresh mechanism stored in flutter_secure_storage
 
-### Key Provider Classes
-- **`UserProvider`** (`lib/providers/user_provider.dart`) - Authentication, JWT management, role-based access
-- **`InspectionProvider`** (`lib/providers/inspection_provider.dart`) - Inspection CRUD, offline sync, auto-retry logic
+### Key Providers (lib/providers/)
+- **`userNotifierProvider`** (`user_provider.dart`, `UserNotifier`/`UserState`) - Authentication, JWT management, role-based access
+- **`inspectionNotifierProvider`** (`inspection_provider.dart`, `InspectionNotifier`/`InspectionState`) - Inspection CRUD, offline sync, auto-retry logic
+- **`inspectionSessionNotifierProvider`** (`inspection_session_provider.dart`) - Active inspection session snapshot
+- **`inspectionStatsProvider` / `monthlyInspectionStatsProvider`** (`stats_provider.dart`) - `@riverpod` async providers for dashboard stats
+- Codegen: every provider uses `@riverpod`; regenerate `*.g.dart` part files via `dart run build_runner build --delete-conflicting-outputs`.
 
 ### Directory Structure
 ```
 lib/
-├── providers/     # State management (Provider pattern)
+├── providers/     # State management (Riverpod notifiers + providers)
 ├── services/      # Business logic and API services
 ├── screens/       # UI screens by feature (auth/, home/, profile/, etc.)
 ├── models/        # Data classes and entities
@@ -110,9 +113,11 @@ lib/
 - **Token Refresh**: Automatic JWT refresh prevents auth errors
 
 ### State Management Patterns
-- Use Provider.of<T>(context, listen: false) for actions
-- Use Consumer<T> for UI updates
-- Services layer handles business logic, providers manage state
+- Widgets are `ConsumerWidget`/`ConsumerStatefulWidget`; use `ref.read(provider.notifier)` for actions and `ref.watch(provider)` for UI updates
+- Prefer `ref.watch(provider.select((s) => s.field))` to rebuild only on the fields that matter
+- For purely-local, transient UI state (spinners, highlights, timers), use `ValueNotifier` + `ValueListenableBuilder` so only that widget rebuilds instead of `setState` on the whole screen
+- Services layer handles business logic, notifiers manage state
+- After editing a `@riverpod` notifier, regenerate with `dart run build_runner build --delete-conflicting-outputs`
 
 ### Image & File Handling
 - Images auto-compressed before storage
