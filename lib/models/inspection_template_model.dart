@@ -404,4 +404,16 @@ class InspectionInitializationResponse {
       'structure': structure.toJson(),
     };
   }
+
+  /// Every admin reference-media URL worth caching for offline viewing
+  /// (images / videos / audio). Streamed links (YouTube etc.) are excluded
+  /// since they are served from their own host and can't be cached locally.
+  List<String> get referenceMediaUrls => [
+        for (final section in structure.sections)
+          for (final field in section.fields)
+            for (final media in field.referenceMedia)
+              if (media.url.isNotEmpty &&
+                  media.mediaType.toLowerCase() != 'link')
+                media.url,
+      ];
 }

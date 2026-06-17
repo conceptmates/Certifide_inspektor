@@ -1,5 +1,6 @@
 // lib/services/api_service.dart
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
@@ -17,6 +18,7 @@ import '../models/vehicle_model.dart';
 import '../utils/exception_handler.dart';
 import '../screens/auth/login_page.dart';
 import 'local_storage_services.dart';
+import 'reference_media_cache.dart';
 
 /// Thrown inside [ApiService.uploadImage] when no auth token can be read while
 /// (re)building a multipart upload request.
@@ -150,6 +152,14 @@ class ApiService {
                 InspectionInitializationResponse.fromJson(data);
           } catch (e) {
             log('Error parsing inspection template: $e');
+          }
+
+          // We're online (the request just succeeded), so warm the disk cache
+          // for this template's reference media now — it's the most reliable
+          // moment to do it, before the inspector ever goes offline.
+          if (inspectionResponse != null) {
+            unawaited(
+                ReferenceMediaCache.prefetch(inspectionResponse.referenceMediaUrls));
           }
 
           log('Inspection initialized successfully');
@@ -1593,6 +1603,13 @@ class ApiService {
             inspectionResponse = InspectionInitializationResponse.fromJson(data);
           } catch (e) {
             log('Error parsing resume template: $e');
+          }
+
+          // Online by definition here — warm the reference-media cache so a
+          // resumed inspection's guide media is available if we drop offline.
+          if (inspectionResponse != null) {
+            unawaited(
+                ReferenceMediaCache.prefetch(inspectionResponse.referenceMediaUrls));
           }
 
           return {
