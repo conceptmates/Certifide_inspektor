@@ -26,7 +26,6 @@ import '../../providers/inspection_session_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
 import '../../services/local_storage_services.dart';
-import '../../services/reference_media_cache.dart';
 import '../../services/reports_cache_service.dart';
 import '../../utils/connectivity_checker.dart';
 import '../../widgets/inspection_field_info_sheet.dart';
@@ -487,11 +486,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
 
-      // While online, warm the disk cache for every reference-media URL in the
-      // template so the admin guide images/videos/audio stay visible after the
-      // inspector goes offline mid-job. Fire-and-forget — never block the UI.
-      unawaited(_prefetchReferenceMedia());
-
       // Request camera + mic permissions while the loading screen is still
       // shown so the camera card renders with permissions already resolved.
       await _requestInspectionPermissions();
@@ -502,22 +496,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
       }
     });
-  }
-
-  /// Secondary safety net for caching reference media: the primary warm happens
-  /// at the API layer when the template is fetched online (see ApiService). This
-  /// covers templates restored from storage that the inspector opens while still
-  /// online. Verifies real connectivity first (the provider is optimistic until
-  /// its first probe), so it never fires doomed downloads — and the Socket
-  /// exceptions they caused — while offline.
-  Future<void> _prefetchReferenceMedia() async {
-    if (!_useDynamicTemplate) return;
-    final template = _inspectionTemplate;
-    if (template == null) return;
-    final urls = template.referenceMediaUrls;
-    if (urls.isEmpty) return;
-    if (!await ConnectivityChecker.canReachServer()) return;
-    await ReferenceMediaCache.prefetch(urls);
   }
 
   Future<void> _initHive() async {

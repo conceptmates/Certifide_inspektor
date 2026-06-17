@@ -35,8 +35,6 @@ dependencies:
   video_player: ^2.9.2
   chewie: ^1.8.5
   just_audio: ^0.9.42
-  cached_network_image: ^3.4.1
-  flutter_cache_manager: ^3.4.1
   camera: ^0.11.4
   permission_handler: ^11.3.1
   record: ^5.1.2

@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,7 +6,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import '../../../services/reference_media_cache.dart';
 import '../../../utils/media_url.dart';
 
 class ReferenceMediaSectionView extends StatelessWidget {
@@ -93,25 +89,26 @@ class ReferenceMediaSectionView extends StatelessWidget {
                   if (mediaType == 'image' && url.isNotEmpty)
                     InkWell(
                       onTap: () => _showFullscreenImage(context, url),
-                      child: CachedNetworkImage(
-                        // Cache to disk via the shared reference-media manager so
-                        // the guide image stays visible after going offline.
-                        imageUrl: mediaUri(url).toString(),
-                        cacheManager: ReferenceMediaCache.instance,
+                      child: Image.network(
+                        url,
                         width: double.infinity,
                         height: imageHeight,
                         fit: BoxFit.cover,
-                        progressIndicatorBuilder: (context, url, progress) {
+                        loadingBuilder: (context, child, progress) {
+                          if (progress == null) return child;
                           return SizedBox(
                             height: imageHeight,
                             child: Center(
                               child: CircularProgressIndicator.adaptive(
-                                value: progress.progress,
+                                value: progress.expectedTotalBytes != null
+                                    ? progress.cumulativeBytesLoaded /
+                                        progress.expectedTotalBytes!
+                                    : null,
                               ),
                             ),
                           );
                         },
-                        errorWidget: (context, error, stackTrace) {
+                        errorBuilder: (context, error, stackTrace) {
                           return Container(
                             height: 120,
                             color: Colors.grey[200],
@@ -224,16 +221,16 @@ class ReferenceMediaSectionView extends StatelessWidget {
                   minScale: 0.8,
                   maxScale: 4.0,
                   child: Center(
-                    child: CachedNetworkImage(
-                      imageUrl: mediaUri(imageUrl).toString(),
-                      cacheManager: ReferenceMediaCache.instance,
+                    child: Image.network(
+                      imageUrl,
                       fit: BoxFit.contain,
-                      progressIndicatorBuilder: (context, url, progress) {
+                      loadingBuilder: (context, child, progress) {
+                        if (progress == null) return child;
                         return const Center(
                           child: CircularProgressIndicator(color: Colors.white),
                         );
                       },
-                      errorWidget: (context, error, stackTrace) {
+                      errorBuilder: (context, error, stackTrace) {
                         return const Center(
                           child: Icon(
                             Icons.broken_image,
@@ -467,18 +464,9 @@ class _NativeVideoPlayerState extends State<_NativeVideoPlayer> {
         _error = null;
       });
     }
-    // Prefer a copy already on disk so the video plays while offline. When it
-    // isn't cached yet, stream from the network and warm the cache in the
-    // background so the next (possibly offline) view has it locally.
     // Normalise the URL so spaces / special characters in admin-uploaded
     // filenames don't make the native player reject the source. See mediaUri().
-    final cached = await ReferenceMediaCache.cachedFile(widget.url);
-    final controller = cached != null
-        ? VideoPlayerController.file(cached.file)
-        : VideoPlayerController.networkUrl(mediaUri(widget.url));
-    if (cached == null) {
-      unawaited(ReferenceMediaCache.warm(widget.url));
-    }
+    final controller = VideoPlayerController.networkUrl(mediaUri(widget.url));
     _videoController = controller;
     try {
       // Guard against the player hanging forever on an unreachable / malformed
@@ -680,15 +668,7 @@ class _InlineAudioPlayerState extends State<_InlineAudioPlayer> {
 
   Future<void> _init() async {
     try {
-      // Play from disk when cached (offline-capable); otherwise stream and warm
-      // the cache so a later offline view can play it locally.
-      final cached = await ReferenceMediaCache.cachedFile(widget.url);
-      if (cached != null) {
-        await _player.setFilePath(cached.file.path);
-      } else {
-        await _player.setUrl(widget.url);
-        unawaited(ReferenceMediaCache.warm(widget.url));
-      }
+      await _player.setUrl(widget.url);
       _duration = _player.duration ?? Duration.zero;
       _player.positionStream.listen((p) {
         if (mounted) setState(() => _position = p);
