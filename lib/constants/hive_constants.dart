@@ -1,6 +1,16 @@
 class HiveConstants {
   static const String INSPECTION_BOX = 'inspection_box';
+
+  /// Pointer to the single ACTIVE working copy (the inspection currently open on
+  /// screen / the most-recent one the home screen offers to resume).
   static const String CURRENT_INSPECTION_KEY = 'current_inspection';
+
+  /// Durable per-inspection slot keyed by server inspection id. Unlike
+  /// [CURRENT_INSPECTION_KEY] (a single slot that the next inspection
+  /// overwrites), each inspection keeps its own copy here so its structure +
+  /// reference-media URLs survive offline even after another inspection is
+  /// started. Cleared when that inspection is submitted/completed.
+  static String inspectionKey(int inspectionId) => 'inspection_$inspectionId';
   static const String INSPECTION_HISTORY_BOX = 'inspection_history_box';
   static const String REPORTS_BOX = 'reports_box';
   static const String REPORT_LIST_KEY = 'report_list';

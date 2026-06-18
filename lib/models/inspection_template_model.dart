@@ -386,6 +386,18 @@ class InspectionInitializationResponse {
     required this.structure,
   });
 
+  /// Flat list of every image reference-media URL across all sections/fields,
+  /// for warming the offline cache. Excludes non-image media (video/audio are
+  /// streamed; `link`/YouTube live on uncacheable third-party hosts).
+  List<String> get referenceImageUrls => [
+        for (final section in structure.sections)
+          for (final field in section.fields)
+            for (final media in field.referenceMedia)
+              if (media.url.isNotEmpty &&
+                  media.mediaType.toLowerCase() == 'image')
+                media.url,
+      ];
+
   factory InspectionInitializationResponse.fromJson(Map<String, dynamic> json) {
     return InspectionInitializationResponse(
       templateType: InspectionTemplate.fromJson(

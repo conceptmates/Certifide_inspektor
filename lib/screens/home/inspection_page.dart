@@ -18,6 +18,7 @@ import 'package:record/record.dart';
 
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
+import '../../services/reference_media_cache.dart';
 import '../../models/inspection_item.dart';
 import '../../models/inspection_template_model.dart';
 import '../../models/pending_media.dart';
@@ -367,7 +368,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // that the server template does not carry — so resume from it instead of
       // wiping it. Only a genuinely new inspection (no matching local record)
       // takes the fresh-start path that clears the key.
-      final storedForResume =
+      // Prefer the durable per-inspection slot so resuming a specific
+      // inspection works even when CURRENT holds a different one (e.g. an
+      // offline resume from the reports list). Fall back to CURRENT for data
+      // saved before per-id keys existed.
+      final storedForResume = (widget.inspectionId != null
+              ? _inspectionBox?.get(
+                  HiveConstants.inspectionKey(widget.inspectionId!))
+              : null) ??
           _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
       final resumesLocalCopy = widget.isNewInspection &&
           widget.inspectionId != null &&
@@ -564,10 +572,24 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
       final storageModel = InspectionStorageModel.fromMap(payload);
 
+      // Active working copy (single slot, used by the home screen to offer
+      // "resume" and by the active inspection screen).
       await _inspectionBox?.put(
         HiveConstants.CURRENT_INSPECTION_KEY,
         storageModel,
       );
+
+      // Durable per-inspection copy so this inspection's structure + answers
+      // survive offline even after another inspection is started (which only
+      // overwrites CURRENT). copyWith() detaches a fresh instance — a single
+      // HiveObject cannot live under two keys at once. See [_readStored].
+      final id = _effectiveInspectionId;
+      if (id != null) {
+        await _inspectionBox?.put(
+          HiveConstants.inspectionKey(id),
+          storageModel.copyWith(),
+        );
+      }
 
       log('Data saved locally');
     } catch (e) {
@@ -581,8 +603,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         await _initHive();
       }
 
-      final currentData =
-          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+      final currentData = _readStored();
       if (currentData != null) {
         final completedInspection = InspectionStorageModel(
           itemValues: Map<String, String>.from(currentData.itemValues),
@@ -606,6 +627,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         await historyBox.add(completedInspection);
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
+        // Drop the durable per-inspection copy too — it's submitted now.
+        final id = _effectiveInspectionId;
+        if (id != null) {
+          await _inspectionBox?.delete(HiveConstants.inspectionKey(id));
+        }
       }
     } catch (e) {
       log('Error completing inspection: $e');
@@ -1099,11 +1125,23 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     return 'Enter details...';
   }
 
+  /// Resolves the stored copy for this inspection, preferring the durable
+  /// per-inspection slot (which survives another inspection being started) and
+  /// falling back to the single active CURRENT slot for legacy data saved
+  /// before per-id keys existed.
+  InspectionStorageModel? _readStored() {
+    final id = _effectiveInspectionId;
+    if (id != null) {
+      final perId = _inspectionBox?.get(HiveConstants.inspectionKey(id));
+      if (perId != null) return perId;
+    }
+    return _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+  }
+
   // Load template and vehicle details from storage before building sections
   Future<void> _loadTemplateFromStorage() async {
     try {
-      final storedData =
-          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+      final storedData = _readStored();
 
       if (storedData != null) {
         // Load vehicle details if not already set
@@ -1268,8 +1306,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   Future<void> _loadDataFromStorage() async {
     try {
-      final storedData =
-          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+      final storedData = _readStored();
 
       if (storedData != null) {
         setState(() {
@@ -1408,6 +1445,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
       if (_inspectionBox?.isOpen ?? false) {
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
+        // Drop the durable per-inspection copy too — inspection is finished.
+        final id = _effectiveInspectionId;
+        if (id != null) {
+          await _inspectionBox?.delete(HiveConstants.inspectionKey(id));
+        }
       }
 
       if (mounted) {
@@ -4922,14 +4964,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                 ),
                               )
                             else
-                              Image.network(
-                                refUrl,
+                              // Cache-aware so the guide thumbnail still shows
+                              // from disk when the inspector is offline (plain
+                              // Image.network would fail and leave it blank).
+                              CachedReferenceImage(
+                                url: refUrl,
                                 fit: BoxFit.cover,
                                 // 100×75 dp container; 2× for retina.
                                 cacheWidth: 200,
                                 cacheHeight: 150,
-                                errorBuilder: (_, __, ___) =>
-                                    Container(color: Colors.grey[900]),
                               ),
                             Positioned(
                               bottom: 2,
@@ -5622,6 +5665,55 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         endDrawer: _buildDrawer(),
         body: Column(
           children: [
+            // Reference-media caching progress — shown only while images are
+            // being downloaded/revalidated, hidden once complete.
+            ValueListenableBuilder<ReferenceCacheProgress?>(
+              valueListenable: ReferenceMediaCache.progress,
+              builder: (context, p, _) {
+                if (p == null || p.isComplete) {
+                  return const SizedBox.shrink();
+                }
+                return Container(
+                  width: double.infinity,
+                  color: const Color(0xFF1E1E1E),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF448AFF),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Caching reference media ${p.done}/${p.total}',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 11),
+                            ),
+                            const SizedBox(height: 4),
+                            LinearProgressIndicator(
+                              value: p.fraction,
+                              minHeight: 3,
+                              backgroundColor: Colors.white12,
+                              color: const Color(0xFF448AFF),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             // Thin progress bar
             LinearProgressIndicator(
               value: _totalFields > 0 ? _processedFields / _totalFields : 0.0,
@@ -5656,6 +5748,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           fieldTitle: currentItem != null
                               ? _getItemTitle(currentItem)
                               : '',
+                          referenceMedia: currentItem != null
+                              ? _getItemReferenceMedia(currentItem)
+                              : const [],
                           mediaLabel: 'Video',
                           onRetake: () {
                             setState(() {
@@ -5673,6 +5768,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               fieldTitle: currentItem != null
                                   ? _getItemTitle(currentItem)
                                   : '',
+                              referenceMedia: currentItem != null
+                                  ? _getItemReferenceMedia(currentItem)
+                                  : const [],
                               mediaLabel: 'Audio',
                               onRetake: () {
                                 setState(() {

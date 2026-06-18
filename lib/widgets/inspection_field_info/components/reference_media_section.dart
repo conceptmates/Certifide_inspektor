@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../../services/reference_media_cache.dart';
 import '../../../utils/media_url.dart';
 
 class ReferenceMediaSectionView extends StatelessWidget {
@@ -89,35 +93,11 @@ class ReferenceMediaSectionView extends StatelessWidget {
                   if (mediaType == 'image' && url.isNotEmpty)
                     InkWell(
                       onTap: () => _showFullscreenImage(context, url),
-                      child: Image.network(
-                        url,
+                      child: CachedReferenceImage(
+                        url: url,
                         width: double.infinity,
                         height: imageHeight,
                         fit: BoxFit.cover,
-                        loadingBuilder: (context, child, progress) {
-                          if (progress == null) return child;
-                          return SizedBox(
-                            height: imageHeight,
-                            child: Center(
-                              child: CircularProgressIndicator.adaptive(
-                                value: progress.expectedTotalBytes != null
-                                    ? progress.cumulativeBytesLoaded /
-                                        progress.expectedTotalBytes!
-                                    : null,
-                              ),
-                            ),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            height: 120,
-                            color: Colors.grey[200],
-                            child: const Center(
-                              child: Icon(Icons.broken_image,
-                                  size: 40, color: Colors.grey),
-                            ),
-                          );
-                        },
                       ),
                     ),
                   if (mediaType == 'video' && url.isNotEmpty)
@@ -221,24 +201,10 @@ class ReferenceMediaSectionView extends StatelessWidget {
                   minScale: 0.8,
                   maxScale: 4.0,
                   child: Center(
-                    child: Image.network(
-                      imageUrl,
+                    child: CachedReferenceImage(
+                      url: imageUrl,
                       fit: BoxFit.contain,
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return const Center(
-                          child: CircularProgressIndicator(color: Colors.white),
-                        );
-                      },
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Center(
-                          child: Icon(
-                            Icons.broken_image,
-                            size: 56,
-                            color: Colors.white70,
-                          ),
-                        );
-                      },
+                      fullscreen: true,
                     ),
                   ),
                 ),
@@ -640,6 +606,163 @@ class _DescriptionBox extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Reference image that prefers an on-disk cached copy (so it shows while
+/// offline) and falls back to the network when not yet cached — warming the
+/// cache in the background for next time. See [ReferenceMediaCache].
+class CachedReferenceImage extends StatefulWidget {
+  final String url;
+  final double? width;
+  final double? height;
+  final BoxFit fit;
+  final bool fullscreen;
+
+  /// Decode size hints passed to [Image.file]/[Image.network] so small previews
+  /// (e.g. the inspection-page REF thumbnail) don't decode a multi-MB image at
+  /// full resolution.
+  final int? cacheWidth;
+  final int? cacheHeight;
+
+  const CachedReferenceImage({
+    super.key,
+    required this.url,
+    required this.fit,
+    this.width,
+    this.height,
+    this.fullscreen = false,
+    this.cacheWidth,
+    this.cacheHeight,
+  });
+
+  @override
+  State<CachedReferenceImage> createState() => _CachedReferenceImageState();
+}
+
+class _CachedReferenceImageState extends State<CachedReferenceImage> {
+  File? _file;
+  bool _resolved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(CachedReferenceImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Flutter reuses this State when the widget is rebuilt at the same tree
+    // position (e.g. navigating between inspection fields), so initState does
+    // NOT re-run. Without re-resolving on a URL change the view keeps showing
+    // the previous field's image. Re-resolve whenever the URL changes.
+    if (oldWidget.url != widget.url) {
+      setState(() {
+        _file = null;
+        _resolved = false;
+      });
+      _resolve();
+    }
+  }
+
+  Future<void> _resolve() async {
+    // Capture the URL this resolve is for; if the widget is rebuilt with a new
+    // URL mid-flight, a stale async result must not overwrite the current one.
+    final url = widget.url;
+    final cached = await ReferenceMediaCache.cachedFile(url);
+    if (!mounted || url != widget.url) return;
+    setState(() {
+      _file = cached;
+      _resolved = true;
+    });
+    // Not on disk yet: show it from the network now and pull it down in the
+    // background, then re-check so this view switches to the cached file once
+    // it lands (and offline-next-time works).
+    if (cached == null) {
+      final ok = await ReferenceMediaCache.warm(url);
+      if (!mounted || url != widget.url) return;
+      if (ok) {
+        final nowCached = await ReferenceMediaCache.cachedFile(url);
+        if (mounted && url == widget.url && nowCached != null) {
+          setState(() => _file = nowCached);
+        }
+      }
+    }
+  }
+
+  Widget _loading() => widget.fullscreen
+      ? const Center(child: CircularProgressIndicator(color: Colors.white))
+      : SizedBox(
+          height: widget.height,
+          child: const Center(child: CircularProgressIndicator.adaptive()),
+        );
+
+  Widget _error() => widget.fullscreen
+      ? const Center(
+          child: Icon(Icons.broken_image, size: 56, color: Colors.white70),
+        )
+      : Container(
+          height: 120,
+          color: Colors.grey[200],
+          child: const Center(
+            child: Icon(Icons.broken_image, size: 40, color: Colors.grey),
+          ),
+        );
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_resolved) {
+      return SizedBox(
+        width: widget.width,
+        height: widget.fullscreen ? null : widget.height,
+        child: _loading(),
+      );
+    }
+
+    final file = _file;
+    if (file != null) {
+      return Image.file(
+        file,
+        width: widget.width,
+        height: widget.height,
+        fit: widget.fit,
+        cacheWidth: widget.cacheWidth,
+        cacheHeight: widget.cacheHeight,
+        errorBuilder: (_, error, __) {
+          debugPrint('[RefImage] Image.file FAILED ${file.path} '
+              '(${file.existsSync() ? file.lengthSync() : 'missing'}B): $error');
+          return _error();
+        },
+      );
+    }
+
+    return Image.network(
+      mediaUri(widget.url).toString(),
+      width: widget.width,
+      height: widget.height,
+      fit: widget.fit,
+      cacheWidth: widget.cacheWidth,
+      cacheHeight: widget.cacheHeight,
+      loadingBuilder: (context, child, progress) {
+        if (progress == null) return child;
+        if (widget.fullscreen) return _loading();
+        return SizedBox(
+          height: widget.height,
+          child: Center(
+            child: CircularProgressIndicator.adaptive(
+              value: progress.expectedTotalBytes != null
+                  ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
+                  : null,
+            ),
+          ),
+        );
+      },
+      errorBuilder: (_, error, __) {
+        debugPrint('[RefImage] Image.network FAILED ${mediaUri(widget.url)}: $error');
+        return _error();
+      },
     );
   }
 }

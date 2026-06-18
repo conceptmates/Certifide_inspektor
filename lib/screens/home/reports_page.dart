@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/hive_constants.dart';
+import '../../data/inspection_storage_model.dart';
 import '../../models/inspection_history_model.dart';
 import '../../models/inspection_state.dart';
 import '../../models/inspection_template_model.dart';
@@ -676,9 +678,14 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     try {
       final result = await ApiService.resumeInspection(id);
       if (_isCancelled || !mounted) return;
-      if (result['success'] == true) {
-        final template = result['data'] as InspectionInitializationResponse?;
-        if (!mounted) return;
+      // Resumes the inspection screen. [template] is the server structure when
+      // online, or null offline (inspection_page then rebuilds it from the
+      // durable per-id Hive slot).
+      void openInspection(
+        InspectionInitializationResponse? template, {
+        int? brandId,
+        int? modelId,
+      }) {
         Navigator.pushNamed(
           context,
           Routes.inspection,
@@ -688,27 +695,73 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
             'vehicleDetails': _buildResumeVehicleDetails(
               history,
               template,
-              brandId: result['vehicle_brand_id'] as int? ?? history.brandId,
-              modelId: result['vehicle_model_id'] as int? ?? history.modelId,
+              brandId: brandId ?? history.brandId,
+              modelId: modelId ?? history.modelId,
             ),
             'inspectionTemplate': template,
           },
         );
+      }
+
+      if (result['success'] == true) {
+        final template = result['data'] as InspectionInitializationResponse?;
+        if (!mounted) return;
+        openInspection(
+          template,
+          brandId: result['vehicle_brand_id'] as int?,
+          modelId: result['vehicle_model_id'] as int?,
+        );
       } else {
-        if (mounted) {
+        // /resume failed (server error or offline). If a durable local copy of
+        // this inspection exists, resume it offline — inspection_page rebuilds
+        // the form + reference media from the per-id Hive slot, no network.
+        final hasLocal = await _hasLocalInspection(id);
+        if (!mounted) return;
+        if (hasLocal) {
+          openInspection(null);
+        } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(result['message'] ?? 'Failed to resume')),
           );
         }
       }
     } catch (e) {
-      if (mounted) {
+      // Hard network exception — same offline fallback to the local copy.
+      final hasLocal = await _hasLocalInspection(id);
+      if (!mounted) return;
+      if (hasLocal) {
+        Navigator.pushNamed(
+          context,
+          Routes.inspection,
+          arguments: {
+            'isNew': true,
+            'inspectionId': id,
+            'vehicleDetails': _buildResumeVehicleDetails(history, null,
+                brandId: history.brandId, modelId: history.modelId),
+            'inspectionTemplate': null,
+          },
+        );
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Network error. Please try again.')),
         );
       }
     } finally {
       _safeSetState(() => _resumingIds.remove(history.id));
+    }
+  }
+
+  /// True if inspection [id] has a durable per-inspection copy in Hive, so it
+  /// can be resumed offline without the /resume network call.
+  Future<bool> _hasLocalInspection(int id) async {
+    try {
+      final box = Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)
+          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX)
+          : await Hive.openBox<InspectionStorageModel>(
+              HiveConstants.INSPECTION_BOX);
+      return box.get(HiveConstants.inspectionKey(id)) != null;
+    } catch (_) {
+      return false;
     }
   }
 

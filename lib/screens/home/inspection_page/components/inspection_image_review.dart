@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 
+import '../../../../widgets/inspection_field_info/components/reference_media_section.dart';
+
 class InspectionImageReview extends StatefulWidget {
   final String capturedImagePath;
   final String fieldTitle;
@@ -153,11 +155,13 @@ class _InspectionImageReviewState extends State<InspectionImageReview> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(6),
-                child: Image.network(
-                  refUrl,
+                // Cache-aware so the guide thumbnail shows from disk offline.
+                child: CachedReferenceImage(
+                  url: refUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      Container(color: Colors.grey[800]),
+                  // 80×60 dp container; 2× for retina.
+                  cacheWidth: 160,
+                  cacheHeight: 120,
                 ),
               ),
             ),

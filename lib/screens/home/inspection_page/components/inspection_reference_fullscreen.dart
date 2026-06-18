@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../../utils/media_url.dart';
+import '../../../../widgets/inspection_field_info/components/reference_media_section.dart';
 
 class InspectionReferenceFullscreen extends StatefulWidget {
   final List<Map<String, dynamic>> mediaList;
@@ -72,21 +73,13 @@ class _InspectionReferenceFullscreenState
                     child: InteractiveViewer(
                       minScale: 0.8,
                       maxScale: 4.0,
+                      // Cache-aware so the enlarged guide image loads from disk
+                      // when offline (raw Image.network would render blank).
                       child: Center(
-                        child: Image.network(
-                          url,
+                        child: CachedReferenceImage(
+                          url: url,
                           fit: BoxFit.contain,
-                          loadingBuilder: (_, child, progress) {
-                            if (progress == null) return child;
-                            return const Center(
-                              child: CircularProgressIndicator(
-                                  color: Colors.white70),
-                            );
-                          },
-                          errorBuilder: (_, __, ___) => const Center(
-                            child: Icon(Icons.broken_image,
-                                size: 56, color: Colors.white54),
-                          ),
+                          fullscreen: true,
                         ),
                       ),
                     ),

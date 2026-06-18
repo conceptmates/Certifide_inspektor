@@ -3,10 +3,13 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../../widgets/inspection_field_info/components/reference_media_section.dart';
+
 class InspectionVideoReview extends StatefulWidget {
   final String capturedMediaPath;
   final String fieldTitle;
   final String mediaLabel;
+  final List<Map<String, dynamic>> referenceMedia;
   final VoidCallback onRetake;
   final void Function(int quarterTurns) onUseMedia;
 
@@ -16,6 +19,7 @@ class InspectionVideoReview extends StatefulWidget {
     required this.fieldTitle,
     required this.onRetake,
     required this.onUseMedia,
+    this.referenceMedia = const [],
     this.mediaLabel = 'Video',
   });
 
@@ -102,6 +106,14 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
 
   @override
   Widget build(BuildContext context) {
+    final refUrl = widget.referenceMedia.isNotEmpty
+        ? (widget.referenceMedia.first['url'] as String? ?? '')
+        : '';
+    final refMediaType = widget.referenceMedia.isNotEmpty
+        ? (widget.referenceMedia.first['mediaType'] as String? ?? 'image')
+            .toLowerCase()
+        : 'image';
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -172,6 +184,40 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
             ],
           ),
         ),
+        // Reference thumbnail — cache-aware so the guide shows from disk offline.
+        if (refUrl.isNotEmpty)
+          Positioned(
+            top: 80,
+            left: 16,
+            child: Container(
+              width: 80,
+              height: 60,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: const Color(0xFFFF6B6B).withValues(alpha: 0.8),
+                    width: 2),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: refMediaType == 'video'
+                    ? Container(
+                        color: Colors.black87,
+                        child: const Center(
+                          child: Icon(Icons.play_circle_filled,
+                              color: Colors.white70, size: 28),
+                        ),
+                      )
+                    : CachedReferenceImage(
+                        url: refUrl,
+                        fit: BoxFit.cover,
+                        // 80×60 dp container; 2× for retina.
+                        cacheWidth: 160,
+                        cacheHeight: 120,
+                      ),
+              ),
+            ),
+          ),
         // Rotate button + Retake / Use buttons
         Positioned(
           bottom: 16 + MediaQuery.of(context).padding.bottom,
