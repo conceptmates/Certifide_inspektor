@@ -613,58 +613,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
     );
   }
 
-  Widget _buildDivider() {
-    return Row(
-      children: [
-        Expanded(
-          child: Divider(
-            color: AppColors.outlineVariant.withValues(alpha: 0.3),
-            thickness: 1,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            'OR CONTINUE WITH',
-            style: TextStyle(
-              fontSize: 10,
-              letterSpacing: 1.6,
-              color: AppColors.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Divider(
-            color: AppColors.outlineVariant.withValues(alpha: 0.3),
-            thickness: 1,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAlternativeAuth() {
-    return Row(
-      children: [
-        Expanded(
-          child: _AltAuthButton(
-            icon: Icons.verified_user_outlined,
-            label: 'SSO',
-            onTap: () {},
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _AltAuthButton(
-            icon: Icons.key_rounded,
-            label: 'Passkey',
-            onTap: () {},
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildFooter() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -848,55 +796,6 @@ class _StyledTextFormField extends StatelessWidget {
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      ),
-    );
-  }
-}
-
-class _AltAuthButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _AltAuthButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          height: 48,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppColors.outlineVariant.withValues(alpha: 0.15),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: AppColors.onSurface, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.onSurface,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
