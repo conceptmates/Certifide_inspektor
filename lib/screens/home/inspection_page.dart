@@ -5578,7 +5578,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Connect to the internet and try again, or go back and start a new inspection. '
+                    'Connect to the internet, then go back and open the inspection again. '
                     'If you were resuming a saved inspection, your answers stay on this device once the form loads.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -5586,21 +5586,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: () async {
-                      setState(() => _isLoadingTemplate = true);
-                      await _fetchInspectionTemplateIfMissing();
-                      if (!mounted) return;
-                      if (_inspectionTemplate != null) {
-                        await _loadDataFromStorage();
-                        await _saveDataLocally();
-                      }
-                      setState(() => _isLoadingTemplate = false);
-                    },
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Retry'),
-                  ),
-                  const SizedBox(height: 12),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Go back'),
@@ -5997,23 +5982,32 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   }
 
   void _handleClose() async {
+    // Capture the Navigator before any await so we never reach for a defunct
+    // context or touch the Navigator while it is mid-transition.
+    final navigator = Navigator.of(context);
+
+    // Persisting + queueing is best-effort: Hive keeps the data in memory and
+    // it re-syncs on reconnect, so a failure here must not strand the user on
+    // the inspection screen. Previously a thrown error (e.g. "No element")
+    // skipped the pop and left the user tapping close repeatedly, which
+    // compounded into a corrupted Navigator.
     try {
       await _saveDataLocally();
       await _commitPendingMediaToQueue();
       if (mounted) {
         ref.read(inspectionProvider.notifier).markDirty();
         // Surface the just-queued media in the Pending tab and start syncing.
-        unawaited(
-            ref.read(inspectionProvider.notifier).refreshMediaQueue());
+        unawaited(ref.read(inspectionProvider.notifier).refreshMediaQueue());
       }
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      Navigator.of(context).pop();
     } catch (e) {
       debugPrint('Error handling close: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error saving data')),
-      );
     }
+
+    if (!mounted) return;
+    // Single pop: the vehicle-details route is pushReplacement'd away before
+    // this screen, so the inspection sits exactly one level above its origin
+    // (same as the system-back handler). Popping twice removed the origin too
+    // and threw '!_debugLocked' / "No element" navigator assertions.
+    if (navigator.canPop()) navigator.pop();
   }
 }
