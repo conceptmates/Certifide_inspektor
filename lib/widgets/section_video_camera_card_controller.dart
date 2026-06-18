@@ -6,7 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import 'section_camera_card.dart' show cameraCardPendingDisposal;
+import 'section_camera_card.dart'
+    show cameraCardPendingDisposal, safeDisposeCamera;
 
 part 'section_video_camera_card_controller.g.dart';
 
@@ -155,7 +156,7 @@ class VideoCardController extends _$VideoCardController
     final controller = _controller;
     _controller = null;
     if (controller != null) {
-      _pendingDisposal = controller.dispose();
+      _pendingDisposal = safeDisposeCamera(controller);
     }
   }
 
@@ -260,7 +261,7 @@ class VideoCardController extends _$VideoCardController
     final old = _controller;
     _controller = null;
     if (old != null) {
-      final f = old.dispose();
+      final f = safeDisposeCamera(old);
       _pendingDisposal = f;
       await f.timeout(const Duration(seconds: 1), onTimeout: () {});
       _pendingDisposal = null;
@@ -279,7 +280,7 @@ class VideoCardController extends _$VideoCardController
       await controller.initialize();
       if (_isDisposePending || _disposed || _controller != controller) {
         _isDisposePending = false;
-        _pendingDisposal = controller.dispose();
+        _pendingDisposal = safeDisposeCamera(controller);
         _controller = null;
         return false;
       }
@@ -294,12 +295,12 @@ class VideoCardController extends _$VideoCardController
       return true;
     } on CameraException {
       _isDisposePending = false;
-      _pendingDisposal = _controller?.dispose();
+      _pendingDisposal = safeDisposeCamera(_controller);
       _controller = null;
       return false;
     } catch (_) {
       _isDisposePending = false;
-      _pendingDisposal = _controller?.dispose();
+      _pendingDisposal = safeDisposeCamera(_controller);
       _controller = null;
       return false;
     }
