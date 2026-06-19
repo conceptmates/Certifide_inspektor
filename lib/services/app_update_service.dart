@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:in_app_update/in_app_update.dart';
 
 /// Wraps the Play In-App-Update flow.
@@ -35,6 +36,14 @@ class AppUpdateService {
       } else if (info.immediateUpdateAllowed) {
         await InAppUpdate.performImmediateUpdate();
       }
+    } on PlatformException catch (e) {
+      if (e.code == 'TASK_FAILURE' &&
+          e.message?.contains('ERROR_APP_NOT_OWNED') == true) {
+        // Not installed via Play — skip silently (dev/sideload build).
+        debugPrint('Skipping update check: app not installed via Play Store');
+        return;
+      }
+      debugPrint('AppUpdateService.checkForUpdate failed: $e');
     } catch (e, st) {
       debugPrint('AppUpdateService.checkForUpdate failed: $e');
       debugPrintStack(stackTrace: st);
