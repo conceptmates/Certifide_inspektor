@@ -13,6 +13,7 @@ import '../../../providers/connectivity_provider.dart';
 import '../../../providers/inspection_provider.dart';
 import '../../../providers/stats_provider.dart';
 import '../../../routes/routes.dart';
+import '../../../services/app_update_service.dart';
 import '../../../utils/network_error_helper.dart';
 import '../../attendance/attendance_screen.dart';
 import '../../work_assigned/work_assigned_screen.dart';
@@ -41,6 +42,11 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
     super.initState();
     _selectedIndex = widget.initialIndex;
     _initHive();
+    // Check for a Play Store update once the home screen is up (Android-only;
+    // fire-and-forget, never blocks or disrupts the user).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      const AppUpdateService().checkForUpdate();
+    });
   }
 
   Future<void> _initHive() async {
