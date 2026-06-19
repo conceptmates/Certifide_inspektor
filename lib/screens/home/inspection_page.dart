@@ -104,6 +104,26 @@ class InspectionScreen extends ConsumerStatefulWidget {
   ConsumerState<InspectionScreen> createState() => _InspectionScreenState();
 }
 
+/// Holds the transient camera-overlay flags as [ValueNotifier]s so that
+/// toggling them (flash, start/stop recording, pause/resume) rebuilds only the
+/// camera overlay via a [ListenableBuilder] instead of `setState`-ing the whole
+/// inspection screen. Audio recording is intentionally excluded — it changes
+/// which capture widget is built, so it still needs a full rebuild.
+class _CaptureUiState {
+  final ValueNotifier<bool> flashOn = ValueNotifier(false);
+  final ValueNotifier<bool> isVideoRecording = ValueNotifier(false);
+  final ValueNotifier<bool> isVideoPaused = ValueNotifier(false);
+
+  late final Listenable listenable =
+      Listenable.merge([flashOn, isVideoRecording, isVideoPaused]);
+
+  void dispose() {
+    flashOn.dispose();
+    isVideoRecording.dispose();
+    isVideoPaused.dispose();
+  }
+}
+
 class _InspectionScreenState extends ConsumerState<InspectionScreen>
     with WidgetsBindingObserver {
   // Survives navigation — keyed by "${brandId}_${modelId}"
@@ -131,8 +151,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   Map<String, TextEditingController> numberRemarkControllers = {};
   Map<String, TextEditingController> textFieldControllers = {};
   Map<String, dynamic>? vehicleDetails;
-  bool _showButton = true;
-  bool _isScrollable = false;
   bool _isSubmitting = false;
   // ValueNotifier so upload spinners rebuild only their own widget (via
   // ValueListenableBuilder), not the whole screen, on add/remove.
@@ -161,11 +179,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   VoidCallback? _triggerPhotoCapture;
   VoidCallback? _triggerEnlarge;
   VoidCallback? _triggerFlashToggle;
-  bool _cameraFlashOn = false;
   VoidCallback? _triggerVideoToggle;
   VoidCallback? _triggerVideoPauseResume;
-  bool _isVideoRecording = false;
-  bool _isVideoPaused = false;
+  // Transient camera-overlay flags (flash on, recording, paused). Held as
+  // ValueNotifiers so toggling them rebuilds only the camera overlay (via a
+  // ListenableBuilder), not the whole inspection screen.
+  final _CaptureUiState _captureUi = _CaptureUiState();
   AudioRecorder? _audioRecorder;
   bool _isRecordingAudio = false;
   Timer? _audioTimer;
@@ -348,9 +367,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _isScrollable = false;
-    _showButton = false;
-    _scrollController.addListener(_onScroll);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initHive();
@@ -1416,25 +1432,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     } catch (e) {
       log('Error rehydrating pending media from queue: $e');
       return false;
-    }
-  }
-
-  void _onScroll() {
-    if (!_isScrollable) return;
-
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 50) {
-      if (!_showButton) {
-        setState(() {
-          _showButton = true;
-        });
-      }
-    } else {
-      if (_showButton) {
-        setState(() {
-          _showButton = false;
-        });
-      }
     }
   }
 
@@ -3769,11 +3766,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
         _triggerFlashToggle = null;
-        _cameraFlashOn = false;
+        _captureUi.flashOn.value = false;
         _triggerVideoToggle = null;
         _triggerVideoPauseResume = null;
-        _isVideoRecording = false;
-        _isVideoPaused = false;
+        _captureUi.isVideoRecording.value = false;
+        _captureUi.isVideoPaused.value = false;
         _isRecordingAudio = false;
         _audioElapsed.value = Duration.zero;
       });
@@ -3823,11 +3820,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
         _triggerFlashToggle = null;
-        _cameraFlashOn = false;
+        _captureUi.flashOn.value = false;
         _triggerVideoToggle = null;
         _triggerVideoPauseResume = null;
-        _isVideoRecording = false;
-        _isVideoPaused = false;
+        _captureUi.isVideoRecording.value = false;
+        _captureUi.isVideoPaused.value = false;
         _isRecordingAudio = false;
         _audioElapsed.value = Duration.zero;
         _highlightFlagIssues.value = false;
@@ -3844,8 +3841,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     setState(() {
       _currentSection--;
       _currentItemIndex = lastIdx;
-      _showButton = false;
-      _isScrollable = false;
       if (lastItem != null) {
         _currentCaptureMode = _defaultCaptureModeForItem(lastItem);
       }
@@ -3858,12 +3853,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
         _autoSave();
-        setState(() {
-          if (_scrollController.hasClients) {
-            _isScrollable = _scrollController.position.maxScrollExtent > 0;
-            _showButton = !_isScrollable;
-          }
-        });
       }
     });
   }
@@ -3940,19 +3929,17 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       setState(() {
         _currentSection++;
         _currentItemIndex = 0;
-        _showButton = false;
-        _isScrollable = false;
         _currentCaptureMode = firstNextItem != null
             ? _defaultCaptureModeForItem(firstNextItem)
             : 'PHOTO';
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
         _triggerFlashToggle = null;
-        _cameraFlashOn = false;
+        _captureUi.flashOn.value = false;
         _triggerVideoToggle = null;
         _triggerVideoPauseResume = null;
-        _isVideoRecording = false;
-        _isVideoPaused = false;
+        _captureUi.isVideoRecording.value = false;
+        _captureUi.isVideoPaused.value = false;
         _isRecordingAudio = false;
         _audioElapsed.value = Duration.zero;
       });
@@ -3964,14 +3951,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) {
           _autoSave();
-          setState(() {
-            if (_scrollController.hasClients) {
-              _isScrollable = _scrollController.position.maxScrollExtent > 0;
-            } else {
-              _isScrollable = false;
-            }
-            _showButton = !_isScrollable;
-          });
         }
       });
     } else {
@@ -4753,20 +4732,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             onPauseResumeReady: (fn) =>
                 setState(() => _triggerVideoPauseResume = fn),
             onFlashToggleReady: (fn) => setState(() => _triggerFlashToggle = fn),
-            onRecordingChanged: (recording) => setState(() {
-              _isVideoRecording = recording;
-              if (!recording) _isVideoPaused = false;
-            }),
+            onRecordingChanged: (recording) {
+              // Notifier-only: rebuilds just the overlay via ListenableBuilder.
+              _captureUi.isVideoRecording.value = recording;
+              if (!recording) _captureUi.isVideoPaused.value = false;
+            },
             onRecordingPausedChanged: (paused) =>
-                setState(() => _isVideoPaused = paused),
+                _captureUi.isVideoPaused.value = paused,
             onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
             onCapture: (XFile file) {
               setState(() {
                 _pendingCapturedVideoFile = file;
                 _pendingCapturedVideoUniqueId = uniqueId;
                 _isReviewingVideo = true;
-                _isVideoRecording = false;
-                _isVideoPaused = false;
+                _captureUi.isVideoRecording.value = false;
+                _captureUi.isVideoPaused.value = false;
               });
             },
           ),
@@ -4918,7 +4898,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         ? '${flaggedIssues.length} issue${flaggedIssues.length == 1 ? '' : 's'} flagged'
         : 'No issues — looks good';
 
-    return Column(
+    // Only the camera overlay/controls depend on the transient capture flags
+    // (flash / recording / paused), so a ListenableBuilder rebuilds just this
+    // subtree when they change — captureArea (the live camera) is built above
+    // and reused, and the rest of the screen is untouched.
+    return ListenableBuilder(
+      listenable: _captureUi.listenable,
+      builder: (context, _) => Column(
       children: [
         // ── Capture area ──────────────────────────────────────────
         Expanded(
@@ -5002,7 +4988,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 ),
 
               // Recording indicator (VIDEO recording, top-right)
-              if (_currentCaptureMode == 'VIDEO' && _isVideoRecording)
+              if (_currentCaptureMode == 'VIDEO' && _captureUi.isVideoRecording.value)
                 Positioned(
                   top: 12,
                   right: 12,
@@ -5017,12 +5003,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
-                          _isVideoPaused ? Icons.pause : Icons.circle,
-                          color: _isVideoPaused ? Colors.amber : Colors.red,
+                          _captureUi.isVideoPaused.value ? Icons.pause : Icons.circle,
+                          color: _captureUi.isVideoPaused.value ? Colors.amber : Colors.red,
                           size: 8,
                         ),
                         const SizedBox(width: 5),
-                        Text(_isVideoPaused ? 'PAUSED' : 'REC',
+                        Text(_captureUi.isVideoPaused.value ? 'PAUSED' : 'REC',
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
@@ -5276,11 +5262,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               _triggerPhotoCapture = null;
                               _triggerEnlarge = null;
                               _triggerFlashToggle = null;
-                              _cameraFlashOn = false;
+                              _captureUi.flashOn.value = false;
                               _triggerVideoToggle = null;
                               _triggerVideoPauseResume = null;
-                              _isVideoRecording = false;
-                              _isVideoPaused = false;
+                              _captureUi.isVideoRecording.value = false;
+                              _captureUi.isVideoPaused.value = false;
                               _isRecordingAudio = false;
                               _audioElapsed.value = Duration.zero;
                             });
@@ -5328,7 +5314,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     children: [
                       // Left slot: pause/resume while recording, otherwise
                       // gallery (PHOTO/VIDEO) or spacer (FILE/AUDIO)
-                      if (_currentCaptureMode == 'VIDEO' && _isVideoRecording)
+                      if (_currentCaptureMode == 'VIDEO' && _captureUi.isVideoRecording.value)
                         GestureDetector(
                           onTap: _triggerVideoPauseResume,
                           child: Container(
@@ -5344,7 +5330,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               ),
                             ),
                             child: Icon(
-                              _isVideoPaused ? Icons.play_arrow : Icons.pause,
+                              _captureUi.isVideoPaused.value ? Icons.play_arrow : Icons.pause,
                               color: _triggerVideoPauseResume != null
                                   ? Colors.white
                                   : Colors.white38,
@@ -5414,7 +5400,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: _isVideoRecording
+                                color: _captureUi.isVideoRecording.value
                                     ? Colors.red
                                     : Colors.white,
                                 width: 3,
@@ -5425,13 +5411,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
                                 decoration: BoxDecoration(
-                                  color: _isVideoRecording
+                                  color: _captureUi.isVideoRecording.value
                                       ? Colors.red
                                       : (_triggerVideoToggle != null
                                           ? Colors.white
                                           : Colors.white38),
                                   borderRadius: BorderRadius.circular(
-                                      _isVideoRecording ? 4 : 40),
+                                      _captureUi.isVideoRecording.value ? 4 : 40),
                                 ),
                               ),
                             ),
@@ -5494,26 +5480,27 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           onTap: _triggerFlashToggle != null
                               ? () {
                                   _triggerFlashToggle!();
-                                  setState(() => _cameraFlashOn = !_cameraFlashOn);
+                                  _captureUi.flashOn.value =
+                                      !_captureUi.flashOn.value;
                                 }
                               : null,
                           child: Container(
                             width: 46,
                             height: 46,
                             decoration: BoxDecoration(
-                              color: _cameraFlashOn
+                              color: _captureUi.flashOn.value
                                   ? const Color(0xFFFFC107)
                                   : Colors.white.withValues(alpha: 0.1),
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: _cameraFlashOn
+                                color: _captureUi.flashOn.value
                                     ? const Color(0xFFFFC107)
                                     : Colors.white24,
                               ),
                             ),
                             child: Icon(
-                              _cameraFlashOn ? Icons.flash_on : Icons.flash_off,
-                              color: _cameraFlashOn
+                              _captureUi.flashOn.value ? Icons.flash_on : Icons.flash_off,
+                              color: _captureUi.flashOn.value
                                   ? Colors.black87
                                   : (_triggerFlashToggle != null
                                       ? Colors.white70
@@ -5535,6 +5522,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           ),
         ),
       ],
+      ),
     );
   }
 
@@ -5882,15 +5870,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     setState(() {
       _currentSection = sectionIndex;
       _currentItemIndex = clampedField;
-      _isScrollable = false;
-      _showButton = true;
-      _isVideoRecording = false;
-      _isVideoPaused = false;
+      _captureUi.isVideoRecording.value = false;
+      _captureUi.isVideoPaused.value = false;
       _isRecordingAudio = false;
       _triggerPhotoCapture = null;
       _triggerEnlarge = null;
       _triggerFlashToggle = null;
-      _cameraFlashOn = false;
+      _captureUi.flashOn.value = false;
       _triggerVideoToggle = null;
       _triggerVideoPauseResume = null;
       if (targetItem != null) {
@@ -5900,15 +5886,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     Future.delayed(const Duration(milliseconds: 100), () {
       if (!mounted) return;
-      setState(() {
-        if (_scrollController.hasClients) {
-          _isScrollable = _scrollController.position.maxScrollExtent > 0;
-        } else {
-          _isScrollable = false;
-        }
-        _showButton = !_isScrollable;
-      });
-
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           0,
