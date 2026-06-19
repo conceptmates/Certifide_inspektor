@@ -194,6 +194,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   // ValueNotifier so toggling the flag-issue highlight rebuilds only that
   // button (via ValueListenableBuilder), not the whole screen.
   final ValueNotifier<bool> _highlightFlagIssues = ValueNotifier(false);
+  // Holds the uniqueId of a missing required field to highlight in red after
+  // the user is sent back to it from the "required fields" sheet. Cleared once
+  // they fill it in or navigate away.
+  final ValueNotifier<String?> _highlightMissingFieldId =
+      ValueNotifier<String?>(null);
   bool _isSyncingToServer = false;
 
   // Dynamic inspection template from API
@@ -1950,11 +1955,42 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     return _buildSingleItemContainer(item, title);
   }
 
+  // Pure check (no side effects) for whether a required item still has an
+  // unfilled value or missing required media. Used to drive the inline
+  // missing-field highlight so it clears the moment the field is completed.
+  bool _itemHasMissingRequired(dynamic item) {
+    if (!_itemIsRequired(item)) return false;
+    final uniqueId = _getItemUniqueId(item);
+
+    if (_itemUsesTextField(item)) {
+      if ((itemValues[uniqueId]?.trim() ?? '').isEmpty) return true;
+    } else if (_itemHasOptions(item)) {
+      final value = itemValues[uniqueId] ?? 'N/A';
+      if (value == 'N/A' || value.isEmpty) return true;
+    }
+
+    if (_itemHasImage(item) &&
+        (itemImages[uniqueId] == null || itemImages[uniqueId]!.isEmpty)) {
+      return true;
+    }
+    if (_itemHasVideo(item) &&
+        (itemVideos[uniqueId] == null || itemVideos[uniqueId]!.isEmpty)) {
+      return true;
+    }
+    if (_itemHasFile(item) &&
+        (itemFiles[uniqueId] == null || itemFiles[uniqueId]!.isEmpty)) {
+      return true;
+    }
+    return false;
+  }
+
   Widget _buildSingleItemContainer(dynamic item, String sectionTitle) {
     final uniqueId = _getItemUniqueId(item);
     final title = _getItemTitle(item);
     final allowImage = _itemHasImage(item);
     final isRequired = _itemIsRequired(item);
+    final isMissingHighlight = _highlightMissingFieldId.value == uniqueId &&
+        _itemHasMissingRequired(item);
     final referenceMedia = _getItemReferenceMedia(item);
     final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
     final hasFlaggableOptions =
@@ -1967,21 +2003,49 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
+            color: isMissingHighlight
+                ? const Color(0xFFDC2626).withValues(alpha: 0.18)
+                : Colors.black.withValues(alpha: 0.07),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
         border: Border.all(
-          color: isRequired
-              ? Colors.orange.withValues(alpha: 0.5)
-              : const Color(0xFFE4E7EB),
-          width: isRequired ? 2 : 1,
+          color: isMissingHighlight
+              ? const Color(0xFFDC2626)
+              : isRequired
+                  ? Colors.orange.withValues(alpha: 0.5)
+                  : const Color(0xFFE4E7EB),
+          width: isMissingHighlight || isRequired ? 2 : 1,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isMissingHighlight)
+            Container(
+              width: double.infinity,
+              color: const Color(0xFFFEE2E2),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: const Row(
+                children: [
+                  Icon(Icons.error_outline,
+                      size: 16, color: Color(0xFFDC2626)),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Required — please complete this field',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFDC2626),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // ── Header + reference media (padded) ──────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -3857,12 +3921,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     });
   }
 
-  List<String> _getRequiredFieldErrors() {
-    final section = _sections[_currentSection];
+  // Collects the missing required fields in [section] that the user has not yet
+  // filled in (text/options) or attached required media for. Each entry carries
+  // the item's index within the section so the UI can jump straight to it.
+  List<({String label, int itemIndex})> _sectionRequiredFieldErrorsDetailed(
+      Map<String, dynamic> section) {
     final items = section['items'] as List<dynamic>;
-    final errors = <String>[];
+    final errors = <({String label, int itemIndex})>[];
 
-    for (var item in items) {
+    for (var index = 0; index < items.length; index++) {
+      final item = items[index];
       if (!_itemIsRequired(item)) continue;
 
       final uniqueId = _getItemUniqueId(item);
@@ -3871,33 +3939,297 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       if (_itemUsesTextField(item)) {
         final value = itemValues[uniqueId]?.trim() ?? '';
         if (value.isEmpty) {
-          errors.add(title);
+          errors.add((label: title, itemIndex: index));
         }
       } else if (_itemHasOptions(item)) {
         final value = itemValues[uniqueId] ?? 'N/A';
         if (value == 'N/A' || value.isEmpty) {
-          errors.add(title);
+          errors.add((label: title, itemIndex: index));
         }
       }
 
       if (_itemHasImage(item)) {
         if (itemImages[uniqueId] == null || itemImages[uniqueId]!.isEmpty) {
-          errors.add('$title (image)');
+          errors.add((label: '$title (image)', itemIndex: index));
         }
       }
       if (_itemHasVideo(item)) {
         if (itemVideos[uniqueId] == null || itemVideos[uniqueId]!.isEmpty) {
-          errors.add('$title (video)');
+          errors.add((label: '$title (video)', itemIndex: index));
         }
       }
       if (_itemHasFile(item)) {
         if (itemFiles[uniqueId] == null || itemFiles[uniqueId]!.isEmpty) {
-          errors.add('$title (file)');
+          errors.add((label: '$title (file)', itemIndex: index));
         }
       }
     }
 
     return errors;
+  }
+
+  List<String> _getRequiredFieldErrors() {
+    return _sectionRequiredFieldErrorsDetailed(_sections[_currentSection])
+        .map((e) => e.label)
+        .toList();
+  }
+
+  // Validates required fields across every section, grouped by section so the
+  // submit sheet can list them under headers and navigate to each one.
+  List<
+      ({
+        int sectionIndex,
+        String sectionTitle,
+        List<({String label, int itemIndex})> fields
+      })> _getGroupedRequiredFieldErrors() {
+    final groups = <({
+      int sectionIndex,
+      String sectionTitle,
+      List<({String label, int itemIndex})> fields
+    })>[];
+
+    for (var i = 0; i < _sections.length; i++) {
+      final section = _sections[i];
+      final detailed = _sectionRequiredFieldErrorsDetailed(section);
+      if (detailed.isEmpty) continue;
+      groups.add((
+        sectionIndex: i,
+        sectionTitle: (section['title'] as String?) ?? '',
+        fields: detailed,
+      ));
+    }
+
+    return groups;
+  }
+
+  // Jumps the inspection to a specific section/item, resetting capture state
+  // the same way section/item navigation does, and highlights the target.
+  void _jumpToSectionItem(int sectionIndex, int itemIndex) {
+    if (sectionIndex < 0 || sectionIndex >= _sections.length) return;
+    final items = _sections[sectionIndex]['items'] as List<dynamic>;
+    final safeItemIndex =
+        (itemIndex >= 0 && itemIndex < items.length) ? itemIndex : 0;
+    final targetItem = items.isNotEmpty ? items[safeItemIndex] : null;
+
+    _audioTimer?.cancel();
+    _audioTimer = null;
+    _audioRecorder?.stop().then((_) {
+      _audioRecorder?.dispose();
+      _audioRecorder = null;
+    });
+
+    setState(() {
+      _currentSection = sectionIndex;
+      _currentItemIndex = safeItemIndex;
+      _currentCaptureMode = targetItem != null
+          ? _defaultCaptureModeForItem(targetItem)
+          : 'PHOTO';
+      _triggerPhotoCapture = null;
+      _triggerEnlarge = null;
+      _triggerFlashToggle = null;
+      _captureUi.flashOn.value = false;
+      _triggerVideoToggle = null;
+      _triggerVideoPauseResume = null;
+      _captureUi.isVideoRecording.value = false;
+      _captureUi.isVideoPaused.value = false;
+      _isRecordingAudio = false;
+      _audioElapsed.value = Duration.zero;
+    });
+
+    // Highlight the exact field the user was sent back to fill in.
+    _highlightMissingFieldId.value =
+        targetItem != null ? _getItemUniqueId(targetItem) : null;
+    _highlightFlagIssues.value = targetItem != null;
+
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        _autoSave();
+      }
+    });
+  }
+
+  // Graceful replacement for the "required fields missing" snackbar: a bottom
+  // sheet listing what's left, grouped by section, with each row tappable to
+  // jump straight to the offending field.
+  void _showRequiredFieldsSheet(
+    List<
+            ({
+              int sectionIndex,
+              String sectionTitle,
+              List<({String label, int itemIndex})> fields
+            })>
+        groups,
+  ) {
+    final totalMissing =
+        groups.fold<int>(0, (sum, g) => sum + g.fields.length);
+    log('Submission blocked - $totalMissing required field(s) missing across ${groups.length} section(s)');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE4E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.error_outline,
+                            color: Color(0xFFDC2626), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Almost done',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$totalMissing required ${totalMissing == 1 ? "item" : "items"} left to complete',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Color(0xFFE4E7EB)),
+                Flexible(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shrinkWrap: true,
+                    itemCount: groups.length,
+                    itemBuilder: (context, gIndex) {
+                      final group = groups[gIndex];
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (group.sectionTitle.isNotEmpty)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                              child: Text(
+                                group.sectionTitle.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
+                                  color: Color(0xFF9CA3AF),
+                                ),
+                              ),
+                            ),
+                          ...group.fields.map(
+                            (field) => InkWell(
+                              onTap: () {
+                                Navigator.of(sheetContext).pop();
+                                _jumpToSectionItem(
+                                    group.sectionIndex, field.itemIndex);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 12),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFFDC2626),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        field.label,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          color: Color(0xFF111827),
+                                        ),
+                                      ),
+                                    ),
+                                    const Icon(Icons.chevron_right,
+                                        size: 20, color: Color(0xFF9CA3AF)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        final first = groups.first;
+                        _jumpToSectionItem(
+                            first.sectionIndex, first.fields.first.itemIndex);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Go to first missing field'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _nextSection() {
@@ -3955,6 +4287,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       });
     } else {
       if (_isSubmitting) return;
+
+      // Final guard: every required field across all sections must be filled
+      // before we allow submission. Surface any that are missing in a sheet.
+      final missingGroups = _getGroupedRequiredFieldErrors();
+      if (missingGroups.isNotEmpty) {
+        _showRequiredFieldsSheet(missingGroups);
+        return;
+      }
 
       showDialog(
         context: context,
@@ -4205,6 +4545,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   Future<void> _handleSubmission() async {
     if (_isSubmitting) return;
+
+    // Block submission until every required field across all sections is filled.
+    final missingGroups = _getGroupedRequiredFieldErrors();
+    if (missingGroups.isNotEmpty) {
+      _showRequiredFieldsSheet(missingGroups);
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
@@ -5955,6 +6302,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _audioElapsed.dispose();
     _uploadingImages.dispose();
     _highlightFlagIssues.dispose();
+    _highlightMissingFieldId.dispose();
+    _captureUi.dispose();
     super.dispose();
   }
 
