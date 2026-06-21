@@ -12,6 +12,9 @@ import '../models/inspection_history_model.dart';
 import '../models/inspection_stats_model.dart';
 import '../models/inspection_template_model.dart';
 import '../models/inspector.dart';
+import '../models/attendance_record.dart';
+import '../models/inspector_leave.dart';
+import '../models/leave_request.dart';
 import '../models/pagination_data_model.dart';
 import '../models/public_cars_models.dart';
 import '../models/vehicle_model.dart';
@@ -56,6 +59,9 @@ class ApiService {
   static const String getDynamicMyHistoryEndPoint =
       '/dynamic-inspections/my-history';
   static const String inspectionStatsEndPoint = '/dynamic-inspections/stats';
+  static const String adminLeavesEndPoint = '/admin/leaves';
+  static const String adminAttendanceEndPoint = '/admin/attendance';
+  static const String inspectorLeavesEndPoint = '/inspector/leaves';
 
   static Future<Map<String, dynamic>> createInitialInspection(
       Map<String, dynamic> vehicleData) async {
@@ -1695,5 +1701,307 @@ class ApiService {
         'message': 'Network error: ${e.toString()}',
       };
     }
+  }
+
+  // ───────────────────────────── Admin: Leaves ────────────────────────────
+
+  /// `GET /api/admin/leaves` — list all leave requests with optional filters.
+  /// Returns `{success, leaves: List<LeaveRequest>, pagination, message}`.
+  static Future<Map<String, dynamic>> getAdminLeaves({
+    int page = 1,
+    int? inspectorId,
+    String? status,
+    DateTime? date,
+    int perPage = 20,
+  }) async {
+    final params = <String, String>{
+      'page': '$page',
+      'per_page': '$perPage',
+    };
+    if (inspectorId != null) params['inspector_id'] = '$inspectorId';
+    if (status != null && status.isNotEmpty) params['status'] = status;
+    if (date != null) params['date'] = _ymd(date);
+
+    final uri = Uri.parse('$baseUrl$adminLeavesEndPoint')
+        .replace(queryParameters: params);
+    try {
+      final response = await http
+          .get(uri, headers: await _getHeaders(requiresAuth: true))
+          .timeout(_requestTimeout);
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        final rawList = _extractList(responseData, 'leaves');
+        final leaves = rawList
+            .whereType<Map>()
+            .map((e) => LeaveRequest.fromJson(e.cast<String, dynamic>()))
+            .toList();
+        return {
+          'success': true,
+          'leaves': leaves,
+          'pagination': _extractPagination(
+              responseData, _dataMap(responseData)),
+          'message': 'Leaves retrieved successfully',
+        };
+      }
+      return {'success': false, 'message': _handleError(response)};
+    } on UnauthorizedException {
+      return {'success': false, 'message': 'Session expired. Please login again.'};
+    } catch (e) {
+      log('getAdminLeaves error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  /// `POST /api/admin/leaves/{id}/approve`. The response may carry a
+  /// `conflicting_bookings` array of order IDs to reassign.
+  static Future<Map<String, dynamic>> approveLeave(
+    int leaveId, {
+    String? adminNote,
+  }) =>
+      _decideLeave(leaveId, 'approve', adminNote);
+
+  /// `POST /api/admin/leaves/{id}/reject`.
+  static Future<Map<String, dynamic>> rejectLeave(
+    int leaveId, {
+    String? adminNote,
+  }) =>
+      _decideLeave(leaveId, 'reject', adminNote);
+
+  static Future<Map<String, dynamic>> _decideLeave(
+    int leaveId,
+    String action,
+    String? adminNote,
+  ) async {
+    final uri = Uri.parse('$baseUrl$adminLeavesEndPoint/$leaveId/$action');
+    try {
+      final response = await http
+          .post(
+            uri,
+            headers: await _getHeaders(requiresAuth: true),
+            body: json.encode({
+              if (adminNote != null && adminNote.trim().isNotEmpty)
+                'admin_note': adminNote.trim(),
+            }),
+          )
+          .timeout(_requestTimeout);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        final conflicts =
+            AttendanceParse.toStringList(responseData['conflicting_bookings']);
+        return {
+          'success': true,
+          'conflicting_bookings': conflicts,
+          'message': responseData['message'] ??
+              'Leave request ${action}d successfully.',
+        };
+      }
+      return {'success': false, 'message': _handleError(response)};
+    } on UnauthorizedException {
+      return {'success': false, 'message': 'Session expired. Please login again.'};
+    } catch (e) {
+      log('_decideLeave($action) error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  // ──────────────────────────── Admin: Attendance ─────────────────────────
+
+  /// `GET /api/admin/attendance` — list all attendance records with filters.
+  /// Returns `{success, records: List<AttendanceRecord>, pagination, message}`.
+  static Future<Map<String, dynamic>> getAdminAttendance({
+    int page = 1,
+    int? inspectorId,
+    DateTime? date,
+    String? month, // 'YYYY-MM'
+    String? type, // 'available' | 'working'
+    int perPage = 30,
+  }) async {
+    final params = <String, String>{
+      'page': '$page',
+      'per_page': '$perPage',
+    };
+    if (inspectorId != null) params['inspector_id'] = '$inspectorId';
+    if (date != null) params['date'] = _ymd(date);
+    if (month != null && month.isNotEmpty) params['month'] = month;
+    if (type != null && type.isNotEmpty) params['type'] = type;
+
+    final uri = Uri.parse('$baseUrl$adminAttendanceEndPoint')
+        .replace(queryParameters: params);
+    try {
+      final response = await http
+          .get(uri, headers: await _getHeaders(requiresAuth: true))
+          .timeout(_requestTimeout);
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        final rawList = _extractList(responseData, 'attendance');
+        final records = rawList
+            .whereType<Map>()
+            .map((e) => AttendanceRecord.fromJson(e.cast<String, dynamic>()))
+            .toList();
+        return {
+          'success': true,
+          'records': records,
+          'pagination': _extractPagination(
+              responseData, _dataMap(responseData)),
+          'message': 'Attendance retrieved successfully',
+        };
+      }
+      return {'success': false, 'message': _handleError(response)};
+    } on UnauthorizedException {
+      return {'success': false, 'message': 'Session expired. Please login again.'};
+    } catch (e) {
+      log('getAdminAttendance error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  // ─────────────────────────── Inspector: Leaves ──────────────────────────
+
+  /// `GET /api/inspector/leaves` — the signed-in inspector's own requests.
+  /// Returns `{success, leaves: List<InspectorLeave>, pagination, message}`.
+  static Future<Map<String, dynamic>> getInspectorLeaves({
+    int page = 1,
+    String? status,
+    int perPage = 15,
+  }) async {
+    final params = <String, String>{
+      'page': '$page',
+      'per_page': '$perPage',
+    };
+    if (status != null && status.isNotEmpty) params['status'] = status;
+
+    final uri = Uri.parse('$baseUrl$inspectorLeavesEndPoint')
+        .replace(queryParameters: params);
+    try {
+      final response = await http
+          .get(uri, headers: await _getHeaders(requiresAuth: true))
+          .timeout(_requestTimeout);
+
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        final rawList = _extractList(responseData, 'leaves');
+        final leaves = rawList
+            .whereType<Map>()
+            .map((e) => InspectorLeave.fromJson(e.cast<String, dynamic>()))
+            .toList();
+        return {
+          'success': true,
+          'leaves': leaves,
+          'pagination':
+              _extractPagination(responseData, _dataMap(responseData)),
+          'message': 'Leaves retrieved successfully',
+        };
+      }
+      return {'success': false, 'message': _handleError(response)};
+    } on UnauthorizedException {
+      return {'success': false, 'message': 'Session expired. Please login again.'};
+    } catch (e) {
+      log('getInspectorLeaves error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  /// `POST /api/inspector/leaves` — request leave for a single day.
+  /// On success returns `{success, leave, warning, message}`; `warning` is a
+  /// non-null string when the inspector has bookings to be reassigned that day.
+  static Future<Map<String, dynamic>> requestLeave({
+    required DateTime leaveDate,
+    String? reason,
+  }) async {
+    final uri = Uri.parse('$baseUrl$inspectorLeavesEndPoint');
+    try {
+      final response = await http
+          .post(
+            uri,
+            headers: await _getHeaders(requiresAuth: true),
+            body: json.encode({
+              'leave_date': _ymd(leaveDate),
+              if (reason != null && reason.trim().isNotEmpty)
+                'reason': reason.trim(),
+            }),
+          )
+          .timeout(_requestTimeout);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final responseData = json.decode(response.body) as Map<String, dynamic>;
+        final data = responseData['data'];
+        return {
+          'success': true,
+          'leave': data is Map
+              ? InspectorLeave.fromJson(data.cast<String, dynamic>())
+              : null,
+          'warning': responseData['warning']?.toString(),
+          'message':
+              responseData['message']?.toString() ?? 'Leave request submitted.',
+        };
+      }
+      return {'success': false, 'message': _handleError(response)};
+    } on UnauthorizedException {
+      return {'success': false, 'message': 'Session expired. Please login again.'};
+    } catch (e) {
+      log('requestLeave error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  /// `DELETE /api/inspector/leaves/{id}` — cancel a still-pending request.
+  static Future<Map<String, dynamic>> cancelLeave(int leaveId) async {
+    final uri = Uri.parse('$baseUrl$inspectorLeavesEndPoint/$leaveId');
+    try {
+      final response = await http
+          .delete(uri, headers: await _getHeaders(requiresAuth: true))
+          .timeout(_requestTimeout);
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        String message = 'Leave request cancelled.';
+        if (response.body.isNotEmpty) {
+          try {
+            final body = json.decode(response.body);
+            if (body is Map && body['message'] != null) {
+              message = body['message'].toString();
+            }
+          } catch (_) {}
+        }
+        return {'success': true, 'message': message};
+      }
+      return {'success': false, 'message': _handleError(response)};
+    } on UnauthorizedException {
+      return {'success': false, 'message': 'Session expired. Please login again.'};
+    } catch (e) {
+      log('cancelLeave error: $e');
+      return {'success': false, 'message': 'Network error: ${e.toString()}'};
+    }
+  }
+
+  /// Formats a [DateTime] as the `YYYY-MM-DD` the API expects for `date` params.
+  static String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
+
+  /// Returns the map under `data`, or the top-level map if `data` isn't a map.
+  static Map<String, dynamic> _dataMap(Map<String, dynamic> responseData) {
+    final data = responseData['data'];
+    if (data is Map) return data.cast<String, dynamic>();
+    return responseData;
+  }
+
+  /// Pulls a list out of a response that may put it at the top level, under
+  /// `data` directly (paginated `data: [...]`), or under `data.<key>`.
+  static List<dynamic> _extractList(
+      Map<String, dynamic> responseData, String key) {
+    final data = responseData['data'];
+    if (data is List) return data;
+    if (data is Map) {
+      final m = data.cast<String, dynamic>();
+      for (final candidate in [m[key], m['data'], m['items']]) {
+        if (candidate is List) return candidate;
+      }
+    }
+    if (responseData[key] is List) return responseData[key] as List;
+    return const [];
   }
 }
