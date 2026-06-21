@@ -661,7 +661,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   }
 
   /// Builds the items list for a section in save-step format.
-  List<Map<String, dynamic>> _buildSectionItems(Map<String, dynamic> section) {
+  /// Builds the save-step item list for a section.
+  ///
+  /// When [httpOnly] is true, any media still holding a local (non-http) path is
+  /// emitted as null instead of the raw path. The final server submit uses this
+  /// so a local path is never POSTed as imagePath — otherwise the server stores
+  /// an unresolvable path and the field shows empty on resume, clobbering any
+  /// URL an earlier per-field save / upload-queue had already persisted.
+  /// Defaults to false so the offline-save and upload-queue descriptors keep the
+  /// local paths they still need to upload later.
+  List<Map<String, dynamic>> _buildSectionItems(
+    Map<String, dynamic> section, {
+    bool httpOnly = false,
+  }) {
     final items = <Map<String, dynamic>>[];
     for (var item in section['items'] as List<dynamic>) {
       final uniqueId = _getItemUniqueId(item);
@@ -691,10 +703,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
 
       final remarks = itemRemarks[uniqueId];
-      final imagePath = itemImages[uniqueId];
-      final multiImages = itemMultiImages[uniqueId];
-      final videoPath = itemVideos[uniqueId];
-      final audioPath = itemAudios[uniqueId];
+      final imagePath =
+          httpOnly ? _httpOrNull(itemImages[uniqueId]) : itemImages[uniqueId];
+      final multiImages = httpOnly
+          ? _allHttpOrNull(itemMultiImages[uniqueId])
+          : itemMultiImages[uniqueId];
+      final videoPath =
+          httpOnly ? _httpOrNull(itemVideos[uniqueId]) : itemVideos[uniqueId];
+      final audioPath =
+          httpOnly ? _httpOrNull(itemAudios[uniqueId]) : itemAudios[uniqueId];
       final filePayload = itemFiles[uniqueId];
       String? filePath;
       if (filePayload != null) {
@@ -705,6 +722,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           filePath = filePayload;
         }
       }
+      if (httpOnly) filePath = _httpOrNull(filePath);
 
       items.add({
         'id': uniqueId,
@@ -4232,6 +4250,141 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     );
   }
 
+  /// Shown when one or more media uploads fail during submission, so the user
+  /// can retry instead of the field silently arriving empty on the server.
+  void _showUploadFailedSheet(List<String> fields) {
+    log('Submission blocked - ${fields.length} media upload(s) failed: $fields');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE4E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.cloud_off,
+                            color: Color(0xFFDC2626), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Some media didn\'t upload',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${fields.length} ${fields.length == 1 ? "item" : "items"} failed to upload. Check your connection and submit again.',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Color(0xFFE4E7EB)),
+                Flexible(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shrinkWrap: true,
+                    itemCount: fields.length,
+                    itemBuilder: (context, index) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFDC2626),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                fields[index],
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  color: Color(0xFF111827),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        _handleSubmission();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Retry submission'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _nextSection() {
     if (!_checkCurrentItemFlagIssue()) return;
     _highlightFlagIssues.value = false;
@@ -4332,14 +4485,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
-  Map<String, dynamic> _buildSubmissionBody() {
+  /// Builds the full submission payload.
+  ///
+  /// Pass [httpOnly] true for the actual server submit so local media paths are
+  /// dropped (never POSTed). Leave false for offline-saved copies, whose local
+  /// paths are still needed and get remapped to URLs by the retry path.
+  Map<String, dynamic> _buildSubmissionBody({bool httpOnly = false}) {
     Map<String, dynamic> inspectionData = {};
 
     for (var section in _sections) {
       final sectionName = (section['name'] as String?) ??
           (section['title'] as String).toLowerCase().replaceAll(' ', '_');
       // Reuse _buildSectionItems to avoid duplication.
-      final sectionItems = _buildSectionItems(section);
+      final sectionItems = _buildSectionItems(section, httpOnly: httpOnly);
       inspectionData[sectionName] = {
         'title': section['title'],
         'items': sectionItems,
@@ -4404,9 +4562,23 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     };
   }
 
-  /// Uploads any images that are still local paths (capture-time upload failed).
+  /// Uploads any media that is still a local path (capture-time upload failed).
   /// Runs before submission so the backend always receives URLs, not local paths.
-  Future<void> _uploadRemainingImages() async {
+  ///
+  /// URLs are written into the in-memory maps unconditionally (no longer behind a
+  /// `mounted` setState) so a successful upload is never lost if the page unmounts
+  /// mid-run; the setState only repaints. Returns the list of field titles whose
+  /// upload failed so the caller can block submission instead of silently POSTing
+  /// a local path the server can't resolve.
+  Future<List<String>> _uploadRemainingImages() async {
+    final failed = <String>[];
+
+    void markFailed(dynamic item) {
+      final title = _getItemTitle(item);
+      final label = title.isNotEmpty ? title : _getItemFieldId(item);
+      if (label.isNotEmpty && !failed.contains(label)) failed.add(label);
+    }
+
     for (var section in _sections) {
       final sectionTitle = section['title'] as String;
       for (var item in section['items'] as List<dynamic>) {
@@ -4422,15 +4594,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             section: sectionTitle,
             itemId: fieldId,
           );
-          if (mounted) {
-            setState(() {
-              _unmarkUploading(uniqueId);
-              final url = result['url']?.toString();
-              if (result['success'] == true && url != null && url.isNotEmpty) {
-                itemImages[uniqueId] = url;
-              }
-            });
+          final url = result['url']?.toString();
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            itemImages[uniqueId] = url;
+          } else {
+            markFailed(item);
           }
+          if (mounted) setState(() => _unmarkUploading(uniqueId));
         }
 
         final multiImages = itemMultiImages[uniqueId];
@@ -4444,16 +4614,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 section: sectionTitle,
                 itemId: fieldId,
               );
-              updated.add(
-                result['success'] == true
-                    ? (result['url']?.toString() ?? path)
-                    : path,
-              );
+              final url = result['url']?.toString();
+              if (result['success'] == true && url != null && url.isNotEmpty) {
+                updated.add(url);
+              } else {
+                updated.add(path);
+                markFailed(item);
+              }
             } else {
               updated.add(path);
             }
           }
-          if (mounted) setState(() => itemMultiImages[uniqueId] = updated);
+          itemMultiImages[uniqueId] = updated;
+          if (mounted) setState(() {});
         }
 
         final videoPath = itemVideos[uniqueId];
@@ -4466,15 +4639,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             itemId: fieldId,
             fieldName: 'image',
           );
-          if (mounted) {
-            setState(() {
-              _unmarkUploading(uniqueId);
-              final url = result['url']?.toString();
-              if (result['success'] == true && url != null && url.isNotEmpty) {
-                itemVideos[uniqueId] = url;
-              }
-            });
+          final url = result['url']?.toString();
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            itemVideos[uniqueId] = url;
+          } else {
+            markFailed(item);
           }
+          if (mounted) setState(() => _unmarkUploading(uniqueId));
         }
 
         final audioPath = itemAudios[uniqueId];
@@ -4487,15 +4658,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             itemId: fieldId,
             fieldName: 'image',
           );
-          if (mounted) {
-            setState(() {
-              _unmarkUploading(uniqueId);
-              final url = result['url']?.toString();
-              if (result['success'] == true && url != null && url.isNotEmpty) {
-                itemAudios[uniqueId] = url;
-              }
-            });
+          final url = result['url']?.toString();
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            itemAudios[uniqueId] = url;
+          } else {
+            markFailed(item);
           }
+          if (mounted) setState(() => _unmarkUploading(uniqueId));
         }
 
         final filePayload = itemFiles[uniqueId];
@@ -4523,24 +4692,23 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               itemId: fieldId,
               fieldName: 'image',
             );
-            if (mounted) {
-              setState(() {
-                _unmarkUploading(uniqueId);
-                final url = result['url']?.toString();
-                if (result['success'] == true && url != null && url.isNotEmpty) {
-                  itemFiles[uniqueId] = json.encode({
-                    'filePath': url,
-                    'fileName': fileName ?? localPath!.split('/').last,
-                    'fileType': fileType ?? '',
-                  });
-                }
+            final url = result['url']?.toString();
+            if (result['success'] == true && url != null && url.isNotEmpty) {
+              itemFiles[uniqueId] = json.encode({
+                'filePath': url,
+                'fileName': fileName ?? localPath.split('/').last,
+                'fileType': fileType ?? '',
               });
+            } else {
+              markFailed(item);
             }
+            if (mounted) setState(() => _unmarkUploading(uniqueId));
           }
         }
       }
     }
     await _saveDataLocally();
+    return failed;
   }
 
   Future<void> _handleSubmission() async {
@@ -4627,8 +4795,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
 
       try {
-        await _uploadRemainingImages();
-        final body = _buildSubmissionBody();
+        // Process 1: upload any still-local media. If any upload fails, abort
+        // before building the body — submitting now would POST a local path the
+        // server can't resolve and the field would come back empty on resume.
+        final failedUploads = await _uploadRemainingImages();
+        if (failedUploads.isNotEmpty) {
+          if (mounted) {
+            setState(() => _isSubmitting = false);
+            _showUploadFailedSheet(failedUploads);
+          }
+          return;
+        }
+        // Process 2: build the body with httpOnly so only uploaded URLs are sent.
+        final body = _buildSubmissionBody(httpOnly: true);
         // Finalise the existing server draft by id (POST /{id}/submit) so we
         // never create a duplicate. Only fall back to the legacy all-at-once
         // create when there is genuinely no server id yet.
