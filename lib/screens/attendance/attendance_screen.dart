@@ -6,10 +6,12 @@ import '../../models/inspector_leave.dart';
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
 import 'admin_attendance_screen.dart';
+import 'inspector_attendance_screen.dart';
 import 'leave_application_screen.dart';
 
 /// Entry point for the attendance tab. Admins get the management view wired to
-/// the admin leave/attendance API; inspectors get their own leave history.
+/// the admin leave/attendance API; inspectors get their own attendance page
+/// (check-in/out) with leaves tucked behind a button.
 class AttendanceScreen extends ConsumerWidget {
   const AttendanceScreen({super.key});
 
@@ -18,18 +20,20 @@ class AttendanceScreen extends ConsumerWidget {
     final isAdmin = ref.watch(userProvider.select((s) => s.isAdmin()));
     return isAdmin
         ? const AdminAttendanceScreen()
-        : const _InspectorLeavesScreen();
+        : const InspectorAttendanceScreen();
   }
 }
 
-class _InspectorLeavesScreen extends StatefulWidget {
-  const _InspectorLeavesScreen();
+/// The signed-in inspector's leave history. Reached from the Attendance page's
+/// "Leaves" button, so it shows a back arrow.
+class InspectorLeavesScreen extends StatefulWidget {
+  const InspectorLeavesScreen({super.key});
 
   @override
-  State<_InspectorLeavesScreen> createState() => _InspectorLeavesScreenState();
+  State<InspectorLeavesScreen> createState() => _InspectorLeavesScreenState();
 }
 
-class _InspectorLeavesScreenState extends State<_InspectorLeavesScreen> {
+class _InspectorLeavesScreenState extends State<InspectorLeavesScreen> {
   static const _primary = Color(0xFF0F172A);
   static const _accent = Color(0xFF3B82F6);
   static const _accentLight = Color(0xFFEFF6FF);
@@ -269,7 +273,7 @@ class _InspectorLeavesScreenState extends State<_InspectorLeavesScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        automaticallyImplyLeading: false,
+        foregroundColor: _primary,
         title: const Text(
           'My Leaves',
           style: TextStyle(
