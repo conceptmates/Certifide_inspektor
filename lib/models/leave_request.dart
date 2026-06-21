@@ -63,7 +63,7 @@ class LeaveRequest {
           json['from_date'] ??
           json['start_date']),
       reason: (json['reason'] ?? json['note'] ?? '').toString(),
-      adminNote: json['admin_note']?.toString(),
+      adminNote: AttendanceParse.toNullableString(json['admin_note']),
       createdAt: AttendanceParse.toDate(json['created_at']),
       conflictingBookings:
           AttendanceParse.toStringList(json['conflicting_bookings']),

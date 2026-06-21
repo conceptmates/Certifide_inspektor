@@ -94,4 +94,16 @@ extension AttendanceParse on Never {
     if (v is List) return v.map((e) => e.toString()).toList();
     return const [];
   }
+
+  /// Returns a trimmed string, or null when the value is absent, blank, or a
+  /// stringified null (`"null"`/`"none"`) — so optional text fields don't
+  /// render placeholder noise.
+  static String? toNullableString(dynamic v) {
+    if (v == null) return null;
+    final s = v.toString().trim();
+    if (s.isEmpty || s.toLowerCase() == 'null' || s.toLowerCase() == 'none') {
+      return null;
+    }
+    return s;
+  }
 }

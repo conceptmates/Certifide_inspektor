@@ -37,7 +37,7 @@ class InspectorLeave {
       leaveDate: AttendanceParse.toDate(json['leave_date'] ?? json['date']),
       reason: (json['reason'] ?? '').toString(),
       status: (json['status'] ?? 'pending').toString(),
-      adminNote: json['admin_note']?.toString(),
+      adminNote: AttendanceParse.toNullableString(json['admin_note']),
       reviewedAt: AttendanceParse.toDate(json['reviewed_at']),
       reviewedBy: reviewedBy is Map
           ? (reviewedBy['name'] ?? reviewedBy['id'])?.toString()
