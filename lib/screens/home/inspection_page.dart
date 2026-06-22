@@ -677,6 +677,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final items = <Map<String, dynamic>>[];
     for (var item in section['items'] as List<dynamic>) {
       final uniqueId = _getItemUniqueId(item);
+      final fieldId = _getItemFieldId(item);
       final title = _getItemTitle(item);
 
       String value = itemValues[uniqueId] ?? '';
@@ -726,6 +727,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
       items.add({
         'id': uniqueId,
+        // Server field id, kept alongside the unique key so an offline record
+        // can tag its media uploads with the same itemId the online path uses
+        // when it is retried later (uniqueId != fieldId for templated items).
+        'fieldId': fieldId,
         'title': title,
         'value': value,
         'remarks': (remarks != null && remarks.isNotEmpty) ? remarks : null,

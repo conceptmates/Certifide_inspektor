@@ -628,6 +628,30 @@ class InspectionNotifier extends _$InspectionNotifier {
       // abort-on-failure guard the online submit path uses.
       bool anyUploadFailed = false;
 
+      // Recover each item key -> server field id from the stored body so media
+      // uploaded on retry is tagged with the same itemId the online path sends.
+      // Falls back to the item key for legacy records saved before fieldId was
+      // persisted. (Images already carry their fieldId via PendingImage.itemId.)
+      final fieldIdByKey = <String, String>{};
+      final storedData = currentInspection.data['inspection_data'];
+      if (storedData is Map<String, dynamic>) {
+        for (final section in storedData.values) {
+          if (section is Map<String, dynamic>) {
+            final items = section['items'];
+            if (items is List) {
+              for (final item in items) {
+                if (item is Map<String, dynamic> && item['id'] != null) {
+                  final fid = item['fieldId'];
+                  if (fid != null && fid.toString().isNotEmpty) {
+                    fieldIdByKey[item['id'].toString()] = fid.toString();
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
       // Upload pending images
       if (inspection.pendingImages.isNotEmpty) {
         state = state.copyWith(
@@ -685,7 +709,7 @@ class InspectionNotifier extends _$InspectionNotifier {
           final result = await ApiService.uploadImage(
             entry.value,
             section: '',
-            itemId: entry.key,
+            itemId: fieldIdByKey[entry.key] ?? entry.key,
             fieldName: 'image',
           );
           final url = result['url'] as String?;
@@ -702,7 +726,7 @@ class InspectionNotifier extends _$InspectionNotifier {
           final result = await ApiService.uploadImage(
             entry.value,
             section: '',
-            itemId: entry.key,
+            itemId: fieldIdByKey[entry.key] ?? entry.key,
             fieldName: 'image',
           );
           final url = result['url'] as String?;
@@ -719,7 +743,7 @@ class InspectionNotifier extends _$InspectionNotifier {
           final result = await ApiService.uploadImage(
             entry.value,
             section: '',
-            itemId: entry.key,
+            itemId: fieldIdByKey[entry.key] ?? entry.key,
             fieldName: 'image',
           );
           final url = result['url'] as String?;
@@ -744,7 +768,7 @@ class InspectionNotifier extends _$InspectionNotifier {
           final result = await ApiService.uploadImage(
             p,
             section: '',
-            itemId: entry.key,
+            itemId: fieldIdByKey[entry.key] ?? entry.key,
             fieldName: 'image',
           );
           final url = result['url'] as String?;
