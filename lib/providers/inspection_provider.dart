@@ -749,23 +749,16 @@ class InspectionNotifier extends _$InspectionNotifier {
           audioReplacements.isNotEmpty ||
           fileReplacements.isNotEmpty ||
           multiImageReplacements.isNotEmpty) {
+        // Replacement maps are already keyed by the item key (the same key the
+        // videos/audios/files maps use), which is exactly what
+        // updateInspectionMedia's addAll expects. The previous comprehension
+        // matched containsKey(e.value) — the local PATH — against a map keyed
+        // by e.key, so it was always false and nothing was ever persisted.
         await LocalStorageService.updateInspectionMedia(
           inspectionId: inspection.id,
-          uploadedVideos: {
-            for (var e in currentInspection.videos.entries)
-              if (videoReplacements.containsKey(e.value))
-                e.key: videoReplacements[e.value]!,
-          },
-          uploadedAudios: {
-            for (var e in currentInspection.audios.entries)
-              if (audioReplacements.containsKey(e.value))
-                e.key: audioReplacements[e.value]!,
-          },
-          uploadedFiles: {
-            for (var e in currentInspection.files.entries)
-              if (fileReplacements.containsKey(e.value))
-                e.key: fileReplacements[e.value]!,
-          },
+          uploadedVideos: videoReplacements,
+          uploadedAudios: audioReplacements,
+          uploadedFiles: fileReplacements,
           uploadedMultiImages: multiImageReplacements,
         );
       }
