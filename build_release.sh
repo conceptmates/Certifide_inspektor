@@ -65,6 +65,14 @@ else
 fi
 echo "✅ Updated pubspec.yaml"
 
+# Ask which kind of release build to produce
+echo ""
+echo "Which build do you want to produce?"
+echo "  [1] Flutter App Bundle (standard release)"
+echo "  [2] Shorebird release (code-push enabled)"
+echo "  [Enter] Flutter App Bundle (default)"
+read -p "Choice: " BUILD_CHOICE
+
 echo ""
 echo "🧹 Cleaning project..."
 flutter clean
@@ -72,12 +80,27 @@ flutter clean
 echo "📦 Getting dependencies..."
 flutter pub get
 
-echo "🔨 Building release App Bundle with obfuscation..."
-flutter build appbundle \
-  --release \
-  --obfuscate \
-  --split-debug-info=build/debug-info
+case $BUILD_CHOICE in
+  2)
+    echo "🐦 Building Shorebird release with obfuscation..."
+    shorebird release android \
+      -- \
+      --obfuscate \
+      --split-debug-info=build/debug-info
 
-echo "✅ Build completed successfully!"
-echo "📍 App Bundle location: build/app/outputs/bundle/release/app-release.aab"
-echo "📍 Debug symbols location: build/debug-info/"
+    echo "✅ Shorebird release completed successfully!"
+    echo "📍 App Bundle location: build/app/outputs/bundle/release/app-release.aab"
+    echo "📍 Debug symbols location: build/debug-info/"
+    ;;
+  *)
+    echo "🔨 Building release App Bundle with obfuscation..."
+    flutter build appbundle \
+      --release \
+      --obfuscate \
+      --split-debug-info=build/debug-info
+
+    echo "✅ Build completed successfully!"
+    echo "📍 App Bundle location: build/app/outputs/bundle/release/app-release.aab"
+    echo "📍 Debug symbols location: build/debug-info/"
+    ;;
+esac

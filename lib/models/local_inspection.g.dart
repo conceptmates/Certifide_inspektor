@@ -8,7 +8,7 @@ part of 'local_inspection.dart';
 
 class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
   @override
-  final int typeId = 3;
+  final typeId = 3;
 
   @override
   LocalInspection read(BinaryReader reader) {
@@ -21,21 +21,23 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       createdAt: fields[1] as DateTime,
       data: (fields[2] as Map).cast<String, dynamic>(),
       images: (fields[3] as Map).cast<String, String>(),
-      isSubmitted: fields[4] as bool,
-      status: fields[5] as String,
+      isSubmitted: fields[4] == null ? false : fields[4] as bool,
+      status: fields[5] == null ? 'pending' : fields[5] as String,
       pendingImages: (fields[6] as Map?)?.cast<String, PendingImage>(),
       videos: (fields[7] as Map?)?.cast<String, String>(),
       audios: (fields[8] as Map?)?.cast<String, String>(),
       files: (fields[9] as Map?)?.cast<String, String>(),
       multiImages: (fields[10] as Map?)?.map((dynamic k, dynamic v) =>
           MapEntry(k as String, (v as List).cast<String>())),
+      pendingMedia: (fields[11] as Map?)?.cast<String, PendingMedia>(),
+      serverInspectionId: (fields[12] as num?)?.toInt(),
     );
   }
 
   @override
   void write(BinaryWriter writer, LocalInspection obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -57,7 +59,11 @@ class LocalInspectionAdapter extends TypeAdapter<LocalInspection> {
       ..writeByte(9)
       ..write(obj.files)
       ..writeByte(10)
-      ..write(obj.multiImages);
+      ..write(obj.multiImages)
+      ..writeByte(11)
+      ..write(obj.pendingMedia)
+      ..writeByte(12)
+      ..write(obj.serverInspectionId);
   }
 
   @override

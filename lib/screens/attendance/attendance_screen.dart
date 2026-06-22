@@ -1,23 +1,60 @@
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/inspector_leave.dart';
+import '../../providers/user_provider.dart';
+import '../../services/api_services.dart';
+import 'admin_attendance_screen.dart';
+import 'inspector_attendance_screen.dart';
 import 'leave_application_screen.dart';
 
-class AttendanceScreen extends StatefulWidget {
+/// Master switch for the inspector attendance tracker (check-in/check-out).
+///
+/// While `false`, inspectors see only their leave history with an
+/// "Attendance — coming soon" banner. Flip to `true` to restore the full
+/// check-in/out page ([InspectorAttendanceScreen]) — nothing else needs to
+/// change.
+const bool kInspectorAttendanceEnabled = false;
+
+/// Entry point for the attendance tab. Admins get the management view wired to
+/// the admin leave/attendance API; inspectors get their own attendance page
+/// (check-in/out) with leaves tucked behind a button — unless the tracker is
+/// disabled via [kInspectorAttendanceEnabled], in which case they see the
+/// leave history with a "coming soon" banner.
+class AttendanceScreen extends ConsumerWidget {
   const AttendanceScreen({super.key});
 
   @override
-  State<AttendanceScreen> createState() => _AttendanceScreenState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isAdmin = ref.watch(userProvider.select((s) => s.isAdmin()));
+    if (isAdmin) return const AdminAttendanceScreen();
+    return kInspectorAttendanceEnabled
+        ? const InspectorAttendanceScreen()
+        : const InspectorLeavesScreen(showComingSoon: true);
+  }
 }
 
-class _AttendanceScreenState extends State<AttendanceScreen>
-    with SingleTickerProviderStateMixin {
+/// The signed-in inspector's leave history. Reached from the Attendance page's
+/// "Leaves" button (so it shows a back arrow), or rendered as the tab root with
+/// [showComingSoon] while the attendance tracker is disabled.
+class InspectorLeavesScreen extends StatefulWidget {
+  const InspectorLeavesScreen({super.key, this.showComingSoon = false});
+
+  /// When true, an "Attendance — coming soon" banner sits above the list.
+  final bool showComingSoon;
+
+  @override
+  State<InspectorLeavesScreen> createState() => _InspectorLeavesScreenState();
+}
+
+class _InspectorLeavesScreenState extends State<InspectorLeavesScreen> {
   static const _primary = Color(0xFF0F172A);
   static const _accent = Color(0xFF3B82F6);
   static const _accentLight = Color(0xFFEFF6FF);
   static const _surface = Color(0xFFF8FAFC);
   static const _textSecondary = Color(0xFF64748B);
+  static const _border = Color(0xFFE2E8F0);
   static const _green = Color(0xFF10B981);
   static const _greenLight = Color(0xFFECFDF5);
   static const _red = Color(0xFFEF4444);
@@ -25,230 +62,223 @@ class _AttendanceScreenState extends State<AttendanceScreen>
   static const _amber = Color(0xFFF59E0B);
   static const _amberLight = Color(0xFFFFFBEB);
 
-  bool _isCheckedIn = false;
-  bool _isLocating = false;
-  DateTime? _checkInTime;
-  DateTime? _checkOutTime;
-  Position? _checkInLocation;
-  late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
+  static const _statusFilters = ['all', 'pending', 'approved', 'rejected'];
 
-  final List<_AttendanceLog> _logs = [
-    _AttendanceLog(
-      date: DateTime.now().subtract(const Duration(days: 1)),
-      checkIn: const TimeOfDay(hour: 9, minute: 3),
-      checkOut: const TimeOfDay(hour: 18, minute: 12),
-      status: _LogStatus.present,
-    ),
-    _AttendanceLog(
-      date: DateTime.now().subtract(const Duration(days: 2)),
-      checkIn: const TimeOfDay(hour: 9, minute: 45),
-      checkOut: const TimeOfDay(hour: 18, minute: 0),
-      status: _LogStatus.late,
-    ),
-    _AttendanceLog(
-      date: DateTime.now().subtract(const Duration(days: 3)),
-      checkIn: const TimeOfDay(hour: 9, minute: 1),
-      checkOut: const TimeOfDay(hour: 17, minute: 55),
-      status: _LogStatus.present,
-    ),
-    _AttendanceLog(
-      date: DateTime.now().subtract(const Duration(days: 4)),
-      checkIn: null,
-      checkOut: null,
-      status: _LogStatus.absent,
-    ),
-    _AttendanceLog(
-      date: DateTime.now().subtract(const Duration(days: 5)),
-      checkIn: const TimeOfDay(hour: 9, minute: 0),
-      checkOut: const TimeOfDay(hour: 18, minute: 5),
-      status: _LogStatus.present,
-    ),
-    _AttendanceLog(
-      date: DateTime.now().subtract(const Duration(days: 8)),
-      checkIn: null,
-      checkOut: null,
-      status: _LogStatus.leave,
-      note: 'Approved leave',
-    ),
-    _AttendanceLog(
-      date: DateTime.now().subtract(const Duration(days: 9)),
-      checkIn: const TimeOfDay(hour: 9, minute: 10),
-      checkOut: const TimeOfDay(hour: 18, minute: 0),
-      status: _LogStatus.present,
-    ),
-  ];
+  final _scrollController = ScrollController();
+  final List<InspectorLeave> _leaves = [];
+
+  String _status = 'all';
+  bool _loading = false;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  int _page = 1;
+  String? _error;
+  final Set<int> _busyIds = {};
 
   @override
   void initState() {
     super.initState();
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat(reverse: true);
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
+    _scrollController.addListener(_onScroll);
+    _load(reset: true);
   }
 
   @override
   void dispose() {
-    _pulseController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _handleCheckInOut() async {
-    if (_isCheckedIn) {
-      setState(() {
-        _checkOutTime = DateTime.now();
-        _isCheckedIn = false;
-      });
-      return;
-    }
-
-    setState(() => _isLocating = true);
-
-    try {
-      final position = await _fetchLocation();
-      if (!mounted) return;
-      setState(() {
-        _checkInTime = DateTime.now();
-        _checkOutTime = null;
-        _checkInLocation = position;
-        _isCheckedIn = true;
-        _isLocating = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLocating = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: _red,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 240 &&
+        !_loadingMore &&
+        _hasMore &&
+        !_loading) {
+      _load();
     }
   }
 
-  Future<Position> _fetchLocation() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      if (!mounted) throw 'Location unavailable';
-      await _showLocationDialog(
-        title: 'Turn on Location',
-        message:
-            'Location services are off. Please enable GPS to record your check-in location.',
-        actionLabel: 'Open Settings',
-        onAction: Geolocator.openLocationSettings,
-      );
-      throw 'Location services are disabled.';
+  Future<void> _load({bool reset = false}) async {
+    if (reset) {
+      setState(() {
+        _loading = true;
+        _error = null;
+        _page = 1;
+        _hasMore = true;
+        _leaves.clear();
+      });
+    } else {
+      if (_loadingMore) return;
+      setState(() => _loadingMore = true);
     }
 
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied) {
-      throw 'Location permission denied.';
-    }
-    if (permission == LocationPermission.deniedForever) {
-      if (!mounted) throw 'Location unavailable';
-      await _showLocationDialog(
-        title: 'Location Permission Required',
-        message:
-            'Location access is permanently denied. Please enable it in Settings to record your check-in coordinates.',
-        actionLabel: 'Open Settings',
-        onAction: Geolocator.openAppSettings,
-      );
-      throw 'Location permission permanently denied.';
-    }
-
-    return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 10),
-      ),
+    final result = await ApiService.getInspectorLeaves(
+      page: _page,
+      status: _status == 'all' ? null : _status,
     );
+
+    if (!mounted) return;
+
+    if (result['success'] == true) {
+      final fetched = (result['leaves'] as List).cast<InspectorLeave>();
+      final pagination = result['pagination'];
+      final lastPage = (pagination?.lastPage as int?) ?? _page;
+      setState(() {
+        _leaves.addAll(fetched);
+        _hasMore = _page < lastPage && fetched.isNotEmpty;
+        if (_hasMore) _page++;
+        _loading = false;
+        _loadingMore = false;
+      });
+    } else {
+      setState(() {
+        _error = result['message']?.toString() ?? 'Something went wrong';
+        _loading = false;
+        _loadingMore = false;
+      });
+    }
   }
 
-  Future<void> _showLocationDialog({
-    required String title,
-    required String message,
-    required String actionLabel,
-    required Future<void> Function() onAction,
-  }) async {
-    await showDialog<void>(
+  Future<void> _openApplyLeave() async {
+    final submitted = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const LeaveApplicationScreen()),
+    );
+    if (submitted == true) {
+      _load(reset: true);
+    }
+  }
+
+  Future<void> _cancel(InspectorLeave leave) async {
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         backgroundColor: Colors.white,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _accentLight,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Icon(Icons.location_on_rounded,
-                  size: 20, color: _accent),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: _primary,
-                ),
-              ),
-            ),
-          ],
+        title: const Text(
+          'Cancel leave request?',
+          style: TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w700, color: _primary),
         ),
         content: Text(
-          message,
+          'Your pending request for '
+          '${leave.leaveDate != null ? DateFormat('d MMM yyyy').format(leave.leaveDate!) : 'this date'} '
+          'will be withdrawn.',
           style: const TextStyle(
-            fontSize: 14,
-            color: _textSecondary,
-            height: 1.5,
-          ),
+              fontSize: 13, color: _textSecondary, height: 1.5),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel',
-                style: TextStyle(color: _textSecondary)),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Keep', style: TextStyle(color: _textSecondary)),
           ),
           ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(ctx);
-              await onAction();
-            },
+            onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _accent,
+              backgroundColor: _red,
               foregroundColor: Colors.white,
               elevation: 0,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+              shape:
+                  RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            child: Text(actionLabel),
+            child: const Text('Cancel Request'),
           ),
         ],
       ),
     );
+    if (confirm != true) return;
+
+    setState(() => _busyIds.add(leave.id));
+    final result = await ApiService.cancelLeave(leave.id);
+    if (!mounted) return;
+    setState(() => _busyIds.remove(leave.id));
+
+    if (result['success'] == true) {
+      setState(() => _leaves.removeWhere((l) => l.id == leave.id));
+      _toast(result['message']?.toString() ?? 'Leave request cancelled.',
+          color: _green);
+    } else {
+      _toast(result['message']?.toString() ?? 'Could not cancel.', color: _red);
+    }
   }
 
-  String _formatTime(DateTime dt) => DateFormat('hh:mm a').format(dt);
+  void _toast(String msg, {required Color color}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
 
-  String _elapsedTime() {
-    if (_checkInTime == null) return '0h 0m';
-    final end = _checkOutTime ?? DateTime.now();
-    final diff = end.difference(_checkInTime!);
-    return '${diff.inHours}h ${diff.inMinutes.remainder(60)}m';
+  /// Reveals a leave card's reason / admin note (kept off the card itself).
+  void _showDetail({
+    required String title,
+    required String body,
+    required IconData icon,
+    required Color color,
+    required Color bg,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: _border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, size: 20, color: color),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: _primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              body,
+              style: const TextStyle(
+                fontSize: 14,
+                color: _primary,
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -258,9 +288,9 @@ class _AttendanceScreenState extends State<AttendanceScreen>
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        automaticallyImplyLeading: false,
+        foregroundColor: _primary,
         title: const Text(
-          'Attendance',
+          'My Leaves',
           style: TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w700,
@@ -271,13 +301,8 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: TextButton.icon(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const LeaveApplicationScreen(),
-                ),
-              ),
-              icon: const Icon(Icons.event_available_rounded, size: 18),
+              onPressed: _openApplyLeave,
+              icon: const Icon(Icons.add_rounded, size: 20),
               label: const Text('Apply Leave'),
               style: TextButton.styleFrom(
                 foregroundColor: _accent,
@@ -287,592 +312,533 @@ class _AttendanceScreenState extends State<AttendanceScreen>
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      body: Column(
         children: [
-          _buildTodayCard(),
-          const SizedBox(height: 16),
-          _buildStatsRow(),
-          const SizedBox(height: 24),
-          _buildLogsSection(),
+          if (widget.showComingSoon) _buildComingSoonBanner(),
+          _buildFilterBar(),
+          Expanded(
+            child: RefreshIndicator(
+              color: _accent,
+              onRefresh: () => _load(reset: true),
+              child: _buildBody(),
+            ),
+          ),
+        ],
+      ),
+      floatingActionButton: _leaves.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _openApplyLeave,
+              backgroundColor: _accent,
+              foregroundColor: Colors.white,
+              elevation: 2,
+              icon: const Icon(Icons.event_available_rounded, size: 20),
+              label: const Text('Apply Leave',
+                  style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+    );
+  }
+
+  /// Placeholder shown where the check-in/out tracker will live once enabled.
+  Widget _buildComingSoonBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _primary.withValues(alpha: 0.18),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.fingerprint_rounded,
+                color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Attendance',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _amber.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'Coming soon',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: _amber,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Check-in / check-out tracking is on the way. For now, '
+                  'manage your leaves below.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTodayCard() {
-    final now = DateTime.now();
+  Widget _buildFilterBar() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+      child: Row(
+        children: _statusFilters.map((s) {
+          final isSel = s == _status;
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () {
+                if (s == _status) return;
+                setState(() => _status = s);
+                _load(reset: true);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSel ? _accent : Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: isSel ? _accent : _border),
+                ),
+                child: Text(
+                  s == 'all' ? 'All' : '${s[0].toUpperCase()}${s.substring(1)}',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isSel ? Colors.white : _primary,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_loading) {
+      return const Center(
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
+      );
+    }
+    if (_error != null && _leaves.isEmpty) {
+      return _buildScrollableMessage(
+        icon: Icons.cloud_off_rounded,
+        title: "Couldn't load leaves",
+        subtitle: _error!,
+        action: _RetryButton(onTap: () => _load(reset: true)),
+      );
+    }
+    if (_leaves.isEmpty) {
+      return _buildScrollableMessage(
+        icon: Icons.beach_access_rounded,
+        title: 'No leave requests yet',
+        subtitle: 'Tap “Apply Leave” to request a day off.',
+        action: Padding(
+          padding: const EdgeInsets.only(top: 18),
+          child: ElevatedButton.icon(
+            onPressed: _openApplyLeave,
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Apply Leave'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _accent,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      controller: _scrollController,
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
+      itemCount: _leaves.length + (_hasMore ? 1 : 0),
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
+      itemBuilder: (context, i) {
+        if (i >= _leaves.length) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(strokeWidth: 2.2),
+              ),
+            ),
+          );
+        }
+        return _buildLeaveCard(_leaves[i]);
+      },
+    );
+  }
+
+  Widget _buildScrollableMessage({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    Widget? action,
+  }) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.16),
+        Icon(icon, size: 56, color: const Color(0xFFCBD5E1)),
+        const SizedBox(height: 16),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+              fontSize: 16, fontWeight: FontWeight.w700, color: _primary),
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 48),
+          child: Text(
+            subtitle,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontSize: 13, color: _textSecondary, height: 1.5),
+          ),
+        ),
+        if (action != null) Center(child: action),
+      ],
+    );
+  }
+
+  Widget _buildLeaveCard(InspectorLeave leave) {
+    final cfg = _statusConfig(leave.status);
+    final busy = _busyIds.contains(leave.id);
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    DateFormat('EEEE').format(now),
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: _textSecondary,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    DateFormat('d MMMM yyyy').format(now),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: _primary,
-                    ),
-                  ),
-                ],
-              ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                width: 46,
+                height: 46,
                 decoration: BoxDecoration(
-                  color: _isCheckedIn ? _greenLight : _surface,
-                  borderRadius: BorderRadius.circular(20),
+                  color: cfg.bg,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+                alignment: Alignment.center,
+                child: Icon(cfg.icon, size: 22, color: cfg.color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: _isCheckedIn ? _green : _textSecondary,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
                     Text(
-                      _isCheckedIn ? 'Active' : 'Inactive',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _isCheckedIn ? _green : _textSecondary,
+                      leave.leaveDate != null
+                          ? DateFormat('EEE, d MMM yyyy')
+                              .format(leave.leaveDate!)
+                          : 'Date unknown',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: _primary,
                       ),
                     ),
+                    if (leave.createdAt != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Requested ${DateFormat('d MMM').format(leave.createdAt!)}',
+                        style: const TextStyle(
+                            fontSize: 12, color: _textSecondary),
+                      ),
+                    ],
                   ],
                 ),
               ),
+              _StatusPill(label: cfg.label, color: cfg.color, bg: cfg.bg),
             ],
           ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _buildTimeInfo(
-                  label: 'Check In',
-                  value: _checkInTime != null
-                      ? _formatTime(_checkInTime!)
-                      : '--:--',
-                  icon: Icons.login_rounded,
-                  iconColor: _green,
-                  iconBg: _greenLight,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildTimeInfo(
-                  label: 'Check Out',
-                  value: _checkOutTime != null
-                      ? _formatTime(_checkOutTime!)
-                      : '--:--',
-                  icon: Icons.logout_rounded,
-                  iconColor: _red,
-                  iconBg: _redLight,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildTimeInfo(
-                  label: 'Duration',
-                  value: _checkInTime != null ? _elapsedTime() : '--',
-                  icon: Icons.timer_rounded,
-                  iconColor: _accent,
-                  iconBg: _accentLight,
-                ),
-              ),
-            ],
-          ),
-          if (_checkInLocation != null && _isCheckedIn) ...[
+          if (leave.reason.isNotEmpty ||
+              (leave.adminNote != null && leave.adminNote!.isNotEmpty)) ...[
             const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: _greenLight,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.location_on_rounded,
-                      size: 14, color: _green),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'Check-in location: '
-                      '${_checkInLocation!.latitude.toStringAsFixed(5)}, '
-                      '${_checkInLocation!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: _green,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 20),
-          ScaleTransition(
-            scale: _isCheckedIn
-                ? _pulseAnimation
-                : const AlwaysStoppedAnimation(1.0),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _isLocating ? null : _handleCheckInOut,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _isCheckedIn ? _red : _accent,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor:
-                      (_isCheckedIn ? _red : _accent).withValues(alpha: 0.7),
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: _isLocating
-                    ? const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white),
-                            ),
-                          ),
-                          SizedBox(width: 10),
-                          Text(
-                            'Getting location...',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _isCheckedIn
-                                ? Icons.logout_rounded
-                                : Icons.login_rounded,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            _isCheckedIn ? 'Check Out' : 'Check In',
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTimeInfo({
-    required String label,
-    required String value,
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 14, color: iconColor),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _primary,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 11,
-              color: _textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsRow() {
-    final present = _logs
-        .where((l) =>
-            l.status == _LogStatus.present || l.status == _LogStatus.late)
-        .length;
-    final absent =
-        _logs.where((l) => l.status == _LogStatus.absent).length;
-    final leaves =
-        _logs.where((l) => l.status == _LogStatus.leave).length;
-
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            label: 'Present',
-            value: '$present',
-            color: _green,
-            bgColor: _greenLight,
-            icon: Icons.check_circle_rounded,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatCard(
-            label: 'Absent',
-            value: '$absent',
-            color: _red,
-            bgColor: _redLight,
-            icon: Icons.cancel_rounded,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _buildStatCard(
-            label: 'On Leave',
-            value: '$leaves',
-            color: _amber,
-            bgColor: _amberLight,
-            icon: Icons.event_busy_rounded,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard({
-    required String label,
-    required String value,
-    required Color color,
-    required Color bgColor,
-    required IconData icon,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: color,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 12,
-              color: _textSecondary,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLogsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              'Attendance Logs',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: _primary,
-              ),
-            ),
-            Text(
-              '${_logs.length} records',
-              style: const TextStyle(
-                fontSize: 13,
-                color: _textSecondary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: _logs.length,
-            separatorBuilder: (_, __) => Divider(
-              height: 1,
-              color: Colors.grey.withValues(alpha: 0.1),
-              indent: 16,
-              endIndent: 16,
-            ),
-            itemBuilder: (context, i) => _buildLogTile(_logs[i]),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLogTile(_AttendanceLog log) {
-    final statusConfig = _statusConfig(log.status);
-
-    String checkInStr = '--';
-    String checkOutStr = '--';
-    String durationStr = '--';
-
-    if (log.checkIn != null) {
-      checkInStr =
-          '${_pad(log.checkIn!.hour)}:${_pad(log.checkIn!.minute)} ${log.checkIn!.period.name.toUpperCase()}';
-    }
-    if (log.checkOut != null) {
-      checkOutStr =
-          '${_pad(log.checkOut!.hour)}:${_pad(log.checkOut!.minute)} ${log.checkOut!.period.name.toUpperCase()}';
-    }
-    if (log.checkIn != null && log.checkOut != null) {
-      final inMin = log.checkIn!.hour * 60 + log.checkIn!.minute;
-      final outMin = log.checkOut!.hour * 60 + log.checkOut!.minute;
-      final diff = outMin - inMin;
-      durationStr = '${diff ~/ 60}h ${diff % 60}m';
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: statusConfig.bgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(statusConfig.icon, size: 18, color: statusConfig.color),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Text(
-                  DateFormat('EEE, d MMM').format(log.date),
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: _primary,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                if (log.note != null)
-                  Text(
-                    log.note!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: statusConfig.color,
+                if (leave.reason.isNotEmpty)
+                  _DetailChip(
+                    icon: Icons.notes_rounded,
+                    label: 'Reason',
+                    color: _accent,
+                    bg: _accentLight,
+                    onTap: () => _showDetail(
+                      title: 'Reason',
+                      body: leave.reason,
+                      icon: Icons.notes_rounded,
+                      color: _accent,
+                      bg: _accentLight,
                     ),
-                  )
-                else
-                  Row(
-                    children: [
-                      _buildMiniTag(
-                          Icons.login_rounded, checkInStr, _textSecondary),
-                      const SizedBox(width: 8),
-                      _buildMiniTag(
-                          Icons.logout_rounded, checkOutStr, _textSecondary),
-                      const SizedBox(width: 8),
-                      _buildMiniTag(
-                          Icons.timer_outlined, durationStr, _textSecondary),
-                    ],
+                  ),
+                if (leave.adminNote != null && leave.adminNote!.isNotEmpty)
+                  _DetailChip(
+                    icon: Icons.sticky_note_2_outlined,
+                    label: 'Admin Note',
+                    color: _amber,
+                    bg: _amberLight,
+                    onTap: () => _showDetail(
+                      title: 'Admin Note',
+                      body: leave.adminNote!,
+                      icon: Icons.sticky_note_2_outlined,
+                      color: _amber,
+                      bg: _amberLight,
+                    ),
                   ),
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: statusConfig.bgColor,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              statusConfig.label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: statusConfig.color,
+          ],
+          if (leave.isPending) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: busy ? null : () => _cancel(leave),
+                icon: busy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(_red),
+                        ),
+                      )
+                    : const Icon(Icons.close_rounded, size: 18),
+                label: const Text('Cancel Request'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _red,
+                  side: const BorderSide(color: _redLight),
+                  backgroundColor: _redLight,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildMiniTag(IconData icon, String text, Color color) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 11, color: color),
-        const SizedBox(width: 2),
-        Text(text, style: TextStyle(fontSize: 11, color: color)),
-      ],
-    );
-  }
-
-  String _pad(int n) => n.toString().padLeft(2, '0');
-
-  _StatusConfig _statusConfig(_LogStatus status) {
-    switch (status) {
-      case _LogStatus.present:
-        return _StatusConfig(
-          label: 'Present',
+  _StatusCfg _statusConfig(String status) {
+    switch (status.toLowerCase()) {
+      case 'approved':
+        return const _StatusCfg(
+          label: 'Approved',
           color: _green,
-          bgColor: _greenLight,
-          icon: Icons.check_circle_outline_rounded,
+          bg: _greenLight,
+          icon: Icons.check_circle_rounded,
         );
-      case _LogStatus.late:
-        return _StatusConfig(
-          label: 'Late',
-          color: _amber,
-          bgColor: _amberLight,
-          icon: Icons.watch_later_outlined,
-        );
-      case _LogStatus.absent:
-        return _StatusConfig(
-          label: 'Absent',
+      case 'rejected':
+        return const _StatusCfg(
+          label: 'Rejected',
           color: _red,
-          bgColor: _redLight,
-          icon: Icons.cancel_outlined,
+          bg: _redLight,
+          icon: Icons.cancel_rounded,
         );
-      case _LogStatus.leave:
-        return _StatusConfig(
-          label: 'Leave',
-          color: _accent,
-          bgColor: _accentLight,
-          icon: Icons.event_busy_rounded,
+      default:
+        return const _StatusCfg(
+          label: 'Pending',
+          color: _amber,
+          bg: _amberLight,
+          icon: Icons.hourglass_top_rounded,
         );
     }
   }
 }
 
-enum _LogStatus { present, late, absent, leave }
+class _StatusCfg {
+  final String label;
+  final Color color;
+  final Color bg;
+  final IconData icon;
 
-class _AttendanceLog {
-  final DateTime date;
-  final TimeOfDay? checkIn;
-  final TimeOfDay? checkOut;
-  final _LogStatus status;
-  final String? note;
-
-  const _AttendanceLog({
-    required this.date,
-    required this.checkIn,
-    required this.checkOut,
-    required this.status,
-    this.note,
+  const _StatusCfg({
+    required this.label,
+    required this.color,
+    required this.bg,
+    required this.icon,
   });
 }
 
-class _StatusConfig {
-  final String label;
-  final Color color;
-  final Color bgColor;
-  final IconData icon;
-
-  const _StatusConfig({
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({
     required this.label,
     required this.color,
-    required this.bgColor,
-    required this.icon,
+    required this.bg,
   });
+
+  final String label;
+  final Color color;
+  final Color bg;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailChip extends StatelessWidget {
+  const _DetailChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.bg,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color bg;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: color,
+              ),
+            ),
+            const SizedBox(width: 3),
+            Icon(Icons.chevron_right_rounded, size: 16, color: color),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RetryButton extends StatelessWidget {
+  const _RetryButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  static const _accent = Color(0xFF3B82F6);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 18),
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: const Text('Retry'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _accent,
+          side: const BorderSide(color: _accent),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        ),
+      ),
+    );
+  }
 }

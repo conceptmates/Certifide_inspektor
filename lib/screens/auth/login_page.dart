@@ -1,5 +1,4 @@
-import 'dart:async' show TimeoutException;
-import 'dart:io' show HandshakeException, SocketException;
+import 'dart:developer';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -9,6 +8,8 @@ import '../../constants/const.dart';
 
 import '../../providers/user_provider.dart';
 import '../../services/api_services.dart';
+import '../../utils/connectivity_checker.dart';
+import '../../utils/network_error_helper.dart';
 import '../home/car_spy/car_spy_home.dart';
 
 // ─── Color Tokens ───────────────────────────────────────────────────────────
@@ -49,28 +50,37 @@ class _LoginPageState extends ConsumerState<LoginPage>
   late Animation<double> _fadeAnim;
   late Animation<Offset> _slideAnim;
 
-  String _getUserFriendlyErrorMessage(dynamic error) {
-    // Check for specific network-related exceptions
-    if (error is SocketException) {
-      return "No internet connection. Please check your network settings and try again.";
-    } else if (error.toString().contains('SocketException') ||
-        error.toString().contains('Failed host lookup')) {
-      return "Unable to connect to the server. Please check your internet connection.";
-    } else if (error is TimeoutException) {
-      return "Connection timed out. Please check your internet connection and try again.";
-    } else if (error.toString().contains('TimeoutException')) {
-      return "The request took too long. Please check your internet speed and try again.";
-    } else if (error is HandshakeException) {
-      return "Secure connection failed. Please check your network settings.";
-    } else if (error.toString().contains('HandshakeException')) {
-      return "We're having trouble establishing a secure connection. Please try again.";
-    } else if (error.toString().contains('Certificate')) {
-      return "Security certificate issue. Please check your network or try again later.";
-    } else if (error.toString().contains('No internet connection')) {
-      return "No internet connection. Please check your network settings and try again.";
-    } else {
-      return "An unexpected error occurred. Please try again or contact support.";
-    }
+  String _getUserFriendlyErrorMessage(dynamic error) =>
+      NetworkErrorHelper.friendlyMessage(error);
+
+  void _showNetworkSnackBar(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: AppColors.surfaceContainerHigh,
+        content: Row(
+          children: [
+            const Icon(Icons.wifi_off_rounded,
+                color: AppColors.secondary, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: AppColors.onSurface),
+              ),
+            ),
+          ],
+        ),
+        action: SnackBarAction(
+          label: 'Retry',
+          textColor: AppColors.primary,
+          onPressed: _login,
+        ),
+      ),
+    );
   }
 
   void _showErrorDialog(String message) {
@@ -171,12 +181,28 @@ class _LoginPageState extends ConsumerState<LoginPage>
       });
 
       try {
+        // Fast DNS-based reachability probe so we fail instantly when the
+        // device is offline or our server's host can't be resolved, instead
+        // of waiting out the 30s request timeout. The real request below is
+        // still the source of truth — this just shortcuts the obvious case.
+        final canReachServer = await ConnectivityChecker.canReachServer();
+        if (!mounted) return;
+        if (!canReachServer) {
+          setState(() {
+            _isLoading = false;
+          });
+          _showNetworkSnackBar(
+            "You're offline. Please check your internet connection.",
+          );
+          return;
+        }
+
         final response = await ApiService.login(
           _emailController.text,
           _passwordController.text,
         );
 
-        print('Login response: $response');
+        log('Login response: $response');
 
         if (!mounted) return;
 
@@ -184,10 +210,11 @@ class _LoginPageState extends ConsumerState<LoginPage>
           if (response['data'] != null &&
               response['data']['user'] != null &&
               response['data']['access_token'] != null) {
-            await ref.read(userNotifierProvider.notifier).setUserData(
+            await ref.read(userProvider.notifier).setUserData(
               response['data']['user'] as Map<String, dynamic>,
               response['data']['access_token'] as String,
             );
+            if (!mounted) return;
 
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(builder: (context) => const CarSpyHome()),
@@ -196,8 +223,16 @@ class _LoginPageState extends ConsumerState<LoginPage>
             _showErrorDialog('Unable to process login. Please try again.');
           }
         } else {
+          final rawMessage =
+              response['message']?.toString() ?? 'Unable to sign in. Please try again.';
+          // The API service wraps connectivity failures as "Network error: ...".
+          // Translate those into a graceful message instead of leaking the raw
+          // exception text; pass real server messages through unchanged.
           _showErrorDialog(
-              response['message'] ?? 'Unable to sign in. Please try again.');
+            NetworkErrorHelper.isNetworkFailure(rawMessage)
+                ? _getUserFriendlyErrorMessage(rawMessage)
+                : rawMessage,
+          );
         }
       } catch (e) {
         if (!mounted) return;
@@ -578,58 +613,6 @@ class _LoginPageState extends ConsumerState<LoginPage>
     );
   }
 
-  Widget _buildDivider() {
-    return Row(
-      children: [
-        Expanded(
-          child: Divider(
-            color: AppColors.outlineVariant.withValues(alpha: 0.3),
-            thickness: 1,
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text(
-            'OR CONTINUE WITH',
-            style: TextStyle(
-              fontSize: 10,
-              letterSpacing: 1.6,
-              color: AppColors.onSurfaceVariant.withValues(alpha: 0.7),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Divider(
-            color: AppColors.outlineVariant.withValues(alpha: 0.3),
-            thickness: 1,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAlternativeAuth() {
-    return Row(
-      children: [
-        Expanded(
-          child: _AltAuthButton(
-            icon: Icons.verified_user_outlined,
-            label: 'SSO',
-            onTap: () {},
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: _AltAuthButton(
-            icon: Icons.key_rounded,
-            label: 'Passkey',
-            onTap: () {},
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildFooter() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
@@ -813,55 +796,6 @@ class _StyledTextFormField extends StatelessWidget {
         ),
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      ),
-    );
-  }
-}
-
-class _AltAuthButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _AltAuthButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: AppColors.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          height: 48,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppColors.outlineVariant.withValues(alpha: 0.15),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: AppColors.onSurface, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.onSurface,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

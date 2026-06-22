@@ -1,13 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../constants/hive_constants.dart';
+import '../../data/inspection_storage_model.dart';
 import '../../models/inspection_history_model.dart';
+import '../../models/inspection_state.dart';
+import '../../models/inspection_template_model.dart';
 import '../../models/local_inspection.dart';
+import '../../models/pending_media.dart';
 import '../../models/pagination_data_model.dart';
+import '../../providers/connectivity_provider.dart';
 import '../../providers/inspection_provider.dart';
+import '../../routes/routes.dart';
 import '../../services/api_services.dart';
+import '../../services/local_cache_service.dart';
 import '../../utils/loading_animation.dart';
 import '../../widgets/error_widget.dart';
 import 'car_spy/car_spy_data.dart';
@@ -33,7 +42,13 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   bool _isCancelled = false;
 
   // Pending tab state
-  bool _isPendingInitialLoadComplete = false;
+  List<InspectionHistory> _pendingItems = [];
+  bool _isPendingLoading = false;
+  bool _isPendingLoadingMore = false;
+  String _pendingError = '';
+  late PaginationData _pendingPagination;
+  final ScrollController _pendingScrollController = ScrollController();
+  final Set<String> _resumingIds = {};
 
   @override
   void initState() {
@@ -46,9 +61,180 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       perPage: 10,
       total: 0,
     );
+    _pendingPagination = PaginationData(
+      currentPage: 1,
+      lastPage: 1,
+      perPage: 10,
+      total: 0,
+    );
     _loadHistory();
     _scrollController.addListener(_onScroll);
+    _pendingScrollController.addListener(_onPendingScroll);
     _loadPendingInspections();
+    // Load the local "awaiting upload" media queue and opportunistically sync
+    // it (the provider also auto-syncs on reconnect).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(inspectionProvider.notifier).refreshMediaQueue();
+      }
+    });
+  }
+
+  final Set<String> _uploadingMediaIds = {};
+
+  /// Queue containers whose per-file media list is expanded in the UI.
+  final Set<String> _expandedMediaIds = {};
+
+  IconData _mediaTypeIcon(String type) {
+    switch (type) {
+      case 'video':
+        return Icons.videocam_outlined;
+      case 'audio':
+        return Icons.mic_none_outlined;
+      case 'file':
+        return Icons.insert_drive_file_outlined;
+      case 'multiImage':
+        return Icons.collections_outlined;
+      case 'image':
+      default:
+        return Icons.image_outlined;
+    }
+  }
+
+  String _mediaRowLabel(String key, PendingMedia m) {
+    switch (m.mediaType) {
+      case 'video':
+        return 'Video';
+      case 'audio':
+        return 'Audio';
+      case 'file':
+        return 'Document';
+      case 'multiImage':
+        final idx = int.tryParse(key.split('_').last);
+        return idx != null ? 'Photo ${idx + 1}' : 'Photo';
+      case 'image':
+      default:
+        return 'Image';
+    }
+  }
+
+  /// One media file with its own progress bar + status.
+  Widget _mediaFileRow(String key, PendingMedia m) {
+    final status = m.uploadStatus;
+    final uploading = status == PendingMediaStatus.uploading;
+    final done = status == PendingMediaStatus.uploaded;
+    final failed = status == PendingMediaStatus.failed;
+
+    final Color barColor = failed
+        ? const Color(0xFFEF4444)
+        : (done ? const Color(0xFF22C55E) : CarSpyColors.primary);
+    // null => indeterminate (actively uploading); else a filled fraction.
+    final double? barValue = uploading ? null : (done || failed ? 1.0 : 0.05);
+
+    final String statusText = failed
+        ? 'Failed'
+        : (done ? 'Uploaded' : (uploading ? 'Uploading…' : 'Queued'));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(_mediaTypeIcon(m.mediaType),
+              size: 18, color: CarSpyColors.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _mediaRowLabel(key, m),
+                        style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.black87),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      statusText,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: barColor,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: barValue,
+                    minHeight: 4,
+                    backgroundColor: CarSpyColors.surface,
+                    valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (done)
+            const Icon(Icons.check_circle,
+                size: 16, color: Color(0xFF22C55E))
+          else if (failed)
+            const Icon(Icons.error_outline,
+                size: 16, color: Color(0xFFEF4444))
+          else if (uploading)
+            const SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            const Icon(Icons.schedule,
+                size: 16, color: CarSpyColors.onSurfaceVariant),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _uploadMedia(LocalInspection container) async {
+    if (_uploadingMediaIds.contains(container.id)) return;
+    _safeSetState(() => _uploadingMediaIds.add(container.id));
+    try {
+      final ok = await ref
+          .read(inspectionProvider.notifier)
+          .uploadInspectionMedia(container);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'All media uploaded'
+              : 'Some media still pending — will retry when online'),
+          backgroundColor: ok ? const Color(0xFF22C55E) : const Color(0xFFF59E0B),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Upload failed. Please try again.')),
+        );
+      }
+    } finally {
+      _safeSetState(() => _uploadingMediaIds.remove(container.id));
+    }
+  }
+
+  Future<void> _refreshPending() async {
+    await Future.wait([
+      _loadPendingInspections(),
+      ref.read(inspectionProvider.notifier).refreshMediaQueue(),
+    ]);
   }
 
   @override
@@ -56,6 +242,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     _isCancelled = true;
     _tabController.dispose();
     _scrollController.dispose();
+    _pendingScrollController.dispose();
     super.dispose();
   }
 
@@ -161,7 +348,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
         inspection.links!['view'] != null;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -182,7 +369,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
           highlightColor: CarSpyColors.primary.withValues(alpha: 0.04),
           onTap: null,
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(13),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -221,24 +408,25 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 7),
                 _infoRow('Make & Model', vehicleInfo['make_model']),
                 _infoRow('Variant', vehicleInfo['variant']),
                 _infoRow('Year', vehicleInfo['manufacturing_year']),
                 _infoRow('Date', _formatDate(inspection.date)),
-                if (canView) ...[
-                  const SizedBox(height: 4),
+                if (canView)
                   Align(
                     alignment: Alignment.centerRight,
                     child: IconButton(
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(6),
                       onPressed: () => _launchURL(inspection.links!['view']!),
-                      icon: Icon(
+                      icon: const Icon(
                         Icons.visibility_outlined,
                         color: CarSpyColors.primary,
                       ),
                     ),
                   ),
-                ],
               ],
             ),
           ),
@@ -248,20 +436,23 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   }
 
   Widget _infoRow(String label, dynamic value) {
-    final text = (value == null || value.toString().trim().isEmpty)
-        ? 'N/A'
-        : value.toString();
+    // Hide rows the server didn't populate (e.g. the my-history endpoint omits
+    // variant/year) instead of rendering a bare "N/A" placeholder.
+    if (value == null || value.toString().trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final text = value.toString();
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 2),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 90,
+            width: 80,
             child: Text(
               label,
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 12.5,
                 fontWeight: FontWeight.w500,
                 color: Colors.black45,
               ),
@@ -271,7 +462,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
             child: Text(
               text,
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 12.5,
                 color: Colors.black87,
               ),
             ),
@@ -282,8 +473,8 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels ==
-        _scrollController.position.maxScrollExtent) {
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 300) {
       _loadMoreData();
     }
   }
@@ -304,7 +495,10 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       if (_isCancelled) return;
       if (result['success']) {
         _safeSetState(() {
-          _historyItems.addAll(result['inspections']);
+          _historyItems.addAll(
+            List<InspectionHistory>.from(result['inspections'])
+                .where((i) => i.status != 'draft'),
+          );
           _paginationData = result['pagination'];
           _isLoadingMore = false;
         });
@@ -331,99 +525,274 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
       final result = await ApiService.getDynamicInspectionMyHistory(context, page: 1);
       if (_isCancelled) return;
       if (result['success']) {
+        // Drafts (initialised-but-not-completed inspections) live in the
+        // Pending tab only; keep them out of History so the two are exclusive.
+        final items = List<InspectionHistory>.from(result['inspections'])
+            .where((i) => i.status != 'draft')
+            .toList();
         _safeSetState(() {
-          _historyItems = result['inspections'];
+          _historyItems = items;
           _paginationData = result['pagination'];
           _isHistoryLoading = false;
         });
-      } else {
+        // Cache the first page so the History tab isn't blank when offline.
+        await LocalCacheService.write(
+          HiveConstants.REPORTS_HISTORY_KEY,
+          items.map((i) => i.toCacheJson()).toList(),
+        );
+      } else if (!await _restoreCachedHistory()) {
         _safeSetState(() {
           _historyError = result['message'];
           _isHistoryLoading = false;
         });
       }
     } catch (e) {
-      _safeSetState(() {
-        _historyError = 'Failed to load history';
-        _isHistoryLoading = false;
-      });
+      if (!await _restoreCachedHistory()) {
+        _safeSetState(() {
+          _historyError = 'Failed to load history';
+          _isHistoryLoading = false;
+        });
+      }
     }
+  }
+
+  /// Loads the last-cached History page so an offline tab shows real data
+  /// instead of an error screen. Returns true when cached items were shown.
+  Future<bool> _restoreCachedHistory() async {
+    final cached = await LocalCacheService.readList(HiveConstants.REPORTS_HISTORY_KEY);
+    if (_isCancelled || cached.isEmpty) return false;
+    final items = cached
+        .map((e) =>
+            InspectionHistory.fromCacheJson((e as Map).cast<String, dynamic>()))
+        .toList();
+    _safeSetState(() {
+      _historyItems = items;
+      _historyError = '';
+      _isHistoryLoading = false;
+    });
+    return true;
   }
 
   // --- Pending ---
 
   Future<void> _loadPendingInspections() async {
+    _safeSetState(() {
+      _isPendingLoading = true;
+      _pendingError = '';
+    });
     try {
-      await Future.microtask(() {
-        ref.read(inspectionNotifierProvider.notifier).loadInspections();
-      });
-      _safeSetState(() => _isPendingInitialLoadComplete = true);
-    } catch (e) {
-      _safeSetState(() => _isPendingInitialLoadComplete = true);
-    }
-  }
-
-  void _showCooldownMessage() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Please wait a few seconds before refreshing again'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  Future<void> _handleSubmission(LocalInspection inspection) async {
-    try {
-      final success = await ref
-          .read(inspectionNotifierProvider.notifier)
-          .retrySubmission(inspection);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(success
-                ? 'Inspection submitted successfully'
-                : 'Failed to submit inspection'),
-            backgroundColor: success ? Colors.green : Colors.red,
-          ),
+      // Drafts are served only by the `status=draft` filter (the default
+      // my-history list excludes them). Page through it the same way the
+      // History tab pages its list so any future overflow lazy-loads.
+      final result = await ApiService.getDynamicInspectionMyHistory(
+        context,
+        page: 1,
+        status: 'draft',
+      );
+      if (_isCancelled) return;
+      if (result['success'] == true) {
+        final items = List<InspectionHistory>.from(result['inspections']);
+        _safeSetState(() {
+          _pendingItems = items;
+          _pendingPagination = result['pagination'];
+          _isPendingLoading = false;
+        });
+        await LocalCacheService.write(
+          HiveConstants.REPORTS_PENDING_KEY,
+          items.map((i) => i.toCacheJson()).toList(),
         );
+      } else if (!await _restoreCachedPending()) {
+        _safeSetState(() {
+          _pendingError = result['message'] ?? 'Failed to load pending inspections';
+          _isPendingLoading = false;
+        });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error submitting inspection: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      if (!await _restoreCachedPending()) {
+        _safeSetState(() {
+          _pendingError = 'Failed to load pending inspections';
+          _isPendingLoading = false;
+        });
       }
     }
   }
 
-  void _showInspectionDetailsDialog(LocalInspection inspection) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Inspection Details'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Inspection ID: ${inspection.id}'),
-              Text(
-                  'Created: ${DateFormat('dd-MM-yyyy hh:mm a').format(inspection.createdAt)}'),
-              Text('Status: ${inspection.status}'),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+  /// Loads the last-cached Pending (server drafts) page for offline display.
+  /// Returns true when cached items were shown.
+  Future<bool> _restoreCachedPending() async {
+    final cached = await LocalCacheService.readList(HiveConstants.REPORTS_PENDING_KEY);
+    if (_isCancelled || cached.isEmpty) return false;
+    final items = cached
+        .map((e) =>
+            InspectionHistory.fromCacheJson((e as Map).cast<String, dynamic>()))
+        .toList();
+    _safeSetState(() {
+      _pendingItems = items;
+      _pendingError = '';
+      _isPendingLoading = false;
+    });
+    return true;
+  }
+
+  void _onPendingScroll() {
+    final pos = _pendingScrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 300) {
+      _loadMorePending();
+    }
+  }
+
+  Future<void> _loadMorePending() async {
+    if (_isPendingLoadingMore ||
+        _pendingPagination.currentPage >= _pendingPagination.lastPage) {
+      return;
+    }
+
+    _safeSetState(() => _isPendingLoadingMore = true);
+
+    try {
+      final result = await ApiService.getDynamicInspectionMyHistory(
+        context,
+        page: _pendingPagination.currentPage + 1,
+        status: 'draft',
+      );
+      if (_isCancelled) return;
+      if (result['success'] == true) {
+        _safeSetState(() {
+          _pendingItems
+              .addAll(List<InspectionHistory>.from(result['inspections']));
+          _pendingPagination = result['pagination'];
+          _isPendingLoadingMore = false;
+        });
+      } else {
+        _safeSetState(() => _isPendingLoadingMore = false);
+      }
+    } catch (e) {
+      _safeSetState(() => _isPendingLoadingMore = false);
+    }
+  }
+
+  Future<void> _resumeInspection(InspectionHistory history) async {
+    final id = history.idAsInt;
+    if (id == null) return;
+    _safeSetState(() => _resumingIds.add(history.id));
+    try {
+      final result = await ApiService.resumeInspection(id);
+      if (_isCancelled || !mounted) return;
+      // Resumes the inspection screen. [template] is the server structure when
+      // online, or null offline (inspection_page then rebuilds it from the
+      // durable per-id Hive slot).
+      void openInspection(
+        InspectionInitializationResponse? template, {
+        int? brandId,
+        int? modelId,
+      }) {
+        Navigator.pushNamed(
+          context,
+          Routes.inspection,
+          arguments: {
+            'isNew': true,
+            'inspectionId': id,
+            'vehicleDetails': _buildResumeVehicleDetails(
+              history,
+              template,
+              brandId: brandId ?? history.brandId,
+              modelId: modelId ?? history.modelId,
+            ),
+            'inspectionTemplate': template,
+          },
+        );
+      }
+
+      if (result['success'] == true) {
+        final template = result['data'] as InspectionInitializationResponse?;
+        if (!mounted) return;
+        openInspection(
+          template,
+          brandId: result['vehicle_brand_id'] as int?,
+          modelId: result['vehicle_model_id'] as int?,
+        );
+      } else {
+        // /resume failed (server error or offline). If a durable local copy of
+        // this inspection exists, resume it offline — inspection_page rebuilds
+        // the form + reference media from the per-id Hive slot, no network.
+        final hasLocal = await _hasLocalInspection(id);
+        if (!mounted) return;
+        if (hasLocal) {
+          openInspection(null);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'] ?? 'Failed to resume')),
+          );
+        }
+      }
+    } catch (e) {
+      // Hard network exception — same offline fallback to the local copy.
+      final hasLocal = await _hasLocalInspection(id);
+      if (!mounted) return;
+      if (hasLocal) {
+        Navigator.pushNamed(
+          context,
+          Routes.inspection,
+          arguments: {
+            'isNew': true,
+            'inspectionId': id,
+            'vehicleDetails': _buildResumeVehicleDetails(history, null,
+                brandId: history.brandId, modelId: history.modelId),
+            'inspectionTemplate': null,
+          },
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Network error. Please try again.')),
+        );
+      }
+    } finally {
+      _safeSetState(() => _resumingIds.remove(history.id));
+    }
+  }
+
+  /// True if inspection [id] has a durable per-inspection copy in Hive, so it
+  /// can be resumed offline without the /resume network call.
+  Future<bool> _hasLocalInspection(int id) async {
+    try {
+      final box = Hive.isBoxOpen(HiveConstants.INSPECTION_BOX)
+          ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX)
+          : await Hive.openBox<InspectionStorageModel>(
+              HiveConstants.INSPECTION_BOX);
+      return box.get(HiveConstants.inspectionKey(id)) != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Map<String, dynamic> _buildResumeVehicleDetails(
+    InspectionHistory history,
+    InspectionInitializationResponse? template, {
+    int? brandId,
+    int? modelId,
+  }) {
+    final vi = history.vehicleInfo;
+    final tvi = template?.vehicleInfo;
+    return {
+      // brand_id/model_id are required by the submit body. Without them the
+      // server rejects the resumed inspection with "failed to create
+      // inspection". Fall back to the list payload's vehicle_brand/model ids.
+      if (brandId != null) 'brand_id': brandId,
+      if (modelId != null) 'model_id': modelId,
+      // regno is dropped by the resume template's VehicleInfo unless surfaced
+      // here, so a resumed draft would otherwise submit with an empty
+      // registration number. Fall back to the list payload's reg fields.
+      'regno': tvi?.regNo ??
+          vi['registration_number']?.toString() ??
+          vi['regno']?.toString() ??
+          '',
+      'make': tvi?.brand ?? vi['make_model']?.toString().split(' ').first ?? '',
+      'model': tvi?.model ?? vi['make_model']?.toString().split(' ').skip(1).join(' ') ?? '',
+      'year': tvi?.year ?? vi['manufacturing_year']?.toString() ?? '',
+      'variant': tvi?.variant ?? vi['variant']?.toString() ?? '',
+      'color': tvi?.colour ?? vi['color']?.toString() ?? '',
+      'transmission': tvi?.transmission ?? vi['transmission']?.toString() ?? '',
+    };
   }
 
   // --- Tab content builders ---
@@ -499,108 +868,473 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
     );
   }
 
-  Widget _buildPendingTab(({
-    List<LocalInspection> inspections,
-    bool isLoading,
-    bool refreshCooldown,
-    Map<String, bool> submittingStates,
-  }) provider) {
-    if (!_isPendingInitialLoadComplete) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
-            Text('Loading inspections...', style: TextStyle(fontSize: 16)),
-          ],
+  Widget _buildPendingTab() {
+    final media = ref.watch(
+      inspectionProvider.select(
+        (s) => (queue: s.mediaQueue, progress: s.mediaProgress),
+      ),
+    );
+    final mediaQueue = media.queue;
+    final hasAwaiting = mediaQueue.isNotEmpty;
+    final hasServer = _pendingItems.isNotEmpty;
+
+    if (_isPendingLoading && !hasAwaiting && !hasServer) {
+      return const Center(child: LoadingAnimation());
+    }
+
+    // Show the server error only when there's nothing at all to display.
+    if (_pendingError.isNotEmpty && !hasAwaiting && !hasServer) {
+      return ErrorDisplayWidget(
+        message: _getReadableErrorMessage(_pendingError),
+        onRetry: _refreshPending,
+      );
+    }
+
+    if (!hasAwaiting && !hasServer) {
+      return RefreshIndicator(
+        onRefresh: _refreshPending,
+        color: CarSpyColors.primary,
+        child: ListView.builder(
+          physics: const AlwaysScrollableScrollPhysics(),
+          itemCount: 1,
+          itemBuilder: (context, index) => Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+              Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 96,
+                      height: 96,
+                      decoration: BoxDecoration(
+                        color: CarSpyColors.surface,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: const Icon(Icons.pending_actions,
+                          size: 48, color: CarSpyColors.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'No pending inspections',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
-    return Column(
-      children: [
-        if (provider.inspections.any(
-            (i) => provider.submittingStates[i.id] == true))
-          const LinearProgressIndicator(),
-        Expanded(
-          child: provider.isLoading
-              ? const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Loading inspections...',
-                          style: TextStyle(fontSize: 16)),
-                    ],
+
+    // Build a list of cheap row *builders* rather than the heavy widgets
+    // themselves, so ListView.builder constructs each card (and runs its
+    // per-card pendingMedia sort) lazily, only for rows in the viewport.
+    final rowBuilders = <Widget Function()>[];
+    if (hasAwaiting) {
+      rowBuilders
+          .add(() => _buildSectionHeader('AWAITING UPLOAD', mediaQueue.length));
+      for (final container in mediaQueue) {
+        final progress = media.progress[container.id];
+        rowBuilders.add(() => _buildAwaitingUploadCard(container, progress));
+      }
+    }
+    if (hasServer) {
+      if (hasAwaiting) {
+        rowBuilders
+            .add(() => _buildSectionHeader('ON SERVER', _pendingItems.length));
+      }
+      for (final history in _pendingItems) {
+        rowBuilders.add(
+            () => _buildPendingCard(history, _resumingIds.contains(history.id)));
+      }
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshPending,
+      color: CarSpyColors.primary,
+      child: ListView.builder(
+        controller: _pendingScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(
+            16, 8, 16, MediaQuery.of(context).padding.bottom + 24),
+        itemCount: rowBuilders.length +
+            (_isPendingLoadingMore &&
+                    _pendingPagination.currentPage < _pendingPagination.lastPage
+                ? 1
+                : 0),
+        itemBuilder: (context, index) {
+          if (index == rowBuilders.length) {
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: LoadingAnimation(),
+              ),
+            );
+          }
+          return rowBuilders[index]();
+        },
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String label, int count) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: Colors.black54,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: CarSpyColors.surface,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$count',
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.black54,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAwaitingUploadCard(
+    LocalInspection container,
+    MediaUploadProgress? progress,
+  ) {
+    final vehicleInfo =
+        (container.data['vehicleInfo'] as Map?)?.cast<String, dynamic>() ??
+            const {};
+
+    final all = container.pendingMedia.values.toList();
+    // Fall back to the container's own contents whenever there is no live
+    // progress yet (or a stale 0-total progress), so a card never shows 0/0.
+    final hasProgress = progress != null && progress.total > 0;
+    final total = hasProgress ? progress.total : all.length;
+    final uploaded = hasProgress
+        ? progress.uploaded
+        : all.where((m) => m.isUploaded).length;
+    final failed = hasProgress
+        ? progress.failed
+        : all.where((m) => m.uploadStatus == PendingMediaStatus.failed).length;
+    final isUploading =
+        (progress?.isUploading ?? false) || _uploadingMediaIds.contains(container.id);
+    final remaining = (total - uploaded).clamp(0, total);
+    final fraction = total == 0 ? 0.0 : (uploaded / total).clamp(0.0, 1.0);
+
+    // The per-file list auto-expands while uploading; can also be toggled.
+    final expanded = isUploading || _expandedMediaIds.contains(container.id);
+    // Only sort when the per-file list is actually shown. Collapsed cards (the
+    // common case) skip the O(n log n) sort on every rebuild during upload.
+    final mediaEntries = container.pendingMedia.entries.toList();
+    if (expanded) {
+      mediaEntries.sort((a, b) => a.key.compareTo(b.key));
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Reg: ${vehicleInfo['registration_number']?.toString().isNotEmpty == true ? vehicleInfo['registration_number'] : 'N/A'}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                )
-              : provider.inspections.isEmpty
-                  ? const Center(
-                      child: Text(
-                        'No pending inspections',
-                        style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF3B82F6).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: const Color(0xFF3B82F6).withValues(alpha: 0.3)),
+                  ),
+                  child: const Text(
+                    'OFFLINE',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF3B82F6),
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            _infoRow('Make & Model', vehicleInfo['make_model']),
+            _infoRow('Variant', vehicleInfo['variant']),
+            _infoRow('Year', vehicleInfo['manufacturing_year']),
+            const SizedBox(height: 10),
+            // Media upload progress
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: isUploading && fraction == 0 ? null : fraction,
+                minHeight: 6,
+                backgroundColor: CarSpyColors.surface,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  failed > 0
+                      ? const Color(0xFFF59E0B)
+                      : const Color(0xFF22C55E),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  failed > 0
+                      ? Icons.error_outline
+                      : (remaining == 0
+                          ? Icons.check_circle_outline
+                          : Icons.cloud_upload_outlined),
+                  size: 16,
+                  color: failed > 0
+                      ? const Color(0xFFF59E0B)
+                      : CarSpyColors.onSurfaceVariant,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    failed > 0
+                        ? '$uploaded of $total uploaded · $failed failed'
+                        : (remaining == 0
+                            ? 'All $total media uploaded'
+                            : '$uploaded of $total media uploaded'),
+                    style: const TextStyle(fontSize: 13, color: Colors.black54),
+                  ),
+                ),
+                // Toggle the per-file list manually.
+                InkWell(
+                  onTap: () => setState(() {
+                    if (expanded && !isUploading) {
+                      _expandedMediaIds.remove(container.id);
+                    } else {
+                      _expandedMediaIds.add(container.id);
+                    }
+                  }),
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    child: Icon(
+                      expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20,
+                      color: CarSpyColors.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            // Per-file progress list (shown while uploading or when expanded).
+            if (expanded && mediaEntries.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              const Divider(height: 1),
+              const SizedBox(height: 2),
+              ...mediaEntries.map((e) => _mediaFileRow(e.key, e.value)),
+            ],
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: isUploading
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                          SizedBox(width: 8),
+                          Text('Uploading…',
+                              style: TextStyle(
+                                  fontSize: 13, color: Colors.black54)),
+                        ],
                       ),
                     )
-                  : ListView.builder(
-                      padding: EdgeInsets.only(
-                          bottom: MediaQuery.of(context).padding.bottom + 16),
-                      itemCount: provider.inspections.length,
-                      itemBuilder: (context, index) {
-                        final inspection = provider.inspections[index];
-                        final displayId = inspection.id.length > 8
-                            ? inspection.id.substring(0, 8)
-                            : inspection.id;
-                        final isSubmitting =
-                            provider.submittingStates[inspection.id] ?? false;
-                        return Card(
-                          margin: const EdgeInsets.all(8),
-                          child: ListTile(
-                            title: Text(
-                              'Inspection $displayId',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            subtitle: Text(
-                              'Created: ${DateFormat('dd-MM-yyyy hh:mm a').format(inspection.createdAt)}\n'
-                              'Status: ${inspection.status}${isSubmitting ? ' Submitting...' : ''}',
-                            ),
-                            leading: IconButton(
-                              icon: const Icon(Icons.info_outline),
-                              onPressed: () =>
-                                  _showInspectionDetailsDialog(inspection),
-                            ),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.refresh),
-                              onPressed: isSubmitting
-                                  ? null
-                                  : () => _handleSubmission(inspection),
-                              tooltip: isSubmitting
-                                  ? 'Submitting...'
-                                  : 'Retry submission',
-                            ),
-                            isThreeLine: true,
-                          ),
-                        );
+                  : ElevatedButton.icon(
+                      // Reveal the per-file list AND start uploading.
+                      onPressed: () {
+                        setState(() => _expandedMediaIds.add(container.id));
+                        _uploadMedia(container);
                       },
+                      icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+                      label: Text(failed > 0 ? 'Retry upload' : 'Upload'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: CarSpyColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
                     ),
+            ),
+          ],
         ),
-      ],
+      ),
+    );
+  }
+
+  Widget _buildPendingCard(InspectionHistory inspection, bool isResuming) {
+    final vehicleInfo = inspection.vehicleInfo;
+    final canView = inspection.links != null && inspection.links!['view'] != null;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(13),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Reg: ${vehicleInfo['registration_number'] ?? 'N/A'}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black87,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                  ),
+                  child: const Text(
+                    'DRAFT',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFF59E0B),
+                      letterSpacing: 0.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            _infoRow('Make & Model', vehicleInfo['make_model']),
+            _infoRow('Variant', vehicleInfo['variant']),
+            _infoRow('Year', vehicleInfo['manufacturing_year']),
+            _infoRow('Date', _formatDate(inspection.date)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (canView)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
+                    onPressed: () => _launchURL(inspection.links!['view']!),
+                    icon: const Icon(Icons.visibility_outlined,
+                        color: CarSpyColors.primary),
+                  ),
+                if (inspection.isResumable)
+                  isResuming
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : TextButton.icon(
+                          icon: const Icon(Icons.play_arrow, size: 16),
+                          label: const Text('Resume'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFF59E0B),
+                          ),
+                          onPressed: () => _resumeInspection(inspection),
+                        ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final inspectionState = ref.watch(
-      inspectionNotifierProvider.select(
-        (s) => (
-          inspections: s.inspections,
-          isLoading: s.isLoading,
-          refreshCooldown: s.refreshCooldown,
-          submittingStates: s.submittingStates,
-        ),
-      ),
-    );
+    // Driven by the single app-wide connectivity event: when the connection is
+    // restored (e.g. via the home page's Retry button), reload whichever tab
+    // failed or came up empty while offline — History and Pending both react.
+    ref.listen(connectivityStatusProvider, (previous, next) {
+      if (next == true && previous == false) {
+        if (_historyError.isNotEmpty || _historyItems.isEmpty) {
+          _loadHistory();
+        }
+        if (_pendingError.isNotEmpty || _pendingItems.isEmpty) {
+          _refreshPending();
+        }
+      }
+    });
+
     final isOnPendingTab = _tabController.index == 1;
 
     return ColoredBox(
@@ -624,33 +1358,17 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                       letterSpacing: -0.5,
                     ),
                   ),
-                  if (isOnPendingTab)
-                    IconButton(
-                      icon: Icon(
-                        Icons.refresh,
-                        color: (inspectionState.isLoading ||
-                                inspectionState.refreshCooldown)
-                            ? Colors.grey
-                            : CarSpyColors.primary,
-                      ),
-                      onPressed:
-                          (inspectionState.isLoading ||
-                                  inspectionState.refreshCooldown)
-                              ? _showCooldownMessage
-                              : () => ref
-                                  .read(inspectionNotifierProvider.notifier)
-                                  .loadInspections(),
+                  IconButton(
+                    icon: Icon(
+                      Icons.refresh,
+                      color: (isOnPendingTab ? _isPendingLoading : _isHistoryLoading)
+                          ? Colors.grey
+                          : CarSpyColors.primary,
                     ),
-                  if (!isOnPendingTab)
-                    IconButton(
-                      icon: Icon(
-                        Icons.refresh,
-                        color: _isHistoryLoading
-                            ? Colors.grey
-                            : CarSpyColors.primary,
-                      ),
-                      onPressed: _isHistoryLoading ? null : _loadHistory,
-                    ),
+                    onPressed: (isOnPendingTab ? _isPendingLoading : _isHistoryLoading)
+                        ? null
+                        : (isOnPendingTab ? _refreshPending : _loadHistory),
+                  ),
                 ],
               ),
             ),
@@ -669,7 +1387,7 @@ class _ReportsPageState extends ConsumerState<ReportsPage>
                 controller: _tabController,
                 children: [
                   _buildHistoryTab(),
-                  _buildPendingTab(inspectionState),
+                  _buildPendingTab(),
                 ],
               ),
             ),

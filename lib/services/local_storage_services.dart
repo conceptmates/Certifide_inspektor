@@ -3,14 +3,17 @@ import 'dart:convert';
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:media_store_plus/media_store_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../hive_registrar.g.dart';
 import '../models/local_inspection.dart';
 import '../models/pending_image.dart';
+import '../models/pending_media.dart';
 
 enum MediaType { image, video, audio, file }
 
@@ -19,30 +22,176 @@ class LocalStorageService {
   static const String IMAGES_DIR = 'inspection_images';
   static const String PENDING_IMAGES_BOX = 'pending_images';
 
-  static Future<Box<LocalInspection>> _getBox() async {
-    if (Hive.isBoxOpen(INSPECTIONS_BOX)) {
-      return Hive.box<LocalInspection>(INSPECTIONS_BOX);
+  /// Lightweight index of just the flags the filter scans need, keyed by the
+  /// same id as [INSPECTIONS_BOX]. Lets getPendingInspections /
+  /// getInspectionsWithPending* find candidates without deserializing every
+  /// full record (the main box is now a LazyBox).
+  static const String INSPECTIONS_INDEX_BOX = 'inspections_index';
+
+  // Whether the index has been verified/rebuilt this session.
+  static bool _indexChecked = false;
+
+  /// Absolute path of the app documents directory, cached once at [init].
+  /// The iOS sandbox container path changes between app launches/updates, so an
+  /// absolute media path persisted in a previous session no longer resolves.
+  /// Caching the *current* root lets [resolveMediaPath] re-base stale paths.
+  static String? _docsDirPath;
+
+  /// Test-only hook to set the cached documents root without booting
+  /// path_provider, so [resolveMediaPath]'s stale-container re-basing can be
+  /// exercised in unit tests.
+  @visibleForTesting
+  static set debugDocsDirPath(String? path) => _docsDirPath = path;
+
+  /// The media subdirectories under the documents root that [saveImage],
+  /// [saveVideo] and [_saveMediaFile] write into. Used to re-base stale
+  /// absolute paths onto the current container.
+  static const List<String> _mediaSubDirs = [
+    IMAGES_DIR, // inspection_images
+    'inspection_videos',
+    'inspection_audios',
+    'inspection_files',
+  ];
+
+  /// Resolves a stored media path to a usable absolute path against the current
+  /// documents directory. Handles three cases:
+  ///   * `http(s)` URLs and empty strings — returned unchanged.
+  ///   * paths that already exist on disk this session — returned unchanged.
+  ///   * stale absolute paths from a previous iOS container, or relative paths —
+  ///     re-based onto the current documents root by their known media subdir.
+  /// Safe to call on any path: a no-op when the path is already valid.
+  static String resolveMediaPath(String stored) {
+    if (stored.isEmpty || stored.startsWith('http')) return stored;
+
+    final root = _docsDirPath;
+    // Root not cached yet (init not awaited) — best effort, return as-is.
+    if (root == null) return stored;
+
+    // Fast path: the path is still valid this session.
+    if (stored.startsWith('/') && File(stored).existsSync()) return stored;
+
+    // Relative path stored against the documents root.
+    if (!stored.startsWith('/')) {
+      return '$root/$stored';
     }
-    return Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+
+    // Stale absolute path from a previous container: keep everything from the
+    // known media subdir onward and re-base onto the current root.
+    for (final seg in _mediaSubDirs) {
+      final marker = '/$seg/';
+      final idx = stored.indexOf(marker);
+      if (idx != -1) return '$root${stored.substring(idx)}';
+    }
+
+    // Last resort: assume an image and rebuild from the basename.
+    return '$root/$IMAGES_DIR/${stored.split('/').last}';
+  }
+
+  static Future<LazyBox<LocalInspection>> _getBox() async {
+    final box = Hive.isBoxOpen(INSPECTIONS_BOX)
+        ? Hive.lazyBox<LocalInspection>(INSPECTIONS_BOX)
+        : await Hive.openLazyBox<LocalInspection>(INSPECTIONS_BOX);
+    await _ensureIndex(box);
+    return box;
+  }
+
+  static Future<Box> _getIndexBox() async {
+    if (Hive.isBoxOpen(INSPECTIONS_INDEX_BOX)) {
+      return Hive.box(INSPECTIONS_INDEX_BOX);
+    }
+    return Hive.openBox(INSPECTIONS_INDEX_BOX);
+  }
+
+  // The flags every scan predicate needs, derived from a record.
+  static Map<String, dynamic> _indexEntry(LocalInspection insp) => {
+        's': insp.status,
+        'sub': insp.isSubmitted,
+        'pi': insp.pendingImages.isNotEmpty,
+        'pm': insp.hasPendingMedia,
+        // Answer-only save-steps awaiting replay (offline-edited values/options/
+        // remarks on a field that has no local media). See [upsertMediaQueue].
+        'ps': (insp.data['pendingAnswerSteps'] as Map?)?.isNotEmpty ?? false,
+      };
+
+  /// Builds/repairs the index once per session. If counts disagree (first run
+  /// after upgrade, or a crash mid-write), the index is rebuilt from the box —
+  /// a one-time full read. Steady state: writes keep it in sync incrementally.
+  static Future<void> _ensureIndex(LazyBox<LocalInspection> box) async {
+    if (_indexChecked) return;
+    _indexChecked = true;
+    final idx = await _getIndexBox();
+    if (idx.length != box.length) {
+      await idx.clear();
+      for (final key in box.keys) {
+        final insp = await box.get(key);
+        if (insp != null) await idx.put(key, _indexEntry(insp));
+      }
+    }
+  }
+
+  /// Single write path: persists the record AND its index entry so the two
+  /// can never drift.
+  static Future<void> _writeInspection(
+      LazyBox<LocalInspection> box, dynamic id, LocalInspection insp) async {
+    await box.put(id, insp);
+    final idx = await _getIndexBox();
+    await idx.put(id, _indexEntry(insp));
+  }
+
+  /// Single delete path: removes the record AND its index entry.
+  static Future<void> _removeInspection(
+      LazyBox<LocalInspection> box, dynamic id) async {
+    await box.delete(id);
+    final idx = await _getIndexBox();
+    await idx.delete(id);
+  }
+
+  /// Collects full records whose index entry matches [match], deserializing
+  /// only the matches.
+  static Future<List<LocalInspection>> _collectByIndex(
+      LazyBox<LocalInspection> box, bool Function(Map) match) async {
+    final idx = await _getIndexBox();
+    final result = <LocalInspection>[];
+    for (final key in idx.keys) {
+      final e = idx.get(key);
+      if (e is Map && match(e)) {
+        final insp = await box.get(key);
+        if (insp != null) result.add(insp);
+      }
+    }
+    return result;
   }
 
   static Future<void> init() async {
     await Hive.initFlutter();
-    if (!Hive.isAdapterRegistered(3)) {
-      Hive.registerAdapter(LocalInspectionAdapter());
+    // Cache the current documents-directory root so media paths persisted in an
+    // earlier session (under a now-stale iOS container) can be re-based.
+    try {
+      _docsDirPath = (await getApplicationDocumentsDirectory()).path;
+    } catch (e) {
+      log('Could not resolve documents directory: $e');
     }
-    if (!Hive.isAdapterRegistered(4)) {
-      Hive.registerAdapter(PendingImageAdapter());
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapters();
     }
-    await Hive.openBox<LocalInspection>(INSPECTIONS_BOX);
+    await Hive.openLazyBox<LocalInspection>(INSPECTIONS_BOX);
   }
+
+  /// Status used for media-only queue containers created when an in-progress
+  /// inspection is closed with media still awaiting upload. These are NOT
+  /// returned by [getPendingInspections] (so they never trigger a full submit),
+  /// only by [getInspectionsWithPendingMedia].
+  static const String MEDIA_PENDING_STATUS = 'media_pending';
+
+  static String mediaQueueId(int serverInspectionId) =>
+      'mediaq_$serverInspectionId';
 
   static Future<String> saveImage(String filePath, {int rotateAngle = 0}) async {
     try {
       final File imageFile = File(filePath);
 
       if (!imageFile.existsSync()) {
-        print('File does not exist at path: $filePath');
+        log('File does not exist at path: $filePath');
         throw Exception('File not found');
       }
 
@@ -54,7 +203,9 @@ class LocalStorageService {
       final result = await FlutterImageCompress.compressAndGetFile(
         filePath,
         finalPath,
-        quality: 100,
+        quality: 85,
+        minWidth: 1920,
+        minHeight: 1920,
         autoCorrectionAngle: true,
         keepExif: false,
         rotate: rotateAngle,
@@ -66,7 +217,7 @@ class LocalStorageService {
 
       return finalPath;
     } catch (e) {
-      print('Error saving image: $e');
+      log('Error saving image: $e');
       rethrow;
     }
   }
@@ -84,7 +235,7 @@ class LocalStorageService {
       await videoFile.copy(finalPath);
       return finalPath;
     } catch (e) {
-      print('Error saving video: $e');
+      log('Error saving video: $e');
       rethrow;
     }
   }
@@ -204,12 +355,16 @@ class LocalStorageService {
             filePath = entry.value!;
           }
 
+          // Re-base any stale/relative path onto the current container so a
+          // submit issued in a later session still finds the captured file.
+          filePath = resolveMediaPath(filePath);
+
           // Check if it's a local path (needs upload) or already a URL
           if (filePath.startsWith('/') || filePath.startsWith('var/')) {
             // Local file path - needs to be uploaded
             final File imageFile = File(filePath);
             if (!imageFile.existsSync()) {
-              print('Image file does not exist: $filePath');
+              log('Image file does not exist: $filePath');
               continue;
             }
 
@@ -223,7 +378,7 @@ class LocalStorageService {
                 itemId: itemId,
               );
             } catch (e) {
-              print('Error saving image $filePath: $e');
+              log('Error saving image $filePath: $e');
             }
           } else if (filePath.startsWith('http')) {
             // Already uploaded - URL
@@ -287,7 +442,7 @@ class LocalStorageService {
                     final savedPath = await saveImage(imagePath);
                     savedPaths.add(savedPath);
                   } catch (e) {
-                    print('Error saving multi-image $imagePath: $e');
+                    log('Error saving multi-image $imagePath: $e');
                   }
                 } else {
                   savedPaths.add(imagePath);
@@ -317,14 +472,14 @@ class LocalStorageService {
         multiImages: savedMultiImages,
       );
 
-      await box.put(inspectionId, inspection);
+      await _writeInspection(box, inspectionId, inspection);
       return inspectionId;
     } catch (e) {
-      print('Error saving inspection: $e');
+      log('Error saving inspection: $e');
 
       // Log the full error details
       if (e is Error) {
-        print('Stacktrace: ${e.stackTrace}');
+        log('Stacktrace: ${e.stackTrace}');
       }
 
       rethrow;
@@ -345,6 +500,9 @@ class LocalStorageService {
         }
       }
 
+      // Re-base stale/relative paths onto the current container before copying.
+      actualPath = resolveMediaPath(actualPath);
+
       // Check if it's a local path or URL
       if (actualPath.startsWith('http')) {
         return actualPath; // Already a URL
@@ -356,7 +514,7 @@ class LocalStorageService {
 
       final File mediaFile = File(actualPath);
       if (!mediaFile.existsSync()) {
-        print('Media file does not exist: $actualPath');
+        log('Media file does not exist: $actualPath');
         return null;
       }
 
@@ -371,52 +529,44 @@ class LocalStorageService {
       await mediaFile.copy(destinationPath);
       return destinationPath;
     } catch (e) {
-      print('Error saving media file: $e');
+      log('Error saving media file: $e');
       return null;
     }
   }
 
   static Future<List<LocalInspection>> getPendingInspections() async {
     final box = await _getBox();
-    return box.values
-        .where(
-          (inspection) =>
-              !inspection.isSubmitted && inspection.status == 'offline',
-        )
-        .toList();
+    return _collectByIndex(
+        box, (e) => e['sub'] != true && e['s'] == 'offline');
   }
 
   static Future<List<LocalInspection>> getInspectionsWithPendingImages() async {
     final box = await _getBox();
-    return box.values
-        .where(
-          (inspection) =>
-              !inspection.isSubmitted &&
-              inspection.pendingImages.isNotEmpty &&
-              inspection.status == 'offline',
-        )
-        .toList();
+    return _collectByIndex(
+        box,
+        (e) =>
+            e['sub'] != true && e['pi'] == true && e['s'] == 'offline');
   }
 
   static Future<void> markInspectionAsSubmitted(String id) async {
     final box = await _getBox();
-    final inspection = box.get(id);
+    final inspection = await box.get(id);
 
     if (inspection != null) {
       // Delete images first
       await _deleteInspectionImages(inspection);
       // Then delete the inspection
-      await box.delete(id);
+      await _removeInspection(box, id);
     }
   }
 
   static Future<void> deleteInspection(String id) async {
     final box = await _getBox();
-    final inspection = box.get(id);
+    final inspection = await box.get(id);
 
     if (inspection != null) {
       await _deleteInspectionImages(inspection);
-      await box.delete(id);
+      await _removeInspection(box, id);
     }
   }
 
@@ -455,141 +605,11 @@ class LocalStorageService {
   static Future<void> _deleteFile(String filePath) async {
     if (filePath.startsWith('http')) return;
     try {
-      await File(filePath).delete();
+      await File(resolveMediaPath(filePath)).delete();
     } on PathNotFoundException {
       // File already gone — nothing to do.
     } catch (e) {
-      print('Error deleting file: $e');
-    }
-  }
-
-  static bool _isSameInspection(
-    Map<String, dynamic> data1,
-    Map<String, dynamic> data2,
-  ) {
-    try {
-      // Basic validation
-      if (data1.isEmpty || data2.isEmpty) return false;
-
-      // Helper function to safely compare nested maps
-      bool compareNestedMap(
-        Map<String, dynamic>? map1,
-        Map<String, dynamic>? map2,
-        List<String> keys,
-      ) {
-        if (map1 == null || map2 == null) return false;
-        return keys.every((key) => map1[key] == map2[key]);
-      }
-
-      // Helper function to safely get nested value
-      T? getNestedValue<T>(Map<String, dynamic> map, List<String> keys) {
-        dynamic current = map;
-        for (String key in keys) {
-          if (current is! Map<String, dynamic> || !current.containsKey(key)) {
-            return null;
-          }
-          current = current[key];
-        }
-        return current as T?;
-      }
-
-      // 1. Check Vehicle Information
-      final vehicleInfo1 = getNestedValue<Map<String, dynamic>>(data1, [
-        'vehicleInfo',
-      ]);
-      final vehicleInfo2 = getNestedValue<Map<String, dynamic>>(data2, [
-        'vehicleInfo',
-      ]);
-
-      if (vehicleInfo1 != null && vehicleInfo2 != null) {
-        final vehicleMatches = compareNestedMap(vehicleInfo1, vehicleInfo2, [
-          'registrationNumber',
-          'chassisNumber',
-          'engineNumber',
-        ]);
-        if (!vehicleMatches) return false;
-      }
-
-      // 2. Check Inspection Metadata
-      final inspectionMetadata1 = getNestedValue<Map<String, dynamic>>(data1, [
-        'metadata',
-      ]);
-      final inspectionMetadata2 = getNestedValue<Map<String, dynamic>>(data2, [
-        'metadata',
-      ]);
-
-      if (inspectionMetadata1 != null && inspectionMetadata2 != null) {
-        final metadataMatches = compareNestedMap(
-          inspectionMetadata1,
-          inspectionMetadata2,
-          ['inspectionType', 'inspectorId', 'locationId'],
-        );
-        if (!metadataMatches) return false;
-      }
-
-      // 3. Check Timestamps
-      final timestamp1 = getNestedValue<String>(data1, ['timestamp']);
-      final timestamp2 = getNestedValue<String>(data2, ['timestamp']);
-
-      if (timestamp1 != null && timestamp2 != null) {
-        final time1 = DateTime.parse(timestamp1);
-        final time2 = DateTime.parse(timestamp2);
-        final timeDifference = time1.difference(time2).abs();
-
-        // If inspections are more than 24 hours apart, consider them different
-        if (timeDifference.inHours >= 24) return false;
-      }
-
-      // 4. Check Location Data (if available)
-      final location1 = getNestedValue<Map<String, dynamic>>(data1, [
-        'location',
-      ]);
-      final location2 = getNestedValue<Map<String, dynamic>>(data2, [
-        'location',
-      ]);
-
-      if (location1 != null && location2 != null) {
-        final locationMatches = compareNestedMap(location1, location2, [
-          'latitude',
-          'longitude',
-          'address',
-        ]);
-        if (!locationMatches) return false;
-      }
-
-      // 5. Check Customer Information (if available)
-      final customer1 = getNestedValue<Map<String, dynamic>>(data1, [
-        'customer',
-      ]);
-      final customer2 = getNestedValue<Map<String, dynamic>>(data2, [
-        'customer',
-      ]);
-
-      if (customer1 != null && customer2 != null) {
-        final customerMatches = compareNestedMap(customer1, customer2, [
-          'id',
-          'name',
-          'contact',
-        ]);
-        if (!customerMatches) return false;
-      }
-
-      // 6. Check Inspection Status
-      final status1 = data1['status'];
-      final status2 = data2['status'];
-      if (status1 != null && status2 != null && status1 != status2) {
-        // If one is completed and other is pending, consider them different
-        if ((status1 == 'completed' && status2 != 'completed') ||
-            (status2 == 'completed' && status1 != 'completed')) {
-          return false;
-        }
-      }
-
-      // If all checks pass, consider them the same inspection
-      return true;
-    } catch (e) {
-      print('Error comparing inspections: $e');
-      return false;
+      log('Error deleting file: $e');
     }
   }
 
@@ -621,7 +641,7 @@ class LocalStorageService {
     required Map<String, String> uploadedImages,
   }) async {
     final box = await _getBox();
-    final inspection = box.get(inspectionId);
+    final inspection = await box.get(inspectionId);
 
     if (inspection != null) {
       // Update images map with uploaded URLs
@@ -636,21 +656,14 @@ class LocalStorageService {
         }
       }
 
-      final updatedInspection = LocalInspection(
-        id: inspection.id,
-        createdAt: inspection.createdAt,
-        data: inspection.data,
-        images: updatedImages,
-        pendingImages: updatedPendingImages,
-        status: inspection.status,
-        isSubmitted: inspection.isSubmitted,
-        videos: inspection.videos,
-        audios: inspection.audios,
-        files: inspection.files,
-        multiImages: inspection.multiImages,
+      await _writeInspection(
+        box,
+        inspectionId,
+        inspection.copyWith(
+          images: updatedImages,
+          pendingImages: updatedPendingImages,
+        ),
       );
-
-      await box.put(inspectionId, updatedInspection);
     }
   }
 
@@ -659,9 +672,10 @@ class LocalStorageService {
     Map<String, String> uploadedVideos = const {},
     Map<String, String> uploadedAudios = const {},
     Map<String, String> uploadedFiles = const {},
+    Map<String, List<String>> uploadedMultiImages = const {},
   }) async {
     final box = await _getBox();
-    final inspection = box.get(inspectionId);
+    final inspection = await box.get(inspectionId);
     if (inspection == null) return;
 
     final updatedVideos = Map<String, String>.from(inspection.videos)
@@ -670,22 +684,20 @@ class LocalStorageService {
       ..addAll(uploadedAudios);
     final updatedFiles = Map<String, String>.from(inspection.files)
       ..addAll(uploadedFiles);
+    final updatedMultiImages =
+        Map<String, List<String>>.from(inspection.multiImages)
+          ..addAll(uploadedMultiImages);
 
-    final updatedInspection = LocalInspection(
-      id: inspection.id,
-      createdAt: inspection.createdAt,
-      data: inspection.data,
-      images: inspection.images,
-      pendingImages: inspection.pendingImages,
-      status: inspection.status,
-      isSubmitted: inspection.isSubmitted,
-      videos: updatedVideos,
-      audios: updatedAudios,
-      files: updatedFiles,
-      multiImages: inspection.multiImages,
+    await _writeInspection(
+      box,
+      inspectionId,
+      inspection.copyWith(
+        videos: updatedVideos,
+        audios: updatedAudios,
+        files: updatedFiles,
+        multiImages: updatedMultiImages,
+      ),
     );
-
-    await box.put(inspectionId, updatedInspection);
   }
 
   static Future<void> addPendingImage({
@@ -696,7 +708,7 @@ class LocalStorageService {
     required String itemId,
   }) async {
     final box = await _getBox();
-    final inspection = box.get(inspectionId);
+    final inspection = await box.get(inspectionId);
 
     if (inspection != null) {
       final updatedPendingImages = Map<String, PendingImage>.from(inspection.pendingImages);
@@ -706,22 +718,248 @@ class LocalStorageService {
         itemId: itemId,
       );
 
-      final updatedInspection = LocalInspection(
-        id: inspection.id,
-        createdAt: inspection.createdAt,
-        data: inspection.data,
-        images: inspection.images,
-        pendingImages: updatedPendingImages,
-        status: inspection.status,
-        isSubmitted: inspection.isSubmitted,
-        videos: inspection.videos,
-        audios: inspection.audios,
-        files: inspection.files,
-        multiImages: inspection.multiImages,
+      await _writeInspection(
+        box,
+        inspectionId,
+        inspection.copyWith(pendingImages: updatedPendingImages),
       );
-
-      await box.put(inspectionId, updatedInspection);
     }
   }
 
+  // ===========================================================================
+  // Media-agnostic offline upload queue (images, videos, audios, files,
+  // multi-images). Used when an in-progress inspection is closed with media
+  // still awaiting upload, and drained by InspectionNotifier.syncPendingMedia.
+  // ===========================================================================
+
+  /// All inspections (queue containers and offline-submitted records) that
+  /// still have at least one un-uploaded media item.
+  static Future<List<LocalInspection>> getInspectionsWithPendingMedia() async {
+    final box = await _getBox();
+    return _collectByIndex(box, (e) => e['sub'] != true && e['pm'] == true);
+  }
+
+  /// The media-only queue container for a server inspection, or null.
+  static Future<LocalInspection?> getMediaQueueById(String id) async {
+    final box = await _getBox();
+    return await box.get(id);
+  }
+
+  /// Creates or MERGES the media-only queue container for a server inspection.
+  /// [pendingMedia] is the freshly-scanned set of still-local media; existing
+  /// already-uploaded entries (awaiting save-step) are preserved, entries whose
+  /// local file has vanished are skipped, and the sync engine's removals are
+  /// never resurrected. [saveStepItems] maps each fieldKey to
+  /// `{'section': <slug>, 'item': <save-step item map>}` for save-step replay.
+  static Future<String> upsertMediaQueue({
+    required int serverInspectionId,
+    required Map<String, dynamic> vehicleInfo,
+    required Map<String, PendingMedia> pendingMedia,
+    required Map<String, dynamic> saveStepItems,
+    Map<String, dynamic> answerStepItems = const {},
+  }) async {
+    final box = await _getBox();
+    final id = mediaQueueId(serverInspectionId);
+    final existing = await box.get(id);
+
+    // Merge: keep already-uploaded entries from the existing container so a
+    // pending save-step is not lost; add newly-scanned local entries (skipping
+    // any whose file no longer exists); never downgrade an uploaded entry.
+    final merged = <String, PendingMedia>{};
+    if (existing != null) {
+      for (final e in existing.pendingMedia.entries) {
+        if (e.value.isUploaded) merged[e.key] = e.value;
+      }
+    }
+    for (final e in pendingMedia.entries) {
+      final ex = merged[e.key];
+      if (ex != null && ex.isUploaded) continue;
+      // Re-base before the existence check: the stored path may have been
+      // captured under a previous (now-stale) iOS container. Checking the raw
+      // path would report the file missing and silently drop offline media
+      // from the upload queue across an app relaunch.
+      if (!File(resolveMediaPath(e.value.localPath)).existsSync()) continue;
+      merged[e.key] = e.value;
+    }
+
+    // Answer-only save-steps for media-less fields edited offline (values,
+    // options, remarks). These keep the container alive even when it has no
+    // media so the offline progress is replayed on reconnect.
+    final mergedAnswerSteps = <String, dynamic>{
+      ...?(existing?.data['pendingAnswerSteps'] as Map?)?.cast<String, dynamic>(),
+      ...answerStepItems,
+    };
+
+    if (merged.isEmpty && mergedAnswerSteps.isEmpty) {
+      // Nothing left to upload or replay — drop any stale container.
+      if (existing != null && existing.status == MEDIA_PENDING_STATUS) {
+        await _removeInspection(box, id);
+      }
+      return id;
+    }
+
+    final mergedSaveSteps = <String, dynamic>{
+      ...?(existing?.data['pendingSaveSteps'] as Map?)?.cast<String, dynamic>(),
+      ...saveStepItems,
+    };
+
+    final container = LocalInspection(
+      id: id,
+      createdAt: existing?.createdAt ?? DateTime.now(),
+      data: {
+        'vehicleInfo': vehicleInfo,
+        'inspection_id': serverInspectionId,
+        'pendingSaveSteps': mergedSaveSteps,
+        'pendingAnswerSteps': mergedAnswerSteps,
+      },
+      images: const {},
+      status: MEDIA_PENDING_STATUS,
+      isSubmitted: false,
+      pendingMedia: merged,
+      serverInspectionId: serverInspectionId,
+    );
+    await _writeInspection(box, id, container);
+    return id;
+  }
+
+  /// Queue containers that still carry answer-only save-steps (media-less
+  /// fields edited offline) awaiting replay on the server. Drained by
+  /// [InspectionNotifier.syncPendingSaveSteps].
+  static Future<List<LocalInspection>> getInspectionsWithPendingSaveSteps() async {
+    final box = await _getBox();
+    return _collectByIndex(box, (e) => e['sub'] != true && e['ps'] == true);
+  }
+
+  /// Removes one answer-only save-step after it has been replayed on the
+  /// server. If the container then has neither pending media nor pending answer
+  /// steps, the whole (media-only) container is dropped.
+  static Future<void> removeAnswerStepFor(
+    String inspectionId,
+    String fieldKey,
+  ) async {
+    final box = await _getBox();
+    final insp = await box.get(inspectionId);
+    if (insp == null) return;
+
+    final steps = Map<String, dynamic>.from(
+        (insp.data['pendingAnswerSteps'] as Map?)?.cast<String, dynamic>() ??
+            const {});
+    if (!steps.containsKey(fieldKey)) return;
+    steps.remove(fieldKey);
+
+    final newData = Map<String, dynamic>.from(insp.data);
+    newData['pendingAnswerSteps'] = steps;
+    final updated = insp.copyWith(data: newData);
+
+    if (updated.pendingMedia.isEmpty &&
+        steps.isEmpty &&
+        updated.status == MEDIA_PENDING_STATUS) {
+      await _removeInspection(box, inspectionId);
+    } else {
+      await _writeInspection(box, inspectionId, updated);
+    }
+  }
+
+  /// Updates a single pending-media entry's status (and optionally URL/error).
+  static Future<void> setPendingMediaStatus({
+    required String inspectionId,
+    required String key,
+    required String status,
+    String? url,
+    String? error,
+  }) async {
+    final box = await _getBox();
+    final insp = await box.get(inspectionId);
+    final entry = insp?.pendingMedia[key];
+    if (insp == null || entry == null) return;
+
+    final updated = Map<String, PendingMedia>.from(insp.pendingMedia);
+    updated[key] = entry.copyWith(
+      uploadStatus: status,
+      uploadedUrl: url ?? entry.uploadedUrl,
+      lastError: error,
+      retryCount: status == PendingMediaStatus.failed
+          ? entry.retryCount + 1
+          : entry.retryCount,
+    );
+    await _writeInspection(
+        box, inspectionId, insp.copyWith(pendingMedia: updated));
+  }
+
+  /// Removes a fully-uploaded entry from the queue (and deletes its local
+  /// file). If the container is a media-only queue and becomes empty, the
+  /// whole container is deleted.
+  static Future<void> removePendingMedia(
+    String inspectionId,
+    String key, {
+    bool deleteLocalFile = true,
+  }) async {
+    final box = await _getBox();
+    final insp = await box.get(inspectionId);
+    if (insp == null) return;
+
+    final entry = insp.pendingMedia[key];
+    final updated = Map<String, PendingMedia>.from(insp.pendingMedia)
+      ..remove(key);
+    if (deleteLocalFile && entry != null) {
+      await _deleteFile(entry.localPath);
+    }
+
+    // Don't drop the container while answer-only save-steps still await replay.
+    final answerSteps = (insp.data['pendingAnswerSteps'] as Map?) ?? const {};
+    if (updated.isEmpty &&
+        answerSteps.isEmpty &&
+        insp.status == MEDIA_PENDING_STATUS) {
+      await _removeInspection(box, inspectionId);
+    } else {
+      await _writeInspection(
+          box, inspectionId, insp.copyWith(pendingMedia: updated));
+    }
+  }
+
+  /// Reads the save-step replay descriptor for a field, or null.
+  /// Returns `{'section': <slug>, 'item': <map>}`.
+  static Future<Map<String, dynamic>?> getSaveStepFor(
+    String inspectionId,
+    String fieldKey,
+  ) async {
+    final box = await _getBox();
+    final insp = await box.get(inspectionId);
+    final steps = insp?.data['pendingSaveSteps'];
+    if (steps is Map && steps[fieldKey] is Map) {
+      return Map<String, dynamic>.from(steps[fieldKey] as Map);
+    }
+    return null;
+  }
+
+  /// Deletes the media-only queue container for a server inspection, if any
+  /// (e.g. after the inspection is finally submitted).
+  ///
+  /// [deleteLocalFiles] removes the queued files too. Pass `false` when another
+  /// record has taken ownership of the same files (e.g. an offline submission
+  /// record references the same paths) — deleting them would orphan that record.
+  static Future<void> clearMediaQueueFor(
+    int serverInspectionId, {
+    bool deleteLocalFiles = true,
+  }) async {
+    final box = await _getBox();
+    final id = mediaQueueId(serverInspectionId);
+    final insp = await box.get(id);
+    if (insp == null) return;
+    if (deleteLocalFiles) {
+      for (final entry in insp.pendingMedia.values) {
+        await _deleteFile(entry.localPath);
+      }
+    }
+    await _removeInspection(box, id);
+  }
+
+  /// Deletes local (non-http) media files referenced by a set of paths. Used to
+  /// clean a finalised working copy whose files are no longer needed locally.
+  static Future<void> deleteLocalMediaFiles(Iterable<String> paths) async {
+    for (final p in paths) {
+      if (p.isEmpty || p.startsWith('http')) continue;
+      await _deleteFile(p);
+    }
+  }
 }

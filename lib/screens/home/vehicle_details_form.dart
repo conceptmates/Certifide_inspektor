@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/inspection_template_model.dart';
 import '../../models/vehicle_model.dart';
+import '../../providers/connectivity_provider.dart';
 import '../../routes/routes.dart';
 import '../../services/api_services.dart';
+import '../../utils/network_error_helper.dart';
 import '../../widgets/fade_animation.dart';
 import 'vehicle_details_form/components/vehicle_form_continue_button.dart';
 import 'vehicle_details_form/components/vehicle_form_header_card.dart';
 import 'vehicle_details_form/components/vehicle_form_text_field.dart';
 
-class VehicleDetailsForm extends StatefulWidget {
+class VehicleDetailsForm extends ConsumerStatefulWidget {
   final bool isNewInspection;
 
   const VehicleDetailsForm({
@@ -18,12 +21,13 @@ class VehicleDetailsForm extends StatefulWidget {
   });
 
   @override
-  State<VehicleDetailsForm> createState() => _VehicleDetailsFormState();
+  ConsumerState<VehicleDetailsForm> createState() => _VehicleDetailsFormState();
 }
 
-class _VehicleDetailsFormState extends State<VehicleDetailsForm>
+class _VehicleDetailsFormState extends ConsumerState<VehicleDetailsForm>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
+  final _regNoController = TextEditingController();
   final _makeController = TextEditingController();
   final _modelController = TextEditingController();
   final _yearController = TextEditingController();
@@ -87,17 +91,37 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
           _isLoadingModels = false;
         });
       } else if (mounted) {
+        final rawMessage = result['message']?.toString();
         setState(() {
-          _modelError = result['message'] ?? 'Failed to load models';
+          _modelError = NetworkErrorHelper.resolveMessage(
+            rawMessage,
+            fallback: 'Failed to load models',
+          );
           _isLoadingModels = false;
         });
+        if (rawMessage != null &&
+            NetworkErrorHelper.isNetworkFailure(rawMessage)) {
+          NetworkErrorHelper.showOfflineSnackBar(
+            context,
+            NetworkErrorHelper.offlineMessage,
+            onRetry: _loadModels,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
+        final isNetwork = NetworkErrorHelper.isNetworkFailure(e.toString());
         setState(() {
-          _modelError = 'Error loading models: ${e.toString()}';
+          _modelError = NetworkErrorHelper.friendlyMessage(e);
           _isLoadingModels = false;
         });
+        if (isNetwork) {
+          NetworkErrorHelper.showOfflineSnackBar(
+            context,
+            NetworkErrorHelper.offlineMessage,
+            onRetry: _loadModels,
+          );
+        }
       }
     }
   }
@@ -133,6 +157,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
   @override
   void dispose() {
     _animationController.dispose();
+    _regNoController.dispose();
     _makeController.dispose();
     _modelController.dispose();
     _yearController.dispose();
@@ -165,6 +190,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
       }
 
       final vehicleData = {
+        'regno': _regNoController.text.trim().toUpperCase(),
         'make': _selectedMake!.name,
         'model': _selectedModel!.name,
         'year': _yearController.text.trim(),
@@ -179,6 +205,21 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         _isLoading = true;
       });
 
+      // Fail fast (and gracefully) when offline instead of waiting out the
+      // request timeout — reads the shared connectivity state and shows the
+      // same offline message as the login page.
+      if (!ref.read(connectivityStatusProvider)) {
+        NetworkErrorHelper.showOfflineSnackBar(
+          context,
+          NetworkErrorHelper.offlineMessage,
+          onRetry: _proceedToInspection,
+        );
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
       final result = await ApiService.initializeInspection(
         vehicleBrandId: _selectedMake!.id,
         vehicleModelId: _selectedModel!.id,
@@ -186,6 +227,7 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         variant: _variantController.text.trim().toUpperCase(),
         colour: _colourController.text.trim().toUpperCase(),
         transmission: _selectedTransmission,
+        regNo: _regNoController.text.trim().toUpperCase(),
       );
 
       setState(() {
@@ -198,6 +240,10 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
         // Merge server-returned vehicle_info into form fields and vehicleData
         if (inspectionData is InspectionInitializationResponse) {
           final vi = inspectionData.vehicleInfo;
+          if (vi.regNo != null && vi.regNo!.isNotEmpty) {
+            vehicleData['regno'] = vi.regNo!.toUpperCase();
+            _regNoController.text = vi.regNo!.toUpperCase();
+          }
           if (vi.year != null && vi.year!.isNotEmpty) {
             vehicleData['year'] = vi.year!;
             _yearController.text = vi.year!;
@@ -235,28 +281,39 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
           });
         }
       } else {
-        // Show error dialog
         if (mounted) {
-          showDialog(
-            context: context,
-            builder: (context) => AlertDialog(
-              backgroundColor: const Color(0xFF1E1E1E),
-              title: const Text(
-                'Error',
-                style: TextStyle(color: Colors.white),
-              ),
-              content: Text(
-                result['message'] ?? 'Failed to start inspection',
-                style: const TextStyle(color: Colors.white70),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('OK'),
+          final rawMessage = result['message']?.toString();
+          // Connectivity failures get the calm offline snackbar at the top;
+          // real server errors keep the existing error dialog.
+          if (rawMessage != null &&
+              NetworkErrorHelper.isNetworkFailure(rawMessage)) {
+            NetworkErrorHelper.showOfflineSnackBar(
+              context,
+              NetworkErrorHelper.friendlyMessage(rawMessage),
+              onRetry: _proceedToInspection,
+            );
+          } else {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                backgroundColor: const Color(0xFF1E1E1E),
+                title: const Text(
+                  'Error',
+                  style: TextStyle(color: Colors.white),
                 ),
-              ],
-            ),
-          );
+                content: Text(
+                  rawMessage ?? 'Failed to start inspection',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            );
+          }
         }
       }
     }
@@ -478,6 +535,17 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
 
   @override
   Widget build(BuildContext context) {
+    // When the shared connectivity source is restored, reload the vehicle
+    // models that failed to load offline — driven by the same single event the
+    // rest of the app reacts to, not a local poll.
+    ref.listen(connectivityStatusProvider, (previous, next) {
+      if (next == true && previous == false) {
+        if (_modelError != null || _allModels.isEmpty) {
+          _loadModels();
+        }
+      }
+    });
+
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       appBar: AppBar(
@@ -508,9 +576,9 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Header Section
-                  FadeAnimation(
+                  const FadeAnimation(
                     1.0,
-                    const VehicleFormHeaderCard(),
+                    VehicleFormHeaderCard(),
                   ),
 
                   const SizedBox(height: 32),
@@ -533,6 +601,20 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                       ),
                       child: Column(
                         children: [
+                          // Registration Number
+                          _buildTextField(
+                            controller: _regNoController,
+                            label: 'Registration Number',
+                            hint: 'e.g., KA01AB1234',
+                            icon: Icons.confirmation_number,
+                            inputFormatters: [_uppercaseFormatter],
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Please enter registration number';
+                              }
+                              return null;
+                            },
+                          ),
                           // Make Dropdown
                           _buildMakeDropdown(),
                           // Model Dropdown
@@ -564,9 +646,15 @@ class _VehicleDetailsFormState extends State<VehicleDetailsForm>
                           _buildTextField(
                             controller: _variantController,
                             label: 'Variant',
-                            hint: 'e.g., LX, EX, SE (Optional)',
+                            hint: 'e.g., LX, EX, SE',
                             icon: Icons.tune,
                             inputFormatters: [_uppercaseFormatter],
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Please enter vehicle variant';
+                              }
+                              return null;
+                            },
                           ),
                           _buildTextField(
                             controller: _colourController,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:hive/hive.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:hive_ce/hive.dart';
 import 'dart:convert';
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
@@ -20,11 +21,24 @@ class _ProfilePageState extends State<ProfilePage> {
   final _storage = const FlutterSecureStorage();
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
+  String _appVersion = '';
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadAppVersion();
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(
+          () => _appVersion = 'Version ${info.version} +${info.buildNumber}');
+    } catch (_) {
+      // Leave version blank if it can't be read.
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -72,9 +86,7 @@ class _ProfilePageState extends State<ProfilePage> {
   bool _shouldRefreshData(String? lastUpdateStr) {
     if (lastUpdateStr == null) return true;
     try {
-      return DateTime.now()
-              .difference(DateTime.parse(lastUpdateStr))
-              .inHours >=
+      return DateTime.now().difference(DateTime.parse(lastUpdateStr)).inHours >=
           1;
     } catch (_) {
       return true;
@@ -95,8 +107,7 @@ class _ProfilePageState extends State<ProfilePage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Confirm Logout',
             style: TextStyle(fontWeight: FontWeight.bold)),
-        content:
-            const Text('Are you sure you want to logout of your account?'),
+        content: const Text('Are you sure you want to logout of your account?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -124,12 +135,11 @@ class _ProfilePageState extends State<ProfilePage> {
           ? Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX)
           : await Hive.openBox<InspectionStorageModel>(
               HiveConstants.INSPECTION_BOX);
-      final historyBox =
-          Hive.isBoxOpen(HiveConstants.INSPECTION_HISTORY_BOX)
-              ? Hive.box<InspectionStorageModel>(
-                  HiveConstants.INSPECTION_HISTORY_BOX)
-              : await Hive.openBox<InspectionStorageModel>(
-                  HiveConstants.INSPECTION_HISTORY_BOX);
+      final historyBox = Hive.isBoxOpen(HiveConstants.INSPECTION_HISTORY_BOX)
+          ? Hive.box<InspectionStorageModel>(
+              HiveConstants.INSPECTION_HISTORY_BOX)
+          : await Hive.openBox<InspectionStorageModel>(
+              HiveConstants.INSPECTION_HISTORY_BOX);
       await inspectionBox.clear();
       await historyBox.clear();
 
@@ -195,7 +205,8 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
         ),
-        if (!isLast) Divider(height: 1, indent: 50, color: Colors.grey.shade100),
+        if (!isLast)
+          Divider(height: 1, indent: 50, color: Colors.grey.shade100),
       ],
     );
   }
@@ -289,8 +300,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   color: Colors.grey.shade100,
                   shape: BoxShape.circle,
                 ),
-                child:
-                    Icon(Icons.close, color: Colors.grey.shade600, size: 18),
+                child: Icon(Icons.close, color: Colors.grey.shade600, size: 18),
               ),
             ),
           ),
@@ -315,8 +325,8 @@ class _ProfilePageState extends State<ProfilePage> {
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color:
-                                    CarSpyColors.primary.withValues(alpha: 0.25),
+                                color: CarSpyColors.primary
+                                    .withValues(alpha: 0.25),
                                 blurRadius: 24,
                                 offset: const Offset(0, 8),
                               ),
@@ -443,6 +453,22 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     ),
                   ]),
+
+                  const SizedBox(height: 24),
+
+                  // App version
+                  if (_appVersion.isNotEmpty)
+                    Center(
+                      child: Text(
+                        _appVersion,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: CarSpyColors.onSurface.withValues(alpha: 0.4),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
 
                   const SizedBox(height: 48),
                 ],

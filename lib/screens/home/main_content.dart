@@ -1,15 +1,17 @@
+import 'dart:developer';
 import 'dart:convert';
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
+import '../../hive_registrar.g.dart';
 import '../../models/inspection_stats_model.dart';
 import '../../providers/inspection_provider.dart';
 import '../../providers/stats_provider.dart';
@@ -25,13 +27,18 @@ class MainContent extends ConsumerStatefulWidget {
 
 class _MainContentState extends ConsumerState<MainContent>
     with TickerProviderStateMixin {
-  final _storage = FlutterSecureStorage();
+  final _storage = const FlutterSecureStorage();
   final _userName = ValueNotifier<String>('User');
   late AnimationController rippleController;
   late AnimationController scaleController;
   late Animation<double> rippleAnimation;
   late Animation<double> scaleAnimation;
   Box<InspectionStorageModel>? _inspectionBox;
+
+  // True when a resumable in-progress inspection is saved locally. Drives the
+  // "Continue Inspection" card so a force-closed session is recoverable offline
+  // (the only resume path that does not require the network).
+  bool _hasExisting = false;
 
   // Design tokens
   static const _primary = Color(0xFF0F172A);
@@ -49,12 +56,27 @@ class _MainContentState extends ConsumerState<MainContent>
     super.initState();
     _initHive();
     _initializeAnimations();
-    _loadUserName();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        ref.read(inspectionNotifierProvider.notifier).loadInspections();
+        // Deferred so the first frame paints before these secure-storage /
+        // platform-channel reads kick off.
+        _loadUserName();
+        ref.read(inspectionProvider.notifier).loadInspections();
+        // Surface a force-closed in-progress inspection as a Continue card on
+        // launch — without this the only resume path is the online-only reports
+        // list, so an offline force-close left the work unrecoverable.
+        _refreshHasExisting();
       }
     });
+  }
+
+  /// Re-evaluates whether a resumable local inspection exists and updates the
+  /// Continue card visibility.
+  Future<void> _refreshHasExisting() async {
+    final exists = await hasExistingInspection();
+    if (mounted && exists != _hasExisting) {
+      setState(() => _hasExisting = exists);
+    }
   }
 
   @override
@@ -73,7 +95,7 @@ class _MainContentState extends ConsumerState<MainContent>
         _userName.value = decodedData['name'] ?? 'User';
       }
     } catch (e) {
-      print('Error loading user name: $e');
+      log('Error loading user name: $e');
     }
   }
 
@@ -114,7 +136,7 @@ class _MainContentState extends ConsumerState<MainContent>
         await Hive.initFlutter();
 
         if (!Hive.isAdapterRegistered(0)) {
-          Hive.registerAdapter(InspectionStorageModelAdapter());
+          Hive.registerAdapters();
         }
 
         _inspectionBox = await Hive.openBox<InspectionStorageModel>(
@@ -125,7 +147,7 @@ class _MainContentState extends ConsumerState<MainContent>
             Hive.box<InspectionStorageModel>(HiveConstants.INSPECTION_BOX);
       }
     } catch (e) {
-      print('Error initializing Hive: $e');
+      log('Error initializing Hive: $e');
       await Hive.deleteBoxFromDisk(HiveConstants.INSPECTION_BOX);
       await Hive.initFlutter();
       _inspectionBox = await Hive.openBox<InspectionStorageModel>(
@@ -171,7 +193,7 @@ class _MainContentState extends ConsumerState<MainContent>
       }
       return false;
     } catch (e) {
-      print('Error checking existing inspection: $e');
+      log('Error checking existing inspection: $e');
       return false;
     }
   }
@@ -191,7 +213,7 @@ class _MainContentState extends ConsumerState<MainContent>
 
       _navigateToInspection(true);
     } catch (e) {
-      print('Error handling inspection tap: $e');
+      log('Error handling inspection tap: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -209,7 +231,7 @@ class _MainContentState extends ConsumerState<MainContent>
         Routes.vehicleDetails,
         arguments: {'isNew': isNew},
       ).then((_) {
-        if (mounted) hasExistingInspection();
+        if (mounted) _refreshHasExisting();
       });
     } else {
       Navigator.pushNamed(
@@ -217,7 +239,7 @@ class _MainContentState extends ConsumerState<MainContent>
         Routes.inspection,
         arguments: {'isNew': isNew},
       ).then((_) {
-        if (mounted) hasExistingInspection();
+        if (mounted) _refreshHasExisting();
       });
     }
   }
@@ -502,7 +524,8 @@ class _MainContentState extends ConsumerState<MainContent>
       );
     }).toList();
 
-    return BarChart(
+    return RepaintBoundary(
+      child: BarChart(
       BarChartData(
         maxY: maxY,
         barGroups: barGroups,
@@ -511,8 +534,8 @@ class _MainContentState extends ConsumerState<MainContent>
           show: true,
           drawVerticalLine: false,
           horizontalInterval: maxY / 4,
-          getDrawingHorizontalLine: (_) => FlLine(
-            color: const Color(0xFFE2E8F0),
+          getDrawingHorizontalLine: (_) => const FlLine(
+            color: Color(0xFFE2E8F0),
             strokeWidth: 1,
           ),
         ),
@@ -602,7 +625,7 @@ class _MainContentState extends ConsumerState<MainContent>
           ),
         ),
       ),
-    );
+    ));
   }
 
   Widget _buildChartLegend() {
@@ -760,6 +783,66 @@ class _MainContentState extends ConsumerState<MainContent>
 
               const SizedBox(height: 28),
 
+              // ── Continue Inspection Card (resume a saved session) ────
+              if (_hasExisting) ...[
+                FadeAnimation(
+                  1.25,
+                  GestureDetector(
+                    onTap: () => _navigateToInspection(false),
+                    child: Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: _accentLight,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: _accent.withValues(alpha: 0.35)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: _accent.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.history_rounded,
+                                color: _accent, size: 24),
+                          ),
+                          const SizedBox(width: 14),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Continue Inspection',
+                                  style: TextStyle(
+                                    color: _textPrimary,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Resume your saved progress',
+                                  style: TextStyle(
+                                    color: _textSecondary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.arrow_forward_ios_rounded,
+                              color: _accent, size: 16),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
               // ── Start Inspection Hero Card ───────────────────────────
               FadeAnimation(
                 1.3,
@@ -871,8 +954,10 @@ class _MainContentState extends ConsumerState<MainContent>
                                   ),
                                 ),
                                 const SizedBox(width: 16),
-                                // Animated play button
-                                AnimatedBuilder(
+                                // Animated play button — RepaintBoundary keeps
+                                // its 60fps pulse from repainting the hero.
+                                RepaintBoundary(
+                                  child: AnimatedBuilder(
                                   animation: rippleAnimation,
                                   builder: (context, child) => SizedBox(
                                     width: 72,
@@ -913,7 +998,7 @@ class _MainContentState extends ConsumerState<MainContent>
                                       ],
                                     ),
                                   ),
-                                ),
+                                )),
                               ],
                             ),
                           ),
@@ -929,13 +1014,18 @@ class _MainContentState extends ConsumerState<MainContent>
               // ── Inspection Activity Chart ────────────────────────────
               FadeAnimation(
                 1.5,
-                _buildStatsSection(ref.watch(inspectionStatsProvider)),
+                // Scoped Consumer so a stats refresh rebuilds only this
+                // section instead of the whole scroll view + all animations.
+                Consumer(
+                  builder: (context, ref, _) =>
+                      _buildStatsSection(ref.watch(inspectionStatsProvider)),
+                ),
               ),
 
               // ── Section heading ──────────────────────────────────────
-              FadeAnimation(
+              const FadeAnimation(
                 1.7,
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(bottom: 14),
                   child: Text(
                     'Quick Actions',

@@ -3,10 +3,13 @@ import 'package:chewie/chewie.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../../widgets/inspection_field_info/components/reference_media_section.dart';
+
 class InspectionVideoReview extends StatefulWidget {
   final String capturedMediaPath;
   final String fieldTitle;
   final String mediaLabel;
+  final List<Map<String, dynamic>> referenceMedia;
   final VoidCallback onRetake;
   final void Function(int quarterTurns) onUseMedia;
 
@@ -16,6 +19,7 @@ class InspectionVideoReview extends StatefulWidget {
     required this.fieldTitle,
     required this.onRetake,
     required this.onUseMedia,
+    this.referenceMedia = const [],
     this.mediaLabel = 'Video',
   });
 
@@ -36,6 +40,21 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
     _initPlayer();
   }
 
+  @override
+  void didUpdateWidget(InspectionVideoReview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.capturedMediaPath != widget.capturedMediaPath) {
+      _chewieController?.dispose();
+      _videoController.dispose();
+      setState(() {
+        _quarterTurns = 0;
+        _isInitialized = false;
+        _error = null;
+      });
+      _initPlayer();
+    }
+  }
+
   Future<void> _initPlayer() async {
     try {
       _videoController = VideoPlayerController.file(File(widget.capturedMediaPath));
@@ -43,15 +62,9 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
       _chewieController = ChewieController(
         videoPlayerController: _videoController,
         autoPlay: true,
-        looping: false,
+        looping: true,
         aspectRatio: _videoController.value.aspectRatio,
-        showControls: true,
-        materialProgressColors: ChewieProgressColors(
-          playedColor: const Color(0xFF4D9EFF),
-          handleColor: const Color(0xFF4D9EFF),
-          bufferedColor: Colors.white30,
-          backgroundColor: Colors.white12,
-        ),
+        showControls: false,
       );
       if (mounted) setState(() => _isInitialized = true);
     } catch (e) {
@@ -93,6 +106,14 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
 
   @override
   Widget build(BuildContext context) {
+    final refUrl = widget.referenceMedia.isNotEmpty
+        ? (widget.referenceMedia.first['url'] as String? ?? '')
+        : '';
+    final refMediaType = widget.referenceMedia.isNotEmpty
+        ? (widget.referenceMedia.first['mediaType'] as String? ?? 'image')
+            .toLowerCase()
+        : 'image';
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -129,24 +150,79 @@ class _InspectionVideoReviewState extends State<InspectionVideoReview> {
         // Header
         Positioned(
           top: 16, left: 16, right: 16,
-          child: const Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Review',
-                style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.w500),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Review',
+                      style: TextStyle(color: Colors.white60, fontSize: 12, fontWeight: FontWeight.w500),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Does this look right?',
+                      style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
               ),
-              SizedBox(height: 2),
-              Text(
-                'Does this look right?',
-                style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w700),
+              GestureDetector(
+                onTap: widget.onRetake,
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 20),
+                ),
               ),
             ],
           ),
         ),
+        // Reference thumbnail — cache-aware so the guide shows from disk offline.
+        if (refUrl.isNotEmpty)
+          Positioned(
+            top: 80,
+            left: 16,
+            child: Container(
+              width: 80,
+              height: 60,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                    color: const Color(0xFFFF6B6B).withValues(alpha: 0.8),
+                    width: 2),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: refMediaType == 'video'
+                    ? Container(
+                        color: Colors.black87,
+                        child: const Center(
+                          child: Icon(Icons.play_circle_filled,
+                              color: Colors.white70, size: 28),
+                        ),
+                      )
+                    : CachedReferenceImage(
+                        url: refUrl,
+                        fit: BoxFit.cover,
+                        // 80×60 dp container; 2× for retina.
+                        cacheWidth: 160,
+                        cacheHeight: 120,
+                      ),
+              ),
+            ),
+          ),
         // Rotate button + Retake / Use buttons
         Positioned(
-          bottom: 16, left: 16, right: 16,
+          bottom: 16 + MediaQuery.of(context).padding.bottom,
+          left: 16,
+          right: 16,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [

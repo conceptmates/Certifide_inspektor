@@ -4,6 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../../../utils/media_url.dart';
+import '../../../../widgets/inspection_field_info/components/reference_media_section.dart';
+
 class InspectionReferenceFullscreen extends StatefulWidget {
   final List<Map<String, dynamic>> mediaList;
   final int initialIndex;
@@ -70,21 +73,13 @@ class _InspectionReferenceFullscreenState
                     child: InteractiveViewer(
                       minScale: 0.8,
                       maxScale: 4.0,
+                      // Cache-aware so the enlarged guide image loads from disk
+                      // when offline (raw Image.network would render blank).
                       child: Center(
-                        child: Image.network(
-                          url,
+                        child: CachedReferenceImage(
+                          url: url,
                           fit: BoxFit.contain,
-                          loadingBuilder: (_, child, progress) {
-                            if (progress == null) return child;
-                            return const Center(
-                              child: CircularProgressIndicator(
-                                  color: Colors.white70),
-                            );
-                          },
-                          errorBuilder: (_, __, ___) => const Center(
-                            child: Icon(Icons.broken_image,
-                                size: 56, color: Colors.white54),
-                          ),
+                          fullscreen: true,
                         ),
                       ),
                     ),
@@ -385,11 +380,19 @@ class _NativePlayerState extends State<_NativePlayer> {
   }
 
   Future<void> _init() async {
+    // Normalise the URL so spaces / special characters in admin-uploaded
+    // filenames don't make the native player reject the source. See mediaUri().
+    final controller = VideoPlayerController.networkUrl(mediaUri(widget.url));
+    _vpc = controller;
     try {
-      _vpc = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-      await _vpc!.initialize();
+      await controller.initialize().timeout(const Duration(seconds: 30));
+      // On iOS initialize() can succeed while the asset still failed to load.
+      if (controller.value.hasError) {
+        throw Exception(
+            controller.value.errorDescription ?? 'Video failed to load');
+      }
       _chewie = ChewieController(
-        videoPlayerController: _vpc!,
+        videoPlayerController: controller,
         autoPlay: true,
         looping: false,
         allowFullScreen: true,

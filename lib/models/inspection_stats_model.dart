@@ -21,6 +21,14 @@ class InspectionStatsBucket {
         pending: (json['pending'] as num).toInt(),
         rejected: (json['rejected'] as num).toInt(),
       );
+
+  Map<String, dynamic> toJson() => {
+        'bucket': bucket,
+        'total': total,
+        'approved': approved,
+        'pending': pending,
+        'rejected': rejected,
+      };
 }
 
 class InspectionStatsTotals {
@@ -43,6 +51,13 @@ class InspectionStatsTotals {
         pending: (json['pending'] as num).toInt(),
         rejected: (json['rejected'] as num).toInt(),
       );
+
+  Map<String, dynamic> toJson() => {
+        'total': total,
+        'approved': approved,
+        'pending': pending,
+        'rejected': rejected,
+      };
 }
 
 class InspectionStats {
@@ -74,6 +89,14 @@ class InspectionStats {
           .toList(),
     );
   }
+
+  /// Mirrors the shape [InspectionStats.fromJson] expects, so a cached value
+  /// round-trips back through the same factory.
+  Map<String, dynamic> toJson() => {
+        'meta': {'period': period, 'from': from, 'to': to},
+        'totals': totals.toJson(),
+        'buckets': buckets.map((b) => b.toJson()).toList(),
+      };
 
   List<InspectionStatsBucket> get activeBuckets =>
       buckets.where((b) => b.total > 0).toList();

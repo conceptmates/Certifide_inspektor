@@ -6,22 +6,56 @@ part of 'inspection_provider.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$inspectionNotifierHash() =>
-    r'193c70e67739b9fab8fbf0519bf5ef3d8a9042d7';
+// GENERATED CODE - DO NOT MODIFY BY HAND
+// ignore_for_file: type=lint, type=warning
 
-/// See also [InspectionNotifier].
 @ProviderFor(InspectionNotifier)
-final inspectionNotifierProvider =
-    NotifierProvider<InspectionNotifier, InspectionState>.internal(
-  InspectionNotifier.new,
-  name: r'inspectionNotifierProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$inspectionNotifierHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
+const inspectionProvider = InspectionNotifierProvider._();
 
-typedef _$InspectionNotifier = Notifier<InspectionState>;
-// ignore_for_file: type=lint
-// ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member
+final class InspectionNotifierProvider
+    extends $NotifierProvider<InspectionNotifier, InspectionState> {
+  const InspectionNotifierProvider._()
+      : super(
+          from: null,
+          argument: null,
+          retry: null,
+          name: r'inspectionProvider',
+          isAutoDispose: false,
+          dependencies: null,
+          $allTransitiveDependencies: null,
+        );
+
+  @override
+  String debugGetCreateSourceHash() => _$inspectionNotifierHash();
+
+  @$internal
+  @override
+  InspectionNotifier create() => InspectionNotifier();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(InspectionState value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<InspectionState>(value),
+    );
+  }
+}
+
+String _$inspectionNotifierHash() =>
+    r'f4b9c6458c09f0effa70d3796b10df1a428eda41';
+
+abstract class _$InspectionNotifier extends $Notifier<InspectionState> {
+  InspectionState build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final created = build();
+    final ref = this.ref as $Ref<InspectionState, InspectionState>;
+    final element = ref.element as $ClassProviderElement<
+        AnyNotifier<InspectionState, InspectionState>,
+        InspectionState,
+        Object?,
+        Object?>;
+    element.handleValue(ref, created);
+  }
+}

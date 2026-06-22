@@ -52,6 +52,7 @@ class VehicleInfo {
   final String? variant;
   final String? colour;
   final String? transmission;
+  final String? regNo;
 
   VehicleInfo({
     required this.brand,
@@ -61,6 +62,7 @@ class VehicleInfo {
     this.variant,
     this.colour,
     this.transmission,
+    this.regNo,
   });
 
   factory VehicleInfo.fromJson(Map<String, dynamic> json) {
@@ -71,6 +73,10 @@ class VehicleInfo {
     final transmission = txRaw != null && txRaw.isNotEmpty
         ? txRaw[0].toUpperCase() + txRaw.substring(1).toLowerCase()
         : null;
+    // Server may return "registration_number", "regno" or "regNo"
+    final regNoRaw =
+        (json['registration_number'] ?? json['regno'] ?? json['regNo'])
+            ?.toString();
     return VehicleInfo(
       brand: json['brand'] ?? '',
       model: json['model'] ?? '',
@@ -79,6 +85,7 @@ class VehicleInfo {
       variant: json['variant']?.toString(),
       colour: colourRaw,
       transmission: transmission,
+      regNo: regNoRaw,
     );
   }
 
@@ -91,6 +98,7 @@ class VehicleInfo {
       if (variant != null) 'variant': variant,
       if (colour != null) 'colour': colour,
       if (transmission != null) 'transmission': transmission,
+      if (regNo != null) 'registration_number': regNo,
     };
   }
 }
@@ -111,6 +119,15 @@ class InspectionField {
   final List<DropdownOption> options;
   final List<ReferenceMedia> referenceMedia;
 
+  // Pre-filled values from /resume or /initialize response.
+  final String? initialValue;
+  final String? initialRemarks;
+  final String? initialImage;
+  final List<String>? initialMultiImages;
+  final String? initialVideo;
+  final String? initialAudio;
+  final String? initialFile;
+
   InspectionField({
     required this.id,
     required this.fieldId,
@@ -126,9 +143,28 @@ class InspectionField {
     this.metadata,
     required this.options,
     required this.referenceMedia,
+    this.initialValue,
+    this.initialRemarks,
+    this.initialImage,
+    this.initialMultiImages,
+    this.initialVideo,
+    this.initialAudio,
+    this.initialFile,
   });
 
+  static String? _asString(dynamic v) {
+    if (v == null) return null;
+    final s = v.toString();
+    return s.isEmpty ? null : s;
+  }
+
   factory InspectionField.fromJson(Map<String, dynamic> json) {
+    final rawMultiImages = json['initial_multi_images'];
+    List<String>? multiImages;
+    if (rawMultiImages is List && rawMultiImages.isNotEmpty) {
+      multiImages = rawMultiImages.map((e) => e.toString()).toList();
+    }
+
     return InspectionField(
       id: json['id'] ?? 0,
       fieldId: json['field_id'] ?? '',
@@ -150,6 +186,21 @@ class InspectionField {
               ?.map((e) => ReferenceMedia.fromJson(e))
               .toList() ??
           [],
+      initialValue: _asString(json['initial_value']),
+      initialRemarks: _asString(json['initial_remarks']),
+      initialImage: _asString(json['initial_image'] is Map
+          ? (json['initial_image'] as Map)['url']
+          : json['initial_image']),
+      initialMultiImages: multiImages,
+      initialVideo: _asString(json['initial_video'] is Map
+          ? (json['initial_video'] as Map)['url']
+          : json['initial_video']),
+      initialAudio: _asString(json['initial_audio'] is Map
+          ? (json['initial_audio'] as Map)['url']
+          : json['initial_audio']),
+      initialFile: _asString(json['initial_file'] is Map
+          ? (json['initial_file'] as Map)['url']
+          : json['initial_file']),
     );
   }
 
@@ -169,6 +220,13 @@ class InspectionField {
       'metadata': metadata,
       'options': options.map((e) => e.toJson()).toList(),
       'reference_media': referenceMedia.map((e) => e.toJson()).toList(),
+      if (initialValue != null) 'initial_value': initialValue,
+      if (initialRemarks != null) 'initial_remarks': initialRemarks,
+      if (initialImage != null) 'initial_image': initialImage,
+      if (initialMultiImages != null) 'initial_multi_images': initialMultiImages,
+      if (initialVideo != null) 'initial_video': initialVideo,
+      if (initialAudio != null) 'initial_audio': initialAudio,
+      if (initialFile != null) 'initial_file': initialFile,
     };
   }
 }
@@ -327,6 +385,18 @@ class InspectionInitializationResponse {
     required this.vehicleInfo,
     required this.structure,
   });
+
+  /// Flat list of every image reference-media URL across all sections/fields,
+  /// for warming the offline cache. Excludes non-image media (video/audio are
+  /// streamed; `link`/YouTube live on uncacheable third-party hosts).
+  List<String> get referenceImageUrls => [
+        for (final section in structure.sections)
+          for (final field in section.fields)
+            for (final media in field.referenceMedia)
+              if (media.url.isNotEmpty &&
+                  media.mediaType.toLowerCase() == 'image')
+                media.url,
+      ];
 
   factory InspectionInitializationResponse.fromJson(Map<String, dynamic> json) {
     return InspectionInitializationResponse(

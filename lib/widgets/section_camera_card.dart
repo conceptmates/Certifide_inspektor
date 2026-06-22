@@ -10,6 +10,27 @@ import 'package:permission_handler/permission_handler.dart';
 /// controller to release camera hardware before the next one initialises.
 Future<void>? cameraCardPendingDisposal;
 
+/// Disposes [controller], swallowing the `PlatformException` that
+/// camera_android_camerax throws when `dispose()` runs before the preview's
+/// surface producer finished initialising:
+///
+///   IllegalStateException: releaseFlutterSurfaceTexture() cannot be called if
+///   the flutterSurfaceProducer for the camera preview has not yet been
+///   initialized.
+///
+/// This happens when the user navigates away (e.g. tapping next/previous
+/// quickly) while a controller is still starting up. The returned future always
+/// completes normally so callers awaiting [cameraCardPendingDisposal] never see
+/// an unhandled rejection — there is nothing to release in that state anyway.
+Future<void> safeDisposeCamera(CameraController? controller) async {
+  if (controller == null) return;
+  try {
+    await controller.dispose();
+  } catch (_) {
+    // Controller was disposed before fully initialising — safe to ignore.
+  }
+}
+
 class SectionCameraCard extends StatefulWidget {
   final double height;
   final BorderRadius borderRadius;
@@ -121,7 +142,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     _controller = null;
     if (controller != null) {
       // Store the async disposal future so the next card can await it.
-      _pendingDisposal = controller.dispose();
+      _pendingDisposal = safeDisposeCamera(controller);
     }
   }
 
@@ -246,7 +267,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
     final old = _controller;
     _controller = null;
     if (old != null) {
-      final f = old.dispose();
+      final f = safeDisposeCamera(old);
       _pendingDisposal = f;
       await f.timeout(const Duration(seconds: 1), onTimeout: () {});
       _pendingDisposal = null;
@@ -268,7 +289,7 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       // the platform callback has completed (so no "used after disposed" crash).
       if (_isDisposePending || !mounted || _controller != controller) {
         _isDisposePending = false;
-        _pendingDisposal = controller.dispose();
+        _pendingDisposal = safeDisposeCamera(controller);
         _controller = null;
         return false;
       }
@@ -282,12 +303,12 @@ class _SectionCameraCardState extends State<SectionCameraCard>
       return true;
     } on CameraException {
       _isDisposePending = false;
-      _pendingDisposal = _controller?.dispose();
+      _pendingDisposal = safeDisposeCamera(_controller);
       _controller = null;
       return false;
     } catch (_) {
       _isDisposePending = false;
-      _pendingDisposal = _controller?.dispose();
+      _pendingDisposal = safeDisposeCamera(_controller);
       _controller = null;
       return false;
     }
@@ -772,12 +793,12 @@ class _FullscreenCameraViewState extends State<_FullscreenCameraView> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Expanded(
+                const Expanded(
                   child: Align(
                     alignment: Alignment.centerRight,
                     child: Padding(
-                      padding: const EdgeInsets.only(right: 8, bottom: 8),
-                      child: const SizedBox(width: 56, height: 56),
+                      padding: EdgeInsets.only(right: 8, bottom: 8),
+                      child: SizedBox(width: 56, height: 56),
                     ),
                   ),
                 ),
@@ -818,11 +839,11 @@ class _FullscreenCameraViewState extends State<_FullscreenCameraView> {
                     ),
                   ),
                 ),
-                Expanded(
+                const Expanded(
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: Padding(
-                      padding: const EdgeInsets.only(left: 8, bottom: 8),
+                      padding: EdgeInsets.only(left: 8, bottom: 8),
                       child: SizedBox(
                         width: 56,
                         height: 56,

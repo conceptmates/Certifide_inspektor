@@ -9,7 +9,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -18,8 +18,10 @@ import 'package:record/record.dart';
 
 import '../../constants/hive_constants.dart';
 import '../../data/inspection_storage_model.dart';
+import '../../services/reference_media_cache.dart';
 import '../../models/inspection_item.dart';
 import '../../models/inspection_template_model.dart';
+import '../../models/pending_media.dart';
 import '../../providers/inspection_provider.dart';
 import '../../providers/inspection_session_provider.dart';
 import '../../providers/user_provider.dart';
@@ -102,6 +104,26 @@ class InspectionScreen extends ConsumerStatefulWidget {
   ConsumerState<InspectionScreen> createState() => _InspectionScreenState();
 }
 
+/// Holds the transient camera-overlay flags as [ValueNotifier]s so that
+/// toggling them (flash, start/stop recording, pause/resume) rebuilds only the
+/// camera overlay via a [ListenableBuilder] instead of `setState`-ing the whole
+/// inspection screen. Audio recording is intentionally excluded — it changes
+/// which capture widget is built, so it still needs a full rebuild.
+class _CaptureUiState {
+  final ValueNotifier<bool> flashOn = ValueNotifier(false);
+  final ValueNotifier<bool> isVideoRecording = ValueNotifier(false);
+  final ValueNotifier<bool> isVideoPaused = ValueNotifier(false);
+
+  late final Listenable listenable =
+      Listenable.merge([flashOn, isVideoRecording, isVideoPaused]);
+
+  void dispose() {
+    flashOn.dispose();
+    isVideoRecording.dispose();
+    isVideoPaused.dispose();
+  }
+}
+
 class _InspectionScreenState extends ConsumerState<InspectionScreen>
     with WidgetsBindingObserver {
   // Survives navigation — keyed by "${brandId}_${modelId}"
@@ -129,10 +151,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   Map<String, TextEditingController> numberRemarkControllers = {};
   Map<String, TextEditingController> textFieldControllers = {};
   Map<String, dynamic>? vehicleDetails;
-  bool _showButton = true;
-  bool _isScrollable = false;
   bool _isSubmitting = false;
-  final Set<String> _uploadingImages = {};
+  // ValueNotifier so upload spinners rebuild only their own widget (via
+  // ValueListenableBuilder), not the whole screen, on add/remove.
+  final ValueNotifier<Set<String>> _uploadingImages = ValueNotifier(<String>{});
   final Set<String> _uploadingMultiImagePaths = {};
   String? _verifyingRegNoUniqueId;
   final Map<String, String> _regNoVerifyMessage = {};
@@ -157,14 +179,27 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   VoidCallback? _triggerPhotoCapture;
   VoidCallback? _triggerEnlarge;
   VoidCallback? _triggerFlashToggle;
-  bool _cameraFlashOn = false;
   VoidCallback? _triggerVideoToggle;
-  bool _isVideoRecording = false;
+  VoidCallback? _triggerVideoPauseResume;
+  // Transient camera-overlay flags (flash on, recording, paused). Held as
+  // ValueNotifiers so toggling them rebuilds only the camera overlay (via a
+  // ListenableBuilder), not the whole inspection screen.
+  final _CaptureUiState _captureUi = _CaptureUiState();
   AudioRecorder? _audioRecorder;
   bool _isRecordingAudio = false;
   Timer? _audioTimer;
-  Duration _audioElapsed = Duration.zero;
-  bool _highlightFlagIssues = false;
+  // ValueNotifier so the per-second timer tick only rebuilds the duration
+  // label (via ValueListenableBuilder), not the entire screen tree.
+  final ValueNotifier<Duration> _audioElapsed = ValueNotifier(Duration.zero);
+  // ValueNotifier so toggling the flag-issue highlight rebuilds only that
+  // button (via ValueListenableBuilder), not the whole screen.
+  final ValueNotifier<bool> _highlightFlagIssues = ValueNotifier(false);
+  // Holds the uniqueId of a missing required field to highlight in red after
+  // the user is sent back to it from the "required fields" sheet. Cleared once
+  // they fill it in or navigate away.
+  final ValueNotifier<String?> _highlightMissingFieldId =
+      ValueNotifier<String?>(null);
+  bool _isSyncingToServer = false;
 
   // Dynamic inspection template from API
   InspectionInitializationResponse? _inspectionTemplate;
@@ -229,8 +264,30 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   static const String INSPECTION_BOX = HiveConstants.INSPECTION_BOX;
   Box<InspectionStorageModel>? _inspectionBox;
 
-  // Get sections - either from dynamic template or default
+  // Memoized result of [_buildSections] plus the inputs it was built from.
+  // The template object is always replaced wholesale (never mutated in place),
+  // so identity of the template + the dynamic flag is a sufficient cache key.
+  List<Map<String, dynamic>>? _cachedSections;
+  InspectionInitializationResponse? _cachedSectionsTemplate;
+  bool? _cachedSectionsUseDynamic;
+
+  // Get sections - either from dynamic template or default.
+  // Memoized: the heavy sort/deep-copy/map runs once per template, not on
+  // every read (this getter is read 5+ times per setState).
   List<Map<String, dynamic>> get _sections {
+    if (_cachedSections != null &&
+        identical(_cachedSectionsTemplate, _inspectionTemplate) &&
+        _cachedSectionsUseDynamic == _useDynamicTemplate) {
+      return _cachedSections!;
+    }
+    final sections = _buildSections();
+    _cachedSections = sections;
+    _cachedSectionsTemplate = _inspectionTemplate;
+    _cachedSectionsUseDynamic = _useDynamicTemplate;
+    return sections;
+  }
+
+  List<Map<String, dynamic>> _buildSections() {
     if (_useDynamicTemplate && _inspectionTemplate != null) {
       final sections = _inspectionTemplate!.structure.sections;
       // Sort sections by order
@@ -300,6 +357,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 'order': m.order,
               })
           .toList(),
+      if (field.initialValue != null) 'initialValue': field.initialValue,
+      if (field.initialRemarks != null) 'initialRemarks': field.initialRemarks,
+      if (field.initialImage != null) 'initialImage': field.initialImage,
+      if (field.initialMultiImages != null)
+        'initialMultiImages': field.initialMultiImages,
+      if (field.initialVideo != null) 'initialVideo': field.initialVideo,
+      if (field.initialAudio != null) 'initialAudio': field.initialAudio,
+      if (field.initialFile != null) 'initialFile': field.initialFile,
     };
   }
 
@@ -307,9 +372,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _isScrollable = false;
-    _showButton = false;
-    _scrollController.addListener(_onScroll);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initHive();
@@ -321,9 +383,29 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // Set vehicle details from widget
       vehicleDetails = widget.vehicleDetails;
 
-      if (widget.isNewInspection) {
+      // The reports/pending "Resume" path passes isNew:true with the server
+      // inspection id. If the local working copy (CURRENT_INSPECTION_KEY) belongs
+      // to THIS same inspection, it holds field values + images entered offline
+      // that the server template does not carry — so resume from it instead of
+      // wiping it. Only a genuinely new inspection (no matching local record)
+      // takes the fresh-start path that clears the key.
+      // Prefer the durable per-inspection slot so resuming a specific
+      // inspection works even when CURRENT holds a different one (e.g. an
+      // offline resume from the reports list). Fall back to CURRENT for data
+      // saved before per-id keys existed.
+      final storedForResume = (widget.inspectionId != null
+              ? _inspectionBox?.get(
+                  HiveConstants.inspectionKey(widget.inspectionId!))
+              : null) ??
+          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+      final resumesLocalCopy = widget.isNewInspection &&
+          widget.inspectionId != null &&
+          storedForResume != null &&
+          storedForResume.inspectionId == widget.inspectionId;
+
+      if (widget.isNewInspection && !resumesLocalCopy) {
         // Fresh start — discard any leftover session from a previous run.
-        ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
+        ref.read(inspectionSessionProvider.notifier).clearSession();
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
         if (!mounted) return;
         // Load the API template (with sections, fields, and options) for new inspections.
@@ -334,9 +416,38 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _initializeValues();
         _prefillVehicleDetails();
         _initializeControllers();
+        // Re-attach any offline-captured media from the durable upload queue.
+        // The reports-resume path arrives here (isNew:true) after deleting the
+        // CURRENT key, so without this, photos/videos taken offline and not yet
+        // uploaded would be missing from the rebuilt form.
+        await _rehydratePendingMediaFromQueue();
+        // Persist the just-initialized inspection (the API template plus the
+        // vehicle details returned by initialize — regno/make/model/etc.)
+        // immediately. Previously this lived only in memory until the first
+        // field edit, so going offline and resuming showed empty fields.
+        await _saveDataLocally();
+      } else if (resumesLocalCopy) {
+        // Resume the SAME inspection: keep the locally-saved values + images.
+        // The server template (from /resume) provides the up-to-date structure;
+        // _loadDataFromStorage layers the offline-entered answers + media on top.
+        ref.read(inspectionSessionProvider.notifier).clearSession();
+        if (widget.inspectionTemplate != null) {
+          _inspectionTemplate = widget.inspectionTemplate;
+          _useDynamicTemplate = true;
+        } else {
+          await _loadTemplateFromStorage();
+        }
+        await _fetchInspectionTemplateIfMissing();
+        await _loadDataFromStorage();
+        await _rehydratePendingMediaFromQueue();
+        if (mounted) {
+          _prefillVehicleDetails();
+          _initializeControllers();
+          await _saveDataLocally();
+        }
       } else {
         // Resume path: prefer in-memory snapshot over Hive to avoid I/O.
-        final snap = ref.read(inspectionSessionNotifierProvider);
+        final snap = ref.read(inspectionSessionProvider);
         if (snap != null) {
           _restoreFromSnapshot(snap);
         } else {
@@ -386,6 +497,22 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             await _saveDataLocally();
           }
         }
+
+        // Re-apply the vehicle-detail prefill (regno/make/model…) on resume so
+        // those fields render even when offline prevented refetching the server
+        // template, or the stored record predates the prefill. It only fills
+        // empty fields, so already-entered values are never overwritten.
+        if (mounted) {
+          _prefillVehicleDetails();
+          _initializeControllers();
+        }
+
+        // Safety net: if the CURRENT key lost media (e.g. a hard kill before it
+        // was written, or a stale record), re-attach it from the durable upload
+        // queue. Fills only empty fields, so restored media is never doubled.
+        if (mounted && await _rehydratePendingMediaFromQueue() && mounted) {
+          await _saveDataLocally();
+        }
       }
 
       // Request camera + mic permissions while the loading screen is still
@@ -409,14 +536,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             await Hive.openBox<InspectionStorageModel>(INSPECTION_BOX);
       }
     } catch (e) {
-      print('Error initializing Hive: $e');
+      log('Error initializing Hive: $e');
       await Hive.deleteBoxFromDisk(INSPECTION_BOX);
       _inspectionBox =
           await Hive.openBox<InspectionStorageModel>(INSPECTION_BOX);
     }
   }
 
-  Future<void> _saveDataLocally() async {
+  /// Persists the live inspection to Hive under CURRENT_INSPECTION_KEY.
+  ///
+  /// [useIsolate] runs the heavy map-copy + template toJson off the main thread
+  /// (the default for routine autosaves, to avoid jank). Pass `false` for the
+  /// app-lifecycle flush: a force-close gives only a short window, and spawning
+  /// an isolate adds round-trip latency that can cost the last save. Building on
+  /// the main thread reaches `box.put` sooner so the data is more likely to land.
+  Future<void> _saveDataLocally({bool useIsolate = true}) async {
     if (_inspectionBox == null) {
       await _initHive();
     }
@@ -436,8 +570,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       });
 
-      // Heavy map-copy + toJson work moved off the main thread.
-      final payload = await compute(_buildStoragePayload, {
+      final input = {
         'itemValues': itemValues,
         'itemImages': itemImages,
         'itemVideos': itemVideos,
@@ -451,18 +584,37 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         'inspectionTemplate': _inspectionTemplate?.toJson(),
         'currentSection': _currentSection,
         'inspectionId': _effectiveInspectionId,
-      });
+      };
+
+      // Heavy map-copy + toJson work; off the main thread by default.
+      final payload = useIsolate
+          ? await compute(_buildStoragePayload, input)
+          : _buildStoragePayload(input);
 
       final storageModel = InspectionStorageModel.fromMap(payload);
 
+      // Active working copy (single slot, used by the home screen to offer
+      // "resume" and by the active inspection screen).
       await _inspectionBox?.put(
         HiveConstants.CURRENT_INSPECTION_KEY,
         storageModel,
       );
 
-      print('Data saved locally');
+      // Durable per-inspection copy so this inspection's structure + answers
+      // survive offline even after another inspection is started (which only
+      // overwrites CURRENT). copyWith() detaches a fresh instance — a single
+      // HiveObject cannot live under two keys at once. See [_readStored].
+      final id = _effectiveInspectionId;
+      if (id != null) {
+        await _inspectionBox?.put(
+          HiveConstants.inspectionKey(id),
+          storageModel.copyWith(),
+        );
+      }
+
+      log('Data saved locally');
     } catch (e) {
-      print('Error saving data: $e');
+      log('Error saving data: $e');
     }
   }
 
@@ -472,8 +624,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         await _initHive();
       }
 
-      final currentData =
-          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+      final currentData = _readStored();
       if (currentData != null) {
         final completedInspection = InspectionStorageModel(
           itemValues: Map<String, String>.from(currentData.itemValues),
@@ -497,11 +648,227 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         await historyBox.add(completedInspection);
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
+        // Drop the durable per-inspection copy too — it's submitted now.
+        final id = _effectiveInspectionId;
+        if (id != null) {
+          await _inspectionBox?.delete(HiveConstants.inspectionKey(id));
+        }
       }
     } catch (e) {
-      print('Error completing inspection: $e');
+      log('Error completing inspection: $e');
       rethrow;
     }
+  }
+
+  /// Builds the items list for a section in save-step format.
+  /// Builds the save-step item list for a section.
+  ///
+  /// When [httpOnly] is true, any media still holding a local (non-http) path is
+  /// emitted as null instead of the raw path. The final server submit uses this
+  /// so a local path is never POSTed as imagePath — otherwise the server stores
+  /// an unresolvable path and the field shows empty on resume, clobbering any
+  /// URL an earlier per-field save / upload-queue had already persisted.
+  /// Defaults to false so the offline-save and upload-queue descriptors keep the
+  /// local paths they still need to upload later.
+  List<Map<String, dynamic>> _buildSectionItems(
+    Map<String, dynamic> section, {
+    bool httpOnly = false,
+  }) {
+    final items = <Map<String, dynamic>>[];
+    for (var item in section['items'] as List<dynamic>) {
+      final uniqueId = _getItemUniqueId(item);
+      final title = _getItemTitle(item);
+
+      String value = itemValues[uniqueId] ?? '';
+      if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
+        value = '';
+      } else if (value == 'flagged') {
+        final selectedLabel = itemFlaggedIssues[uniqueId]!.first;
+        String? optionValue;
+        if (item is Map) {
+          final opts = item['options'] as List?;
+          if (opts != null) {
+            for (final opt in opts) {
+              final lbl = opt['label']?.toString() ?? '';
+              final val = opt['value']?.toString() ?? '';
+              final label = lbl.isNotEmpty ? lbl : val;
+              if (label == selectedLabel) {
+                optionValue = val.isNotEmpty ? val : label;
+                break;
+              }
+            }
+          }
+        }
+        value = optionValue ?? selectedLabel;
+      }
+
+      final remarks = itemRemarks[uniqueId];
+      final imagePath =
+          httpOnly ? _httpOrNull(itemImages[uniqueId]) : itemImages[uniqueId];
+      final multiImages = httpOnly
+          ? _allHttpOrNull(itemMultiImages[uniqueId])
+          : itemMultiImages[uniqueId];
+      final videoPath =
+          httpOnly ? _httpOrNull(itemVideos[uniqueId]) : itemVideos[uniqueId];
+      final audioPath =
+          httpOnly ? _httpOrNull(itemAudios[uniqueId]) : itemAudios[uniqueId];
+      final filePayload = itemFiles[uniqueId];
+      String? filePath;
+      if (filePayload != null) {
+        try {
+          final decoded = json.decode(filePayload) as Map<String, dynamic>;
+          filePath = decoded['filePath'] as String?;
+        } catch (_) {
+          filePath = filePayload;
+        }
+      }
+      if (httpOnly) filePath = _httpOrNull(filePath);
+
+      items.add({
+        'id': uniqueId,
+        'title': title,
+        'value': value,
+        'remarks': (remarks != null && remarks.isNotEmpty) ? remarks : null,
+        'imagePath': imagePath,
+        'multiImages': multiImages,
+        'videoPath': videoPath,
+        'audioPath': audioPath,
+        'filePath': filePath,
+      });
+    }
+    return items;
+  }
+
+  /// Checks whether a section has any filled data worth saving.
+  bool _sectionHasData(Map<String, dynamic> section) {
+    for (var item in section['items'] as List<dynamic>) {
+      final uniqueId = _getItemUniqueId(item);
+      final value = (itemValues[uniqueId] ?? '').trim();
+      if (value.isNotEmpty && value != 'N/A') return true;
+      if ((itemRemarks[uniqueId] ?? '').isNotEmpty) return true;
+      if (itemImages[uniqueId] != null) return true;
+      if ((itemMultiImages[uniqueId] ?? []).isNotEmpty) return true;
+      if (itemVideos[uniqueId] != null) return true;
+      if (itemAudios[uniqueId] != null) return true;
+      if (itemFiles[uniqueId] != null) return true;
+    }
+    return false;
+  }
+
+  /// Bulk fallback: saves all filled sections to the server (e.g. on explicit request).
+  /// Normal flow uses [_saveFieldToServer] for per-field instant saves.
+  // ignore: unused_element
+  void _syncToServer() {
+    final inspectionId = _effectiveInspectionId;
+    if (inspectionId == null || _isSyncingToServer) return;
+    _isSyncingToServer = true;
+    unawaited(Future(() async {
+      try {
+        final hasInternet = await ConnectivityChecker.canReachServer();
+        if (!hasInternet) return;
+
+        for (final section in _sections) {
+          if (!_sectionHasData(section)) continue;
+          final sectionName = (section['name'] as String?) ??
+              (section['title'] as String).toLowerCase().replaceAll(' ', '_');
+          final items = _buildSectionItems(section);
+          if (items.isEmpty) continue;
+          await ApiService.saveInspectionStep(
+            inspectionId,
+            section: sectionName,
+            items: items,
+          );
+        }
+      } catch (e) {
+        log('Background save-step sync error: $e');
+      } finally {
+        _isSyncingToServer = false;
+      }
+    }));
+  }
+
+  /// Instantly uploads a single field's current data to the server via save-step.
+  /// Called whenever a field value, option, remark, or media changes.
+  void _saveFieldToServer(dynamic item, String uniqueId) {
+    final inspectionId = _effectiveInspectionId;
+    if (inspectionId == null) return;
+
+    // Locate the field's section by searching all sections
+    dynamic resolvedItem = item;
+    String? sectionName;
+    for (final sec in _sections) {
+      for (final si in sec['items'] as List<dynamic>) {
+        if (_getItemUniqueId(si) == uniqueId) {
+          resolvedItem ??= si;
+          sectionName = (sec['name'] as String?) ??
+              (sec['title'] as String).toLowerCase().replaceAll(' ', '_');
+          break;
+        }
+      }
+      if (sectionName != null) break;
+    }
+    if (resolvedItem == null || sectionName == null) return;
+
+    String value = itemValues[uniqueId] ?? '';
+    if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
+      value = '';
+    } else if (value == 'flagged') {
+      final selectedLabel = itemFlaggedIssues[uniqueId]!.first;
+      if (resolvedItem is Map) {
+        final opts = resolvedItem['options'] as List?;
+        if (opts != null) {
+          for (final opt in opts) {
+            final lbl = opt['label']?.toString() ?? '';
+            final val = opt['value']?.toString() ?? '';
+            final label = lbl.isNotEmpty ? lbl : val;
+            if (label == selectedLabel) {
+              value = val.isNotEmpty ? val : label;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    String? filePath;
+    final filePayload = itemFiles[uniqueId];
+    if (filePayload != null) {
+      try {
+        filePath = (json.decode(filePayload) as Map<String, dynamic>)['filePath'] as String?;
+      } catch (_) {
+        filePath = filePayload;
+      }
+    }
+
+    // Only push media that has finished uploading (http URLs). Local paths are
+    // never sent to the server — the offline media queue uploads them and
+    // replays save-step with the real URL once online. See [_commitPendingMediaToQueue].
+    final singleItem = {
+      'id': uniqueId,
+      'title': _getItemTitle(resolvedItem),
+      'value': value,
+      'remarks': (itemRemarks[uniqueId]?.isNotEmpty ?? false) ? itemRemarks[uniqueId] : null,
+      'imagePath': _httpOrNull(itemImages[uniqueId]),
+      'multiImages': _allHttpOrNull(itemMultiImages[uniqueId]),
+      'videoPath': _httpOrNull(itemVideos[uniqueId]),
+      'audioPath': _httpOrNull(itemAudios[uniqueId]),
+      'filePath': _httpOrNull(filePath),
+    };
+
+    final capturedSection = sectionName;
+    unawaited(Future(() async {
+      try {
+        final hasInternet = await ConnectivityChecker.canReachServer();
+        if (!hasInternet) return;
+        await ApiService.saveInspectionStep(
+          inspectionId,
+          section: capturedSection,
+          items: [singleItem],
+        );
+      } catch (e) {
+        log('Per-field save error: $e');
+      }
+    }));
   }
 
   void _autoSave() {
@@ -511,7 +878,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         try {
           await _saveDataLocally();
         } catch (e) {
-          print('Error in auto save: $e');
+          log('Error in auto save: $e');
         }
       }
     });
@@ -523,9 +890,160 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
 
     try {
-      await _saveDataLocally();
+      // Build on the main thread: this runs on app-pause/force-close where the
+      // process may die before an isolate round-trip completes.
+      await _saveDataLocally(useIsolate: false);
     } catch (e) {
-      print('Error flushing auto save: $e');
+      log('Error flushing auto save: $e');
+    }
+  }
+
+  // --- Offline media upload queue --------------------------------------------
+
+  /// Returns [v] only when it is an already-uploaded http URL, else null.
+  String? _httpOrNull(String? v) =>
+      (v != null && v.startsWith('http')) ? v : null;
+
+  /// Returns the list only when EVERY entry is an http URL (fully uploaded);
+  /// otherwise null, so a partial multi-image set is never pushed mid-upload.
+  List<String>? _allHttpOrNull(List<String>? v) {
+    if (v == null || v.isEmpty) return null;
+    if (v.any((e) => !e.startsWith('http'))) return null;
+    return v;
+  }
+
+  bool _isLocalMediaPath(String? v) =>
+      v != null && v.isNotEmpty && !v.startsWith('http');
+
+  String? _filePathFromPayload(String? payload) {
+    if (payload == null) return null;
+    try {
+      return (json.decode(payload) as Map<String, dynamic>)['filePath']
+          as String?;
+    } catch (_) {
+      return payload;
+    }
+  }
+
+  /// Minimal vehicle info for displaying the queued inspection in the reports
+  /// "Awaiting Upload" section.
+  Map<String, dynamic> _buildQueueVehicleInfo() {
+    final v = vehicleDetails ?? const {};
+    final make = (v['make'] ?? v['brand'] ?? '').toString();
+    final model = (v['model'] ?? '').toString();
+    return {
+      'registration_number':
+          (v['registrationNumber'] ?? v['registration_number'] ?? '')
+              .toString(),
+      'make_model': [make, model].where((s) => s.isNotEmpty).join(' '),
+      'variant': (v['variant'] ?? '').toString(),
+      'manufacturing_year': (v['year'] ?? v['manufacturing_year'] ?? '')
+          .toString(),
+    };
+  }
+
+  /// Persists every still-local media item (any type) into the offline upload
+  /// queue so an upload interrupted by closing the inspection survives an app
+  /// restart and auto-syncs when the device is back online. Pure Hive write —
+  /// safe to call from dispose() without touching `ref`.
+  Future<void> _commitPendingMediaToQueue() async {
+    final serverId = _effectiveInspectionId;
+    if (serverId == null) return; // need a server id to upload + save-step
+
+    final pendingMedia = <String, PendingMedia>{};
+    final saveStepItems = <String, dynamic>{};
+    // Media-less fields edited offline (values/options/remarks). Without this,
+    // an inspection initialized online then filled offline loses every answer
+    // that has no attached media, because nothing queues it for upload.
+    final answerStepItems = <String, dynamic>{};
+
+    for (final section in _sections) {
+      final sectionTitle = (section['title'] as String?) ?? '';
+      final sectionSlug = (section['name'] as String?) ??
+          sectionTitle.toLowerCase().replaceAll(' ', '_');
+
+      // Reuse the canonical save-step item builder for snapshots.
+      final builtItems = <String, Map<String, dynamic>>{
+        for (final it in _buildSectionItems(section)) it['id'].toString(): it,
+      };
+
+      for (final item in section['items'] as List<dynamic>) {
+        final uniqueId = _getItemUniqueId(item);
+        final fieldId = _getItemFieldId(item);
+        bool hasPending = false;
+
+        PendingMedia entry(String localPath, String mediaType) => PendingMedia(
+              localPath: localPath,
+              section: sectionTitle,
+              itemId: fieldId,
+              mediaType: mediaType,
+              fieldKey: uniqueId,
+            );
+
+        final img = itemImages[uniqueId];
+        if (_isLocalMediaPath(img)) {
+          pendingMedia['image_$uniqueId'] = entry(img!, 'image');
+          hasPending = true;
+        }
+        final vid = itemVideos[uniqueId];
+        if (_isLocalMediaPath(vid)) {
+          pendingMedia['video_$uniqueId'] = entry(vid!, 'video');
+          hasPending = true;
+        }
+        final aud = itemAudios[uniqueId];
+        if (_isLocalMediaPath(aud)) {
+          pendingMedia['audio_$uniqueId'] = entry(aud!, 'audio');
+          hasPending = true;
+        }
+        final filePath = _filePathFromPayload(itemFiles[uniqueId]);
+        if (_isLocalMediaPath(filePath)) {
+          pendingMedia['file_$uniqueId'] = entry(filePath!, 'file');
+          hasPending = true;
+        }
+        final multi = itemMultiImages[uniqueId];
+        if (multi != null) {
+          for (var i = 0; i < multi.length; i++) {
+            if (_isLocalMediaPath(multi[i])) {
+              pendingMedia['multi_${uniqueId}_$i'] =
+                  entry(multi[i], 'multiImage');
+              hasPending = true;
+            }
+          }
+        }
+
+        if (hasPending) {
+          saveStepItems[uniqueId] = {
+            'section': sectionSlug,
+            'item': builtItems[uniqueId] ?? {'id': uniqueId},
+          };
+        } else {
+          // No local media on this field — queue its answer/option/remark so an
+          // offline-edited value isn't lost. Media-bearing fields already carry
+          // their value inside the save-step item replayed after upload.
+          final value = (itemValues[uniqueId] ?? '').trim();
+          final remark = (itemRemarks[uniqueId] ?? '').trim();
+          final hasAnswer =
+              (value.isNotEmpty && value != 'N/A') || remark.isNotEmpty;
+          if (hasAnswer) {
+            answerStepItems[uniqueId] = {
+              'section': sectionSlug,
+              'item': builtItems[uniqueId] ?? {'id': uniqueId},
+            };
+          }
+        }
+      }
+    }
+
+    try {
+      await LocalStorageService.upsertMediaQueue(
+        serverInspectionId: serverId,
+        vehicleInfo: _buildQueueVehicleInfo(),
+        pendingMedia: pendingMedia,
+        saveStepItems: saveStepItems,
+        answerStepItems: answerStepItems,
+      );
+    } catch (e) {
+      log('Error committing pending media to queue: $e');
     }
   }
 
@@ -539,6 +1057,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // Hive keeps data in memory, so the write succeeds even if the OS
       // suspends the process before the disk flush completes.
       unawaited(_flushPendingAutoSave());
+      // Queue still-local media so a backgrounded/killed app doesn't lose the
+      // upload intent; it auto-syncs on the next reconnect.
+      if (!_sessionCompleted) unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -643,11 +1164,23 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     return 'Enter details...';
   }
 
+  /// Resolves the stored copy for this inspection, preferring the durable
+  /// per-inspection slot (which survives another inspection being started) and
+  /// falling back to the single active CURRENT slot for legacy data saved
+  /// before per-id keys existed.
+  InspectionStorageModel? _readStored() {
+    final id = _effectiveInspectionId;
+    if (id != null) {
+      final perId = _inspectionBox?.get(HiveConstants.inspectionKey(id));
+      if (perId != null) return perId;
+    }
+    return _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+  }
+
   // Load template and vehicle details from storage before building sections
   Future<void> _loadTemplateFromStorage() async {
     try {
-      final storedData =
-          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+      final storedData = _readStored();
 
       if (storedData != null) {
         // Load vehicle details if not already set
@@ -664,12 +1197,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             );
             _useDynamicTemplate = true;
           } catch (e) {
-            print('Error parsing stored inspection template: $e');
+            log('Error parsing stored inspection template: $e');
           }
         }
       }
     } catch (e) {
-      print('Error loading template from storage: $e');
+      log('Error loading template from storage: $e');
     }
   }
 
@@ -708,9 +1241,45 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       return;
     }
 
-    final online = await ConnectivityChecker.hasInternetConnection();
+    final online = await ConnectivityChecker.canReachServer();
     if (!online) {
       log('Resume: offline — cannot refetch inspection template');
+      return;
+    }
+
+    // If this inspection already exists on the server, RESUME it (a read-only
+    // GET) rather than initialize. Calling initialize here would mint a fresh
+    // server-side inspection on every continue, duplicating the record.
+    if (_sessionInspectionId != null) {
+      try {
+        final result = await ApiService.resumeInspection(_sessionInspectionId!);
+        if (!mounted) return;
+
+        if (result['success'] == true) {
+          final data = result['data'];
+          InspectionInitializationResponse? parsed;
+          if (data is InspectionInitializationResponse) {
+            parsed = data;
+          } else if (data is Map<String, dynamic>) {
+            try {
+              parsed = InspectionInitializationResponse.fromJson(data);
+            } catch (e) {
+              log('Error parsing resumed inspection template: $e');
+            }
+          }
+          if (parsed != null) {
+            _templateCache[cacheKey] = parsed;
+            _inspectionTemplate = parsed;
+            _useDynamicTemplate = true;
+          }
+        } else {
+          log('resumeInspection on resume failed: ${result['message']}');
+        }
+      } catch (e, st) {
+        log('resumeInspection exception on resume: $e', stackTrace: st);
+      }
+      // Never fall through to initialize when we have a server id — doing so
+      // would create a duplicate inspection.
       return;
     }
 
@@ -776,8 +1345,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   Future<void> _loadDataFromStorage() async {
     try {
-      final storedData =
-          _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+      final storedData = _readStored();
 
       if (storedData != null) {
         setState(() {
@@ -797,38 +1365,111 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _initializeControllers();
       }
     } catch (e) {
-      print('Error loading data: $e');
+      log('Error loading data: $e');
       _initializeValues();
       _initializeControllers();
     }
   }
 
-  void _onScroll() {
-    if (!_isScrollable) return;
+  /// Re-links offline-captured media from the durable upload queue
+  /// (mediaq_<serverId>) back into the field maps on resume.
+  ///
+  /// Why this is needed: media captured while offline is persisted in two
+  /// places — the CURRENT_INSPECTION_KEY (used to render the screen) and the
+  /// upload queue (used to send it to the server). The reports-resume path
+  /// (isNew:true) DELETES the CURRENT key and rebuilds the form purely from the
+  /// server template, which carries no `initialImage`/`initialVideo` for media
+  /// that was never uploaded. The files and their queue entries still exist on
+  /// disk, but the form has no reference to them, so offline photos/videos
+  /// vanish from the UI after a restart. This re-attaches them.
+  ///
+  /// Only fills fields the server (or a prior local restore) left empty, so it
+  /// never clobbers server-provided or already-restored media. Entries stay in
+  /// the queue, so they still upload on reconnect. Returns true if anything was
+  /// restored. setState-only — the caller persists.
+  Future<bool> _rehydratePendingMediaFromQueue() async {
+    final serverId = _effectiveInspectionId;
+    if (serverId == null) return false;
+    try {
+      final container = await LocalStorageService.getMediaQueueById(
+        LocalStorageService.mediaQueueId(serverId),
+      );
+      final pending = container?.pendingMedia;
+      if (pending == null || pending.isEmpty) return false;
 
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 50) {
-      if (!_showButton) {
-        setState(() {
-          _showButton = true;
-        });
+      final multiByField = <String, List<String>>{};
+      var changed = false;
+
+      for (final entry in pending.values) {
+        final fieldKey = entry.fieldKey;
+        if (fieldKey.isEmpty) continue;
+        // Prefer the uploaded URL when one exists, else the local file path.
+        final path =
+            (entry.isUploaded && (entry.uploadedUrl?.isNotEmpty ?? false))
+                ? entry.uploadedUrl!
+                : entry.localPath;
+
+        switch (entry.mediaType) {
+          case 'image':
+            if ((itemImages[fieldKey] ?? '').isEmpty) {
+              itemImages[fieldKey] = path;
+              changed = true;
+            }
+            break;
+          case 'video':
+            if ((itemVideos[fieldKey] ?? '').isEmpty) {
+              itemVideos[fieldKey] = path;
+              changed = true;
+            }
+            break;
+          case 'audio':
+            if ((itemAudios[fieldKey] ?? '').isEmpty) {
+              itemAudios[fieldKey] = path;
+              changed = true;
+            }
+            break;
+          case 'file':
+            if ((itemFiles[fieldKey] ?? '').isEmpty) {
+              itemFiles[fieldKey] = path;
+              changed = true;
+            }
+            break;
+          case 'multiImage':
+            (multiByField[fieldKey] ??= <String>[]).add(path);
+            break;
+        }
       }
-    } else {
-      if (_showButton) {
-        setState(() {
-          _showButton = false;
-        });
-      }
+
+      // Multi-images only restore into a field the server/local restore left
+      // empty, so a partially-synced set isn't duplicated.
+      multiByField.forEach((fieldKey, paths) {
+        final existing = itemMultiImages[fieldKey];
+        if ((existing == null || existing.isEmpty) && paths.isNotEmpty) {
+          itemMultiImages[fieldKey] = paths;
+          changed = true;
+        }
+      });
+
+      if (changed && mounted) setState(() {});
+      return changed;
+    } catch (e) {
+      log('Error rehydrating pending media from queue: $e');
+      return false;
     }
   }
 
   Future<void> _cleanupCurrentInspection() async {
     try {
       _sessionCompleted = true;
-      ref.read(inspectionSessionNotifierProvider.notifier).clearSession();
+      ref.read(inspectionSessionProvider.notifier).clearSession();
 
       if (_inspectionBox?.isOpen ?? false) {
         await _inspectionBox?.delete(HiveConstants.CURRENT_INSPECTION_KEY);
+        // Drop the durable per-inspection copy too — inspection is finished.
+        final id = _effectiveInspectionId;
+        if (id != null) {
+          await _inspectionBox?.delete(HiveConstants.inspectionKey(id));
+        }
       }
 
       if (mounted) {
@@ -842,7 +1483,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
       }
     } catch (e) {
-      print('Error cleaning up current inspection: $e');
+      log('Error cleaning up current inspection: $e');
     }
   }
 
@@ -891,6 +1532,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       for (var item in items) {
         final uniqueId = _getItemUniqueId(item);
 
+        // Default values — will be overwritten by initial_* if present.
         if (_itemUsesTextField(item)) {
           itemValues[uniqueId] = '';
         } else if (_itemHasOptions(item)) {
@@ -899,6 +1541,39 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         if (_itemHasRemarks(item)) {
           itemRemarks[uniqueId] = '';
+        }
+
+        // Prefill from server-provided initial_* values (resume / initialize).
+        if (item is Map) {
+          final iv = item['initialValue'];
+          if (iv != null && iv.toString().isNotEmpty) {
+            itemValues[uniqueId] = iv.toString();
+          }
+          final ir = item['initialRemarks'];
+          if (ir != null && ir.toString().isNotEmpty) {
+            itemRemarks[uniqueId] = ir.toString();
+          }
+          final img = item['initialImage'];
+          if (img != null && img.toString().isNotEmpty) {
+            itemImages[uniqueId] = img.toString();
+          }
+          final multi = item['initialMultiImages'];
+          if (multi is List && multi.isNotEmpty) {
+            itemMultiImages[uniqueId] =
+                multi.map((e) => e.toString()).toList();
+          }
+          final vid = item['initialVideo'];
+          if (vid != null && vid.toString().isNotEmpty) {
+            itemVideos[uniqueId] = vid.toString();
+          }
+          final aud = item['initialAudio'];
+          if (aud != null && aud.toString().isNotEmpty) {
+            itemAudios[uniqueId] = aud.toString();
+          }
+          final fil = item['initialFile'];
+          if (fil != null && fil.toString().isNotEmpty) {
+            itemFiles[uniqueId] = fil.toString();
+          }
         }
       }
     }
@@ -918,6 +1593,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
     }
 
+    add(['regno', 'registration', 'reg_no', 'regnumber'],
+        vd['regno']?.toString());
     add(['make', 'brand'], vd['make']?.toString());
     add(['model'], vd['model']?.toString());
     add(['year'], vd['year']?.toString());
@@ -1296,11 +1973,42 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     return _buildSingleItemContainer(item, title);
   }
 
+  // Pure check (no side effects) for whether a required item still has an
+  // unfilled value or missing required media. Used to drive the inline
+  // missing-field highlight so it clears the moment the field is completed.
+  bool _itemHasMissingRequired(dynamic item) {
+    if (!_itemIsRequired(item)) return false;
+    final uniqueId = _getItemUniqueId(item);
+
+    if (_itemUsesTextField(item)) {
+      if ((itemValues[uniqueId]?.trim() ?? '').isEmpty) return true;
+    } else if (_itemHasOptions(item)) {
+      final value = itemValues[uniqueId] ?? 'N/A';
+      if (value == 'N/A' || value.isEmpty) return true;
+    }
+
+    if (_itemHasImage(item) &&
+        (itemImages[uniqueId] == null || itemImages[uniqueId]!.isEmpty)) {
+      return true;
+    }
+    if (_itemHasVideo(item) &&
+        (itemVideos[uniqueId] == null || itemVideos[uniqueId]!.isEmpty)) {
+      return true;
+    }
+    if (_itemHasFile(item) &&
+        (itemFiles[uniqueId] == null || itemFiles[uniqueId]!.isEmpty)) {
+      return true;
+    }
+    return false;
+  }
+
   Widget _buildSingleItemContainer(dynamic item, String sectionTitle) {
     final uniqueId = _getItemUniqueId(item);
     final title = _getItemTitle(item);
     final allowImage = _itemHasImage(item);
     final isRequired = _itemIsRequired(item);
+    final isMissingHighlight = _highlightMissingFieldId.value == uniqueId &&
+        _itemHasMissingRequired(item);
     final referenceMedia = _getItemReferenceMedia(item);
     final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
     final hasFlaggableOptions =
@@ -1313,21 +2021,49 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
+            color: isMissingHighlight
+                ? const Color(0xFFDC2626).withValues(alpha: 0.18)
+                : Colors.black.withValues(alpha: 0.07),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
         ],
         border: Border.all(
-          color: isRequired
-              ? Colors.orange.withValues(alpha: 0.5)
-              : const Color(0xFFE4E7EB),
-          width: isRequired ? 2 : 1,
+          color: isMissingHighlight
+              ? const Color(0xFFDC2626)
+              : isRequired
+                  ? Colors.orange.withValues(alpha: 0.5)
+                  : const Color(0xFFE4E7EB),
+          width: isMissingHighlight || isRequired ? 2 : 1,
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isMissingHighlight)
+            Container(
+              width: double.infinity,
+              color: const Color(0xFFFEE2E2),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: const Row(
+                children: [
+                  Icon(Icons.error_outline,
+                      size: 16, color: Color(0xFFDC2626)),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Required — please complete this field',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFDC2626),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // ── Header + reference media (padded) ──────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
@@ -1456,7 +2192,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               minWidth: 36,
                               minHeight: 36,
                             ),
-                            onPressed: () => _showFlagIssuesSheet(item),
+                            onPressed: () => _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true),
                           ),
                       ],
                     ),
@@ -1500,12 +2236,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     await LocalStorageService.saveImage(file.path);
                 setState(() {
                   itemImages[uniqueId] = savedPath;
-                  _uploadingImages.add(uniqueId);
+                  _markUploading(uniqueId);
                 });
-                if (mounted) _showFlagIssuesSheet(item);
+                if (mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
                 await _saveDataLocally();
                 final bool hasInternet =
-                    await ConnectivityChecker.hasInternetConnection();
+                    await ConnectivityChecker.canReachServer();
                 if (hasInternet) {
                   final result = await ApiService.uploadImage(
                     savedPath,
@@ -1514,16 +2250,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     itemId: fieldId,
                   );
                   if (mounted) {
-                    setState(() => _uploadingImages.remove(uniqueId));
+                    _unmarkUploading(uniqueId);
                     final url = result['url']?.toString();
                     if (result['success'] == true && url != null && url.isNotEmpty) {
                       setState(() => itemImages[uniqueId] = url);
                       await _saveDataLocally();
+                      try { await File(savedPath).delete(); } catch (_) {}
+                      _saveFieldToServer(item, uniqueId);
                     }
                   }
                 } else {
-                  if (mounted)
-                    setState(() => _uploadingImages.remove(uniqueId));
+                  if (mounted) {
+                    _unmarkUploading(uniqueId);
+                  }
                 }
               },
             ),
@@ -1567,19 +2306,32 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           color: Theme.of(context).textTheme.bodyMedium?.color,
                         ),
                       ),
-                      if (_uploadingImages.contains(uniqueId)) ...[
-                        const SizedBox(width: 8),
-                        const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Uploading...',
-                          style: TextStyle(fontSize: 11, color: Colors.orange),
-                        ),
-                      ],
+                      ValueListenableBuilder<Set<String>>(
+                        valueListenable: _uploadingImages,
+                        builder: (context, uploading, _) {
+                          if (!uploading.contains(uniqueId)) {
+                            return const SizedBox.shrink();
+                          }
+                          return const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(width: 8),
+                              SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'Uploading...',
+                                style: TextStyle(
+                                    fontSize: 11, color: Colors.orange),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -1600,7 +2352,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             border: Border.all(
                                 color: Colors.grey.shade300, width: 1),
                           ),
-                          child: _buildImageWidget(itemImages[uniqueId]!),
+                          child: _buildImageWidget(
+                            itemImages[uniqueId]!,
+                            cacheWidth: (MediaQuery.of(context).size.width *
+                                    MediaQuery.of(context).devicePixelRatio)
+                                .round(),
+                          ),
                         ),
                       ),
                     ),
@@ -1727,6 +2484,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       _regNoVerifyIsError.remove(uniqueId);
                     });
                     _autoSave();
+                    _saveFieldToServer(item, uniqueId);
                   },
                 ),
               ),
@@ -1765,10 +2523,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             minLines: _itemHasMultiImage(item) ? 4 : 1,
             maxLines: _itemHasMultiImage(item) ? null : 1,
             onChanged: (value) {
-              setState(() {
-                itemValues[uniqueId] = value;
-              });
+              // No setState: the controller already drives the field's own
+              // text, and nothing visible depends on itemValues live (the nav
+              // bar is index-based; completion indicators live in the drawer,
+              // which is closed while typing). Avoids rebuilding the whole
+              // screen on every keystroke. Mirrors the Remarks field below.
+              itemValues[uniqueId] = value;
               _autoSave();
+              _saveFieldToServer(item, uniqueId);
             },
           ),
         if (_itemHasMultiImage(item)) ...[
@@ -1803,11 +2565,36 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             ),
             items: ((item['options'] as List?) ?? [])
-                .map((opt) => DropdownMenuItem<String>(
-                      value: (opt['value'] ?? '').toString(),
-                      child:
-                          Text((opt['label'] ?? opt['value'] ?? '').toString()),
-                    ))
+                .map((opt) {
+                  final colorCodeStr = (opt['colorCode'] ?? '').toString();
+                  Color? optionColor;
+                  if (colorCodeStr.startsWith('#') &&
+                      colorCodeStr.length >= 7) {
+                    final hex = colorCodeStr.replaceFirst('#', '');
+                    optionColor =
+                        Color(int.parse('FF$hex', radix: 16));
+                  }
+                  return DropdownMenuItem<String>(
+                    value: (opt['value'] ?? '').toString(),
+                    child: Row(
+                      children: [
+                        if (optionColor != null) ...[
+                          Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: optionColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        Text(
+                            (opt['label'] ?? opt['value'] ?? '').toString()),
+                      ],
+                    ),
+                  );
+                })
                 .toList(),
             onChanged: (value) {
               if (value == null) return;
@@ -1815,6 +2602,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 itemValues[uniqueId] = value;
               });
               _autoSave();
+              _saveFieldToServer(item, uniqueId);
             },
           ),
         if (_itemHasRemarks(item) && remarksControllers[uniqueId] != null) ...[
@@ -1839,6 +2627,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             onChanged: (value) {
               itemRemarks[uniqueId] = value;
               _autoSave();
+              _saveFieldToServer(item, uniqueId);
             },
           ),
         ],
@@ -1943,7 +2732,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: _buildImageWidget(imagePath),
+                          child: _buildImageWidget(imagePath, cacheWidth: 150),
                         ),
                       ),
                     ),
@@ -1979,6 +2768,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                   updated.isEmpty ? null : updated;
                             });
                             _autoSave();
+                            _saveFieldToServer(item, uniqueId);
                           },
                           child: Container(
                             decoration: const BoxDecoration(
@@ -2057,7 +2847,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
       // Upload each image immediately, replacing local path with URL on success
       final sectionTitle = _sections[_currentSection]['title'] as String;
-      final hasInternet = await ConnectivityChecker.hasInternetConnection();
+      final hasInternet = await ConnectivityChecker.canReachServer();
 
       if (!hasInternet) {
         if (mounted) {
@@ -2067,6 +2857,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 content: Text('Images saved locally. Will upload when online.')),
           );
         }
+        // Offline: persist to the durable upload queue right away so the photos
+        // survive a hard kill and are recoverable on resume.
+        unawaited(_commitPendingMediaToQueue());
         return;
       }
 
@@ -2080,17 +2873,22 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         if (!mounted) return;
 
         final url = result['url']?.toString();
+        final uploadSuccess = result['success'] == true && url != null && url.isNotEmpty;
         setState(() {
           _uploadingMultiImagePaths.remove(savedPath);
-          if (result['success'] == true && url != null && url.isNotEmpty) {
+          if (uploadSuccess) {
             final imgs = List<String>.from(itemMultiImages[uniqueId] ?? []);
             final idx = imgs.indexOf(savedPath);
             if (idx != -1) imgs[idx] = url;
             itemMultiImages[uniqueId] = imgs;
           }
         });
+        if (uploadSuccess) {
+          try { await File(savedPath).delete(); } catch (_) {}
+        }
       }
       await _saveDataLocally();
+      _saveFieldToServer(item, uniqueId);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2175,14 +2973,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         setState(() {
           itemImages[uniqueId] = savedPath;
-          _uploadingImages.add(uniqueId);
+          _markUploading(uniqueId);
         });
-        if (item != null && mounted) _showFlagIssuesSheet(item);
+        if (item != null && mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
 
         await _saveDataLocally();
 
         final bool hasInternet =
-            await ConnectivityChecker.hasInternetConnection();
+            await ConnectivityChecker.canReachServer();
 
         if (hasInternet) {
           final result = await ApiService.uploadImage(
@@ -2194,7 +2992,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(uniqueId);
+              _unmarkUploading(uniqueId);
             });
 
             final url = result['url']?.toString();
@@ -2203,6 +3001,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 itemImages[uniqueId] = url;
               });
               await _saveDataLocally();
+              try { await File(savedPath).delete(); } catch (_) {}
+              _saveFieldToServer(item, uniqueId);
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -2214,7 +3014,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         } else {
           if (mounted) {
             setState(() {
-              _uploadingImages.remove(uniqueId);
+              _unmarkUploading(uniqueId);
             });
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -2222,12 +3022,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       Text('Image saved locally. Will upload when online.')),
             );
           }
+          // Offline: persist to the durable upload queue right away so the photo
+          // survives a hard kill and is recoverable on resume.
+          unawaited(_commitPendingMediaToQueue());
         }
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _uploadingImages.remove(uniqueId);
+          _unmarkUploading(uniqueId);
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to pick image: $e')),
@@ -2296,11 +3099,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final path =
           '${dir.path}/audio_${uniqueId}_${DateTime.now().millisecondsSinceEpoch}.m4a';
       await _audioRecorder!.start(const RecordConfig(), path: path);
-      _audioElapsed = Duration.zero;
+      _audioElapsed.value = Duration.zero;
       _audioTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) {
-          setState(() => _audioElapsed += const Duration(seconds: 1));
-        }
+        _audioElapsed.value += const Duration(seconds: 1);
       });
       if (mounted) setState(() => _isRecordingAudio = true);
     } catch (e) {
@@ -2341,17 +3142,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         );
       }
     }
-  }
-
-  Future<void> _cancelAudioRecording() async {
-    _audioTimer?.cancel();
-    _audioTimer = null;
-    try {
-      await _audioRecorder?.stop();
-    } catch (_) {}
-    await _audioRecorder?.dispose();
-    _audioRecorder = null;
-    if (mounted) setState(() => _isRecordingAudio = false);
   }
 
   Future<void> _pickAudio(dynamic item) async {
@@ -2555,12 +3345,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
-  Widget _buildImageWidget(String imagePath, {BoxFit fit = BoxFit.fitWidth}) {
+  // Mutating the Set in place wouldn't notify listeners, so assign a fresh Set.
+  void _markUploading(String id) {
+    if (_uploadingImages.value.contains(id)) return;
+    _uploadingImages.value = {..._uploadingImages.value, id};
+  }
+
+  void _unmarkUploading(String id) {
+    if (!_uploadingImages.value.contains(id)) return;
+    _uploadingImages.value = {..._uploadingImages.value}..remove(id);
+  }
+
+  Widget _buildImageWidget(String imagePath,
+      {BoxFit fit = BoxFit.fitWidth, int? cacheWidth}) {
     if (imagePath.startsWith('http')) {
       return Image.network(
         imagePath,
         fit: fit,
         width: double.infinity,
+        cacheWidth: cacheWidth,
         loadingBuilder: (context, child, loadingProgress) {
           if (loadingProgress == null) return child;
           return Center(
@@ -2580,9 +3383,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       );
     } else {
       return Image.file(
-        File(imagePath),
+        File(LocalStorageService.resolveMediaPath(imagePath)),
         fit: fit,
         width: double.infinity,
+        cacheWidth: cacheWidth,
+        gaplessPlayback: true,
       );
     }
   }
@@ -2628,7 +3433,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     maxScale: 4,
                     child: imagePath.startsWith('http')
                         ? Image.network(imagePath, fit: BoxFit.contain)
-                        : Image.file(File(imagePath), fit: BoxFit.contain),
+                        : Image.file(
+                            File(LocalStorageService.resolveMediaPath(
+                                imagePath)),
+                            fit: BoxFit.contain),
                   ),
                 ),
               ],
@@ -2663,12 +3471,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     setState(() {
       itemImages[uniqueId] = savedPath;
-      _uploadingImages.add(uniqueId);
+      _markUploading(uniqueId);
     });
-    if (mounted) _showFlagIssuesSheet(item);
+    if (mounted) _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
     await _saveDataLocally();
 
-    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final bool hasInternet = await ConnectivityChecker.canReachServer();
     if (hasInternet) {
       final result = await ApiService.uploadImage(
         savedPath,
@@ -2677,15 +3485,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         itemId: fieldId,
       );
       if (mounted) {
-        setState(() => _uploadingImages.remove(uniqueId));
+        _unmarkUploading(uniqueId);
         final url = result['url']?.toString();
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemImages[uniqueId] = url);
           await _saveDataLocally();
+          try { await File(savedPath).delete(); } catch (_) {}
+          _saveFieldToServer(item, uniqueId);
         }
       }
     } else {
-      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      if (mounted) _unmarkUploading(uniqueId);
+      // Offline: commit this media to the durable upload queue immediately so a
+      // hard kill before the next background/close still leaves it queued for
+      // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
+      unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -2726,13 +3540,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _pendingCapturedVideoUniqueId = null;
       itemVideos[uniqueId] = savedPath;
       itemVideoRotations[uniqueId] = quarterTurns;
-      _uploadingImages.add(uniqueId);
+      _markUploading(uniqueId);
     });
-    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
     await _saveDataLocally();
 
-    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final bool hasInternet = await ConnectivityChecker.canReachServer();
     if (hasInternet && sectionTitle.isNotEmpty) {
       final result = await ApiService.uploadImage(
         savedPath,
@@ -2742,15 +3556,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         fieldName: 'image',
       );
       if (mounted) {
-        setState(() => _uploadingImages.remove(uniqueId));
+        _unmarkUploading(uniqueId);
         final url = result['url']?.toString();
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemVideos[uniqueId] = url);
           await _saveDataLocally();
+          try { await File(savedPath).delete(); } catch (_) {}
+          _saveFieldToServer(foundItem, uniqueId);
         }
       }
     } else {
-      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      if (mounted) _unmarkUploading(uniqueId);
+      // Offline: commit this media to the durable upload queue immediately so a
+      // hard kill before the next background/close still leaves it queued for
+      // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
+      unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -2785,13 +3605,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _pendingCapturedAudioPath = null;
       _pendingCapturedAudioUniqueId = null;
       itemAudios[uniqueId] = path;
-      _uploadingImages.add(uniqueId);
+      _markUploading(uniqueId);
     });
-    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
     await _saveDataLocally();
 
-    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final bool hasInternet = await ConnectivityChecker.canReachServer();
     if (hasInternet && sectionTitle.isNotEmpty) {
       final result = await ApiService.uploadImage(
         path,
@@ -2801,15 +3621,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         fieldName: 'image',
       );
       if (mounted) {
-        setState(() => _uploadingImages.remove(uniqueId));
+        _unmarkUploading(uniqueId);
         final url = result['url']?.toString();
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemAudios[uniqueId] = url);
           await _saveDataLocally();
+          try { await File(path).delete(); } catch (_) {}
+          _saveFieldToServer(foundItem, uniqueId);
         }
       }
     } else {
-      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      if (mounted) _unmarkUploading(uniqueId);
+      // Offline: commit this media to the durable upload queue immediately so a
+      // hard kill before the next background/close still leaves it queued for
+      // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
+      unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -2853,13 +3679,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _pendingCapturedFileName = null;
       _pendingCapturedFileExtension = null;
       itemFiles[uniqueId] = payload;
-      _uploadingImages.add(uniqueId);
+      _markUploading(uniqueId);
     });
-    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem);
+    if (foundItem != null && mounted) _showFlagIssuesSheet(foundItem, autoAdvanceOnConfirm: true);
 
     await _saveDataLocally();
 
-    final bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+    final bool hasInternet = await ConnectivityChecker.canReachServer();
     if (hasInternet && sectionTitle.isNotEmpty) {
       final result = await ApiService.uploadImage(
         path,
@@ -2869,7 +3695,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         fieldName: 'image',
       );
       if (mounted) {
-        setState(() => _uploadingImages.remove(uniqueId));
+        _unmarkUploading(uniqueId);
         final url = result['url']?.toString();
         if (result['success'] == true && url != null && url.isNotEmpty) {
           setState(() => itemFiles[uniqueId] = json.encode({
@@ -2878,10 +3704,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 'fileType': ext ?? '',
               }));
           await _saveDataLocally();
+          try { await File(path).delete(); } catch (_) {}
+          _saveFieldToServer(foundItem, uniqueId);
         }
       }
     } else {
-      if (mounted) setState(() => _uploadingImages.remove(uniqueId));
+      if (mounted) _unmarkUploading(uniqueId);
+      // Offline: commit this media to the durable upload queue immediately so a
+      // hard kill before the next background/close still leaves it queued for
+      // upload and recoverable on resume (see _rehydratePendingMediaFromQueue).
+      unawaited(_commitPendingMediaToQueue());
     }
   }
 
@@ -2891,8 +3723,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (items.isEmpty) return true;
 
     final currentItem = items[_currentItemIndex];
-    if (!(_itemHasImage(currentItem) || _itemHasVideo(currentItem)))
+    if (!(_itemHasImage(currentItem) || _itemHasVideo(currentItem))) {
       return true;
+    }
 
     final uniqueId = _getItemUniqueId(currentItem);
     final hasMedia = (itemImages[uniqueId] != null) ||
@@ -2905,7 +3738,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final issueMarked =
         conditionValue == 'no_issues' || conditionValue == 'flagged';
     if (!issueMarked) {
-      setState(() => _highlightFlagIssues = true);
+      _highlightFlagIssues.value = true;
       ScaffoldMessenger.of(context).clearSnackBars();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2997,7 +3830,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
     if (!_checkCurrentItemFlagIssue()) return;
     if (!_checkCurrentItemRequired()) return;
-    setState(() => _highlightFlagIssues = false);
+    _highlightFlagIssues.value = false;
     final currentSection = _sections[_currentSection];
     final items = currentSection['items'] as List<dynamic>;
     if (items.isEmpty) return;
@@ -3015,11 +3848,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
         _triggerFlashToggle = null;
-        _cameraFlashOn = false;
+        _captureUi.flashOn.value = false;
         _triggerVideoToggle = null;
-        _isVideoRecording = false;
+        _triggerVideoPauseResume = null;
+        _captureUi.isVideoRecording.value = false;
+        _captureUi.isVideoPaused.value = false;
         _isRecordingAudio = false;
-        _audioElapsed = Duration.zero;
+        _audioElapsed.value = Duration.zero;
       });
       _autoSave();
     } else {
@@ -3067,12 +3902,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
         _triggerFlashToggle = null;
-        _cameraFlashOn = false;
+        _captureUi.flashOn.value = false;
         _triggerVideoToggle = null;
-        _isVideoRecording = false;
+        _triggerVideoPauseResume = null;
+        _captureUi.isVideoRecording.value = false;
+        _captureUi.isVideoPaused.value = false;
         _isRecordingAudio = false;
-        _audioElapsed = Duration.zero;
-        _highlightFlagIssues = false;
+        _audioElapsed.value = Duration.zero;
+        _highlightFlagIssues.value = false;
       });
       _autoSave();
       return;
@@ -3086,10 +3923,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     setState(() {
       _currentSection--;
       _currentItemIndex = lastIdx;
-      _showButton = false;
-      _isScrollable = false;
-      if (lastItem != null)
+      if (lastItem != null) {
         _currentCaptureMode = _defaultCaptureModeForItem(lastItem);
+      }
     });
 
     if (_scrollController.hasClients) {
@@ -3099,22 +3935,20 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
         _autoSave();
-        setState(() {
-          if (_scrollController.hasClients) {
-            _isScrollable = _scrollController.position.maxScrollExtent > 0;
-            _showButton = !_isScrollable;
-          }
-        });
       }
     });
   }
 
-  List<String> _getRequiredFieldErrors() {
-    final section = _sections[_currentSection];
+  // Collects the missing required fields in [section] that the user has not yet
+  // filled in (text/options) or attached required media for. Each entry carries
+  // the item's index within the section so the UI can jump straight to it.
+  List<({String label, int itemIndex})> _sectionRequiredFieldErrorsDetailed(
+      Map<String, dynamic> section) {
     final items = section['items'] as List<dynamic>;
-    final errors = <String>[];
+    final errors = <({String label, int itemIndex})>[];
 
-    for (var item in items) {
+    for (var index = 0; index < items.length; index++) {
+      final item = items[index];
       if (!_itemIsRequired(item)) continue;
 
       final uniqueId = _getItemUniqueId(item);
@@ -3123,28 +3957,28 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       if (_itemUsesTextField(item)) {
         final value = itemValues[uniqueId]?.trim() ?? '';
         if (value.isEmpty) {
-          errors.add(title);
+          errors.add((label: title, itemIndex: index));
         }
       } else if (_itemHasOptions(item)) {
         final value = itemValues[uniqueId] ?? 'N/A';
         if (value == 'N/A' || value.isEmpty) {
-          errors.add(title);
+          errors.add((label: title, itemIndex: index));
         }
       }
 
       if (_itemHasImage(item)) {
         if (itemImages[uniqueId] == null || itemImages[uniqueId]!.isEmpty) {
-          errors.add('$title (image)');
+          errors.add((label: '$title (image)', itemIndex: index));
         }
       }
       if (_itemHasVideo(item)) {
         if (itemVideos[uniqueId] == null || itemVideos[uniqueId]!.isEmpty) {
-          errors.add('$title (video)');
+          errors.add((label: '$title (video)', itemIndex: index));
         }
       }
       if (_itemHasFile(item)) {
         if (itemFiles[uniqueId] == null || itemFiles[uniqueId]!.isEmpty) {
-          errors.add('$title (file)');
+          errors.add((label: '$title (file)', itemIndex: index));
         }
       }
     }
@@ -3152,9 +3986,408 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     return errors;
   }
 
+  List<String> _getRequiredFieldErrors() {
+    return _sectionRequiredFieldErrorsDetailed(_sections[_currentSection])
+        .map((e) => e.label)
+        .toList();
+  }
+
+  // Validates required fields across every section, grouped by section so the
+  // submit sheet can list them under headers and navigate to each one.
+  List<
+      ({
+        int sectionIndex,
+        String sectionTitle,
+        List<({String label, int itemIndex})> fields
+      })> _getGroupedRequiredFieldErrors() {
+    final groups = <({
+      int sectionIndex,
+      String sectionTitle,
+      List<({String label, int itemIndex})> fields
+    })>[];
+
+    for (var i = 0; i < _sections.length; i++) {
+      final section = _sections[i];
+      final detailed = _sectionRequiredFieldErrorsDetailed(section);
+      if (detailed.isEmpty) continue;
+      groups.add((
+        sectionIndex: i,
+        sectionTitle: (section['title'] as String?) ?? '',
+        fields: detailed,
+      ));
+    }
+
+    return groups;
+  }
+
+  // Jumps the inspection to a specific section/item, resetting capture state
+  // the same way section/item navigation does, and highlights the target.
+  void _jumpToSectionItem(int sectionIndex, int itemIndex) {
+    if (sectionIndex < 0 || sectionIndex >= _sections.length) return;
+    final items = _sections[sectionIndex]['items'] as List<dynamic>;
+    final safeItemIndex =
+        (itemIndex >= 0 && itemIndex < items.length) ? itemIndex : 0;
+    final targetItem = items.isNotEmpty ? items[safeItemIndex] : null;
+
+    _audioTimer?.cancel();
+    _audioTimer = null;
+    _audioRecorder?.stop().then((_) {
+      _audioRecorder?.dispose();
+      _audioRecorder = null;
+    });
+
+    setState(() {
+      _currentSection = sectionIndex;
+      _currentItemIndex = safeItemIndex;
+      _currentCaptureMode = targetItem != null
+          ? _defaultCaptureModeForItem(targetItem)
+          : 'PHOTO';
+      _triggerPhotoCapture = null;
+      _triggerEnlarge = null;
+      _triggerFlashToggle = null;
+      _captureUi.flashOn.value = false;
+      _triggerVideoToggle = null;
+      _triggerVideoPauseResume = null;
+      _captureUi.isVideoRecording.value = false;
+      _captureUi.isVideoPaused.value = false;
+      _isRecordingAudio = false;
+      _audioElapsed.value = Duration.zero;
+    });
+
+    // Highlight the exact field the user was sent back to fill in.
+    _highlightMissingFieldId.value =
+        targetItem != null ? _getItemUniqueId(targetItem) : null;
+    _highlightFlagIssues.value = targetItem != null;
+
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        _autoSave();
+      }
+    });
+  }
+
+  // Graceful replacement for the "required fields missing" snackbar: a bottom
+  // sheet listing what's left, grouped by section, with each row tappable to
+  // jump straight to the offending field.
+  void _showRequiredFieldsSheet(
+    List<
+            ({
+              int sectionIndex,
+              String sectionTitle,
+              List<({String label, int itemIndex})> fields
+            })>
+        groups,
+  ) {
+    final totalMissing =
+        groups.fold<int>(0, (sum, g) => sum + g.fields.length);
+    log('Submission blocked - $totalMissing required field(s) missing across ${groups.length} section(s)');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE4E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.error_outline,
+                            color: Color(0xFFDC2626), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Almost done',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '$totalMissing required ${totalMissing == 1 ? "item" : "items"} left to complete',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Color(0xFFE4E7EB)),
+                Flexible(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shrinkWrap: true,
+                    itemCount: groups.length,
+                    itemBuilder: (context, gIndex) {
+                      final group = groups[gIndex];
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (group.sectionTitle.isNotEmpty)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                              child: Text(
+                                group.sectionTitle.toUpperCase(),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
+                                  color: Color(0xFF9CA3AF),
+                                ),
+                              ),
+                            ),
+                          ...group.fields.map(
+                            (field) => InkWell(
+                              onTap: () {
+                                Navigator.of(sheetContext).pop();
+                                _jumpToSectionItem(
+                                    group.sectionIndex, field.itemIndex);
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 12),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 6,
+                                      height: 6,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFFDC2626),
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        field.label,
+                                        style: const TextStyle(
+                                          fontSize: 15,
+                                          color: Color(0xFF111827),
+                                        ),
+                                      ),
+                                    ),
+                                    const Icon(Icons.chevron_right,
+                                        size: 20, color: Color(0xFF9CA3AF)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        final first = groups.first;
+                        _jumpToSectionItem(
+                            first.sectionIndex, first.fields.first.itemIndex);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Go to first missing field'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Shown when one or more media uploads fail during submission, so the user
+  /// can retry instead of the field silently arriving empty on the server.
+  void _showUploadFailedSheet(List<String> fields) {
+    log('Submission blocked - ${fields.length} media upload(s) failed: $fields');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 12),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE4E7EB),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEE2E2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.cloud_off,
+                            color: Color(0xFFDC2626), size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Some media didn\'t upload',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${fields.length} ${fields.length == 1 ? "item" : "items"} failed to upload. Check your connection and submit again.',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Color(0xFFE4E7EB)),
+                Flexible(
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shrinkWrap: true,
+                    itemCount: fields.length,
+                    itemBuilder: (context, index) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFDC2626),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                fields[index],
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  color: Color(0xFF111827),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(sheetContext).pop();
+                        _handleSubmission();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Retry submission'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   void _nextSection() {
     if (!_checkCurrentItemFlagIssue()) return;
-    setState(() => _highlightFlagIssues = false);
+    _highlightFlagIssues.value = false;
     final errors = _getRequiredFieldErrors();
     if (errors.isNotEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -3181,19 +4414,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       setState(() {
         _currentSection++;
         _currentItemIndex = 0;
-        _showButton = false;
-        _isScrollable = false;
         _currentCaptureMode = firstNextItem != null
             ? _defaultCaptureModeForItem(firstNextItem)
             : 'PHOTO';
         _triggerPhotoCapture = null;
         _triggerEnlarge = null;
         _triggerFlashToggle = null;
-        _cameraFlashOn = false;
+        _captureUi.flashOn.value = false;
         _triggerVideoToggle = null;
-        _isVideoRecording = false;
+        _triggerVideoPauseResume = null;
+        _captureUi.isVideoRecording.value = false;
+        _captureUi.isVideoPaused.value = false;
         _isRecordingAudio = false;
-        _audioElapsed = Duration.zero;
+        _audioElapsed.value = Duration.zero;
       });
 
       if (_scrollController.hasClients) {
@@ -3203,18 +4436,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       Future.delayed(const Duration(milliseconds: 100), () {
         if (mounted) {
           _autoSave();
-          setState(() {
-            if (_scrollController.hasClients) {
-              _isScrollable = _scrollController.position.maxScrollExtent > 0;
-            } else {
-              _isScrollable = false;
-            }
-            _showButton = !_isScrollable;
-          });
         }
       });
     } else {
       if (_isSubmitting) return;
+
+      // Final guard: every required field across all sections must be filled
+      // before we allow submission. Surface any that are missing in a sheet.
+      final missingGroups = _getGroupedRequiredFieldErrors();
+      if (missingGroups.isNotEmpty) {
+        _showRequiredFieldsSheet(missingGroups);
+        return;
+      }
 
       showDialog(
         context: context,
@@ -3252,73 +4485,19 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     }
   }
 
-  Map<String, dynamic> _buildSubmissionBody() {
+  /// Builds the full submission payload.
+  ///
+  /// Pass [httpOnly] true for the actual server submit so local media paths are
+  /// dropped (never POSTed). Leave false for offline-saved copies, whose local
+  /// paths are still needed and get remapped to URLs by the retry path.
+  Map<String, dynamic> _buildSubmissionBody({bool httpOnly = false}) {
     Map<String, dynamic> inspectionData = {};
 
     for (var section in _sections) {
-      final sectionName = section['name'] ??
+      final sectionName = (section['name'] as String?) ??
           (section['title'] as String).toLowerCase().replaceAll(' ', '_');
-      List<Map<String, dynamic>> sectionItems = [];
-
-      for (var item in section['items'] as List<dynamic>) {
-        final uniqueId = _getItemUniqueId(item);
-        final title = _getItemTitle(item);
-        // Guard: 'flagged' without recorded issues means stale Hive data — clear it so the server's value wins.
-        String value = itemValues[uniqueId] ?? '';
-        if (value == 'flagged' && (itemFlaggedIssues[uniqueId] ?? []).isEmpty) {
-          value = '';
-        } else if (value == 'flagged') {
-          // Map the selected issue label back to its option value for server submission.
-          final selectedLabel = itemFlaggedIssues[uniqueId]!.first;
-          String? optionValue;
-          if (item is Map) {
-            final opts = item['options'] as List?;
-            if (opts != null) {
-              for (final opt in opts) {
-                final lbl = opt['label']?.toString() ?? '';
-                final val = opt['value']?.toString() ?? '';
-                final label = lbl.isNotEmpty ? lbl : val;
-                if (label == selectedLabel) {
-                  optionValue = val.isNotEmpty ? val : label;
-                  break;
-                }
-              }
-            }
-          }
-          value = optionValue ?? selectedLabel;
-        }
-        final remarks = itemRemarks[uniqueId];
-        final imagePath = itemImages[uniqueId];
-        final multiImages = itemMultiImages[uniqueId];
-        final videoPath = itemVideos[uniqueId];
-        final audioPath = itemAudios[uniqueId];
-        // Decode JSON file payload to extract the URL/path for submission.
-        final filePayload = itemFiles[uniqueId];
-        String? filePath;
-        if (filePayload != null) {
-          try {
-            final decoded = json.decode(filePayload) as Map<String, dynamic>;
-            filePath = decoded['filePath'] as String?;
-          } catch (_) {
-            filePath = filePayload;
-          }
-        }
-
-        sectionItems.add({
-          'id': uniqueId,
-          'fieldId': _getItemFieldId(item),
-          'fieldType': item is Map ? (item['fieldType'] ?? '').toString() : '',
-          'title': title,
-          'value': value,
-          'remarks': (remarks != null && remarks.isNotEmpty) ? remarks : null,
-          'imagePath': imagePath,
-          'multiImages': multiImages,
-          'videoPath': videoPath,
-          'audioPath': audioPath,
-          'filePath': filePath,
-        });
-      }
-
+      // Reuse _buildSectionItems to avoid duplication.
+      final sectionItems = _buildSectionItems(section, httpOnly: httpOnly);
       inspectionData[sectionName] = {
         'title': section['title'],
         'items': sectionItems,
@@ -3345,11 +4524,31 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
     }
+    // Fall back to the regno entered on the vehicle-details form. It lives in
+    // vehicleDetails and only reaches itemValues when the template happens to
+    // expose a matching field, so without this the regno is dropped from the
+    // (offline-stored and later uploaded) submission body.
+    if (registrationNumber.isEmpty) {
+      final fromVehicle = (vehicleDetails?['regno'] ?? '').toString().trim();
+      if (fromVehicle.isNotEmpty && fromVehicle != 'N/A') {
+        registrationNumber = fromVehicle;
+      }
+    }
 
     return {
       'template_type': 'default',
-      'vehicle_brand_id': vehicleDetails?['brand_id'],
-      'vehicle_model_id': vehicleDetails?['model_id'],
+      // The server inspection id, when this draft already exists server-side
+      // (initialized online, or resumed). Lets the submit path finalise the
+      // existing draft via POST /{id}/submit instead of creating a duplicate,
+      // and lets the offline-queue drain know which inspection to finalise.
+      if (_effectiveInspectionId != null)
+        'inspection_id': _effectiveInspectionId,
+      // Only send brand/model ids when known. Emitting null would clobber the
+      // draft's existing brand/model on a submit-by-id call.
+      if (vehicleDetails?['brand_id'] != null)
+        'vehicle_brand_id': vehicleDetails!['brand_id'],
+      if (vehicleDetails?['model_id'] != null)
+        'vehicle_model_id': vehicleDetails!['model_id'],
       if ((vehicleDetails?['year'] ?? '').toString().isNotEmpty)
         'year': vehicleDetails!['year'],
       if ((vehicleDetails?['variant'] ?? '').toString().isNotEmpty)
@@ -3363,9 +4562,23 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     };
   }
 
-  /// Uploads any images that are still local paths (capture-time upload failed).
+  /// Uploads any media that is still a local path (capture-time upload failed).
   /// Runs before submission so the backend always receives URLs, not local paths.
-  Future<void> _uploadRemainingImages() async {
+  ///
+  /// URLs are written into the in-memory maps unconditionally (no longer behind a
+  /// `mounted` setState) so a successful upload is never lost if the page unmounts
+  /// mid-run; the setState only repaints. Returns the list of field titles whose
+  /// upload failed so the caller can block submission instead of silently POSTing
+  /// a local path the server can't resolve.
+  Future<List<String>> _uploadRemainingImages() async {
+    final failed = <String>[];
+
+    void markFailed(dynamic item) {
+      final title = _getItemTitle(item);
+      final label = title.isNotEmpty ? title : _getItemFieldId(item);
+      if (label.isNotEmpty && !failed.contains(label)) failed.add(label);
+    }
+
     for (var section in _sections) {
       final sectionTitle = section['title'] as String;
       for (var item in section['items'] as List<dynamic>) {
@@ -3374,22 +4587,20 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         final imagePath = itemImages[uniqueId];
         if (imagePath != null && !imagePath.startsWith('http')) {
-          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          if (mounted) _markUploading(uniqueId);
           final result = await ApiService.uploadImage(
             imagePath,
             inspectionId: _effectiveInspectionId,
             section: sectionTitle,
             itemId: fieldId,
           );
-          if (mounted) {
-            setState(() {
-              _uploadingImages.remove(uniqueId);
-              final url = result['url']?.toString();
-              if (result['success'] == true && url != null && url.isNotEmpty) {
-                itemImages[uniqueId] = url;
-              }
-            });
+          final url = result['url']?.toString();
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            itemImages[uniqueId] = url;
+          } else {
+            markFailed(item);
           }
+          if (mounted) setState(() => _unmarkUploading(uniqueId));
         }
 
         final multiImages = itemMultiImages[uniqueId];
@@ -3403,21 +4614,24 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 section: sectionTitle,
                 itemId: fieldId,
               );
-              updated.add(
-                result['success'] == true
-                    ? (result['url']?.toString() ?? path)
-                    : path,
-              );
+              final url = result['url']?.toString();
+              if (result['success'] == true && url != null && url.isNotEmpty) {
+                updated.add(url);
+              } else {
+                updated.add(path);
+                markFailed(item);
+              }
             } else {
               updated.add(path);
             }
           }
-          if (mounted) setState(() => itemMultiImages[uniqueId] = updated);
+          itemMultiImages[uniqueId] = updated;
+          if (mounted) setState(() {});
         }
 
         final videoPath = itemVideos[uniqueId];
         if (videoPath != null && !videoPath.startsWith('http')) {
-          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          if (mounted) _markUploading(uniqueId);
           final result = await ApiService.uploadImage(
             videoPath,
             inspectionId: _effectiveInspectionId,
@@ -3425,20 +4639,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             itemId: fieldId,
             fieldName: 'image',
           );
-          if (mounted) {
-            setState(() {
-              _uploadingImages.remove(uniqueId);
-              final url = result['url']?.toString();
-              if (result['success'] == true && url != null && url.isNotEmpty) {
-                itemVideos[uniqueId] = url;
-              }
-            });
+          final url = result['url']?.toString();
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            itemVideos[uniqueId] = url;
+          } else {
+            markFailed(item);
           }
+          if (mounted) setState(() => _unmarkUploading(uniqueId));
         }
 
         final audioPath = itemAudios[uniqueId];
         if (audioPath != null && !audioPath.startsWith('http')) {
-          if (mounted) setState(() => _uploadingImages.add(uniqueId));
+          if (mounted) _markUploading(uniqueId);
           final result = await ApiService.uploadImage(
             audioPath,
             inspectionId: _effectiveInspectionId,
@@ -3446,15 +4658,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             itemId: fieldId,
             fieldName: 'image',
           );
-          if (mounted) {
-            setState(() {
-              _uploadingImages.remove(uniqueId);
-              final url = result['url']?.toString();
-              if (result['success'] == true && url != null && url.isNotEmpty) {
-                itemAudios[uniqueId] = url;
-              }
-            });
+          final url = result['url']?.toString();
+          if (result['success'] == true && url != null && url.isNotEmpty) {
+            itemAudios[uniqueId] = url;
+          } else {
+            markFailed(item);
           }
+          if (mounted) setState(() => _unmarkUploading(uniqueId));
         }
 
         final filePayload = itemFiles[uniqueId];
@@ -3474,7 +4684,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             if (!filePayload.startsWith('http')) localPath = filePayload;
           }
           if (localPath != null) {
-            if (mounted) setState(() => _uploadingImages.add(uniqueId));
+            if (mounted) _markUploading(uniqueId);
             final result = await ApiService.uploadImage(
               localPath,
               inspectionId: _effectiveInspectionId,
@@ -3482,35 +4692,41 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               itemId: fieldId,
               fieldName: 'image',
             );
-            if (mounted) {
-              setState(() {
-                _uploadingImages.remove(uniqueId);
-                final url = result['url']?.toString();
-                if (result['success'] == true && url != null && url.isNotEmpty) {
-                  itemFiles[uniqueId] = json.encode({
-                    'filePath': url,
-                    'fileName': fileName ?? localPath!.split('/').last,
-                    'fileType': fileType ?? '',
-                  });
-                }
+            final url = result['url']?.toString();
+            if (result['success'] == true && url != null && url.isNotEmpty) {
+              itemFiles[uniqueId] = json.encode({
+                'filePath': url,
+                'fileName': fileName ?? localPath.split('/').last,
+                'fileType': fileType ?? '',
               });
+            } else {
+              markFailed(item);
             }
+            if (mounted) setState(() => _unmarkUploading(uniqueId));
           }
         }
       }
     }
     await _saveDataLocally();
+    return failed;
   }
 
   Future<void> _handleSubmission() async {
     if (_isSubmitting) return;
+
+    // Block submission until every required field across all sections is filled.
+    final missingGroups = _getGroupedRequiredFieldErrors();
+    if (missingGroups.isNotEmpty) {
+      _showRequiredFieldsSheet(missingGroups);
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
     });
 
     try {
-      bool hasInternet = await ConnectivityChecker.hasInternetConnection();
+      bool hasInternet = await ConnectivityChecker.canReachServer();
 
       if (!hasInternet) {
         Map<String, String?> finalItemImages = Map.from(itemImages);
@@ -3526,17 +4742,42 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         });
         final body = _buildSubmissionBody();
 
+        // Build metadata so offline-queued images retain their section/fieldId
+        // for the upload step when the device comes back online.
+        final imageMetadata = <String, dynamic>{};
+        for (final section in _sections) {
+          final sectionTitle = section['title'] as String;
+          for (final item in section['items'] as List<dynamic>) {
+            final uniqueId = _getItemUniqueId(item);
+            if (finalItemImages[uniqueId] != null) {
+              imageMetadata[uniqueId] = {
+                'section': sectionTitle,
+                'itemId': _getItemFieldId(item),
+              };
+            }
+          }
+        }
+
         await LocalStorageService.saveInspection(
           data: body,
           images: finalItemImages,
-          status: 'pending',
+          imageMetadata: imageMetadata,
+          status: 'offline',
           videos: finalItemVideos,
           audios: finalItemAudios,
           files: finalItemFiles,
           multiImages: finalMultiImages,
         );
+        // The offline record now owns this inspection's media; drop the queue
+        // container WITHOUT deleting the files — the offline record references
+        // those same paths and still needs them to upload later.
+        final sidOffline = _effectiveInspectionId;
+        if (sidOffline != null) {
+          await LocalStorageService.clearMediaQueueFor(sidOffline,
+              deleteLocalFiles: false);
+        }
         if (mounted) {
-          ref.read(inspectionNotifierProvider.notifier).markDirty();
+          ref.read(inspectionProvider.notifier).markDirty();
         }
 
         await _completeInspection();
@@ -3554,13 +4795,48 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       }
 
       try {
-        await _uploadRemainingImages();
-        final body = _buildSubmissionBody();
-        final result = await ApiService.submitInspection(body);
+        // Process 1: upload any still-local media. If any upload fails, abort
+        // before building the body — submitting now would POST a local path the
+        // server can't resolve and the field would come back empty on resume.
+        final failedUploads = await _uploadRemainingImages();
+        if (failedUploads.isNotEmpty) {
+          if (mounted) {
+            setState(() => _isSubmitting = false);
+            _showUploadFailedSheet(failedUploads);
+          }
+          return;
+        }
+        // Process 2: build the body with httpOnly so only uploaded URLs are sent.
+        final body = _buildSubmissionBody(httpOnly: true);
+        // Finalise the existing server draft by id (POST /{id}/submit) so we
+        // never create a duplicate. Only fall back to the legacy all-at-once
+        // create when there is genuinely no server id yet.
+        final serverId = _effectiveInspectionId;
+        final result = serverId != null
+            ? await ApiService.submitInspectionById(serverId, body)
+            : await ApiService.submitInspection(body);
         log(body.toString());
         log(result.toString());
 
         if (result['success']) {
+          final sid = _effectiveInspectionId;
+          if (sid != null) {
+            await LocalStorageService.clearMediaQueueFor(sid);
+          }
+          // Submitted to the server — now safe to delete the local working-copy
+          // media files (the queue no longer owns them since drain keeps files).
+          await LocalStorageService.deleteLocalMediaFiles([
+            ...itemImages.values.whereType<String>(),
+            ...itemVideos.values.whereType<String>(),
+            ...itemAudios.values.whereType<String>(),
+            ...itemFiles.values
+                .whereType<String>()
+                .map(_filePathFromPayload)
+                .whereType<String>(),
+            ...itemMultiImages.values
+                .whereType<List<String>>()
+                .expand((l) => l),
+          ]);
           await _completeInspection();
           await _cleanupCurrentInspection();
 
@@ -3597,17 +4873,37 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               finalMultiImages[key] = value;
             }
           });
+
+          final imageMetadata = <String, dynamic>{};
+          for (final section in _sections) {
+            final sectionTitle = section['title'] as String;
+            for (final item in section['items'] as List<dynamic>) {
+              final uniqueId = _getItemUniqueId(item);
+              if (finalItemImages[uniqueId] != null) {
+                imageMetadata[uniqueId] = {
+                  'section': sectionTitle,
+                  'itemId': _getItemFieldId(item),
+                };
+              }
+            }
+          }
+
           await LocalStorageService.saveInspection(
             data: _buildSubmissionBody(),
             images: finalItemImages,
-            status: 'pending',
+            imageMetadata: imageMetadata,
+            status: 'offline',
             videos: finalItemVideos,
             audios: finalItemAudios,
             files: finalItemFiles,
             multiImages: finalMultiImages,
           );
+          final sidFailed = _effectiveInspectionId;
+          if (sidFailed != null) {
+            await LocalStorageService.clearMediaQueueFor(sidFailed);
+          }
           if (mounted) {
-            ref.read(inspectionNotifierProvider.notifier).markDirty();
+            ref.read(inspectionProvider.notifier).markDirty();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text('Failed to submit: ${result['message']}')),
             );
@@ -3621,7 +4917,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
     } catch (e) {
-      print('Error in submission process: $e');
+      log('Error in submission process: $e');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -3642,13 +4938,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => MainScreen(
-          initialIndex: ref.read(userNotifierProvider).isAdmin() ? 3 : 2,
+          initialIndex: ref.read(userProvider).isAdmin() ? 3 : 2,
         ),
       ),
     );
   }
 
-  void _showFlagIssuesSheet(dynamic item) {
+  void _showFlagIssuesSheet(dynamic item, {bool autoAdvanceOnConfirm = false}) {
     final uniqueId = _getItemUniqueId(item);
     final sectionTitle = _sections[_currentSection]['title'] as String;
     final currentIssues = itemFlaggedIssues[uniqueId] ?? [];
@@ -3699,7 +4995,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           issueColors: issueColors.isEmpty ? null : issueColors,
           onConfirm: (issues, notes, markedNoIssues) {
             setState(() {
-              _highlightFlagIssues = false;
+              _highlightFlagIssues.value = false;
               if (markedNoIssues) {
                 itemFlaggedIssues[uniqueId] = [];
                 if (!isPureDropdownField) itemValues[uniqueId] = 'no_issues';
@@ -3715,6 +5011,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
               }
             });
             _autoSave();
+            _saveFieldToServer(item, uniqueId);
+            if (autoAdvanceOnConfirm) {
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (mounted) _nextItem();
+              });
+            }
           },
         ),
       ),
@@ -3804,6 +5106,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   }
 
   Widget _buildDarkNavBar(List<dynamic> items) {
+    if (_isReviewingCapture ||
+        _isReviewingVideo ||
+        _isReviewingAudio ||
+        _isReviewingFile) {
+      return const SizedBox.shrink();
+    }
+
     final canGoPrevious =
         !_isSubmitting && (_currentItemIndex > 0 || _currentSection > 0);
     final canGoNext = !_isSubmitting && items.isNotEmpty;
@@ -3885,7 +5194,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     final hasRecordedAudio = itemAudios[uniqueId] != null;
     final flaggedIssues = itemFlaggedIssues[uniqueId] ?? [];
     final conditionValue = itemValues[uniqueId] ?? '';
-    final isUploading = _uploadingImages.contains(uniqueId);
     final refUrl = referenceMedia.isNotEmpty
         ? (referenceMedia.first['url'] as String? ?? '')
         : '';
@@ -3899,7 +5207,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       if (hasCapturedPhoto) {
         captureArea = GestureDetector(
           onTap: () => _showImagePreview(itemImages[uniqueId]!),
-          child: _buildImageWidget(itemImages[uniqueId]!, fit: BoxFit.cover),
+          child: _buildImageWidget(
+            itemImages[uniqueId]!,
+            fit: BoxFit.cover,
+            cacheWidth: (MediaQuery.of(context).size.width *
+                    MediaQuery.of(context).devicePixelRatio)
+                .round(),
+          ),
         );
       } else {
         captureArea = LayoutBuilder(
@@ -3941,16 +5255,24 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             showControls: false,
             onRecordingToggleReady: (fn) =>
                 setState(() => _triggerVideoToggle = fn),
+            onPauseResumeReady: (fn) =>
+                setState(() => _triggerVideoPauseResume = fn),
             onFlashToggleReady: (fn) => setState(() => _triggerFlashToggle = fn),
-            onRecordingChanged: (recording) =>
-                setState(() => _isVideoRecording = recording),
+            onRecordingChanged: (recording) {
+              // Notifier-only: rebuilds just the overlay via ListenableBuilder.
+              _captureUi.isVideoRecording.value = recording;
+              if (!recording) _captureUi.isVideoPaused.value = false;
+            },
+            onRecordingPausedChanged: (paused) =>
+                _captureUi.isVideoPaused.value = paused,
             onPickFromGallery: () => _pickVideo(item, ImageSource.gallery),
             onCapture: (XFile file) {
               setState(() {
                 _pendingCapturedVideoFile = file;
                 _pendingCapturedVideoUniqueId = uniqueId;
                 _isReviewingVideo = true;
-                _isVideoRecording = false;
+                _captureUi.isVideoRecording.value = false;
+                _captureUi.isVideoPaused.value = false;
               });
             },
           ),
@@ -4030,13 +5352,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   children: [
                     const Icon(Icons.circle, color: Colors.red, size: 8),
                     const SizedBox(width: 8),
-                    Text(
-                      _formatAudioDuration(_audioElapsed),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.w600,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                    ValueListenableBuilder<Duration>(
+                      valueListenable: _audioElapsed,
+                      builder: (context, elapsed, _) => Text(
+                        _formatAudioDuration(elapsed),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 28,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: [FontFeature.tabularFigures()],
+                        ),
                       ),
                     ),
                   ],
@@ -4099,7 +5424,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         ? '${flaggedIssues.length} issue${flaggedIssues.length == 1 ? '' : 's'} flagged'
         : 'No issues — looks good';
 
-    return Column(
+    // Only the camera overlay/controls depend on the transient capture flags
+    // (flash / recording / paused), so a ListenableBuilder rebuilds just this
+    // subtree when they change — captureArea (the live camera) is built above
+    // and reused, and the rest of the screen is untouched.
+    return ListenableBuilder(
+      listenable: _captureUi.listenable,
+      builder: (context, _) => Column(
       children: [
         // ── Capture area ──────────────────────────────────────────
         Expanded(
@@ -4145,14 +5476,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                 ),
                               )
                             else
-                              Image.network(
-                                refUrl,
+                              // Cache-aware so the guide thumbnail still shows
+                              // from disk when the inspector is offline (plain
+                              // Image.network would fail and leave it blank).
+                              CachedReferenceImage(
+                                url: refUrl,
                                 fit: BoxFit.cover,
                                 // 100×75 dp container; 2× for retina.
                                 cacheWidth: 200,
                                 cacheHeight: 150,
-                                errorBuilder: (_, __, ___) =>
-                                    Container(color: Colors.grey[900]),
                               ),
                             Positioned(
                               bottom: 2,
@@ -4182,7 +5514,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 ),
 
               // Recording indicator (VIDEO recording, top-right)
-              if (_currentCaptureMode == 'VIDEO' && _isVideoRecording)
+              if (_currentCaptureMode == 'VIDEO' && _captureUi.isVideoRecording.value)
                 Positioned(
                   top: 12,
                   right: 12,
@@ -4193,13 +5525,17 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       color: Colors.black54,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.circle, color: Colors.red, size: 8),
-                        SizedBox(width: 5),
-                        Text('REC',
-                            style: TextStyle(
+                        Icon(
+                          _captureUi.isVideoPaused.value ? Icons.pause : Icons.circle,
+                          color: _captureUi.isVideoPaused.value ? Colors.amber : Colors.red,
+                          size: 8,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(_captureUi.isVideoPaused.value ? 'PAUSED' : 'REC',
+                            style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700)),
@@ -4249,31 +5585,37 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(color: Colors.white30),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (isUploading) ...[
-                            const SizedBox(
-                              width: 12,
-                              height: 12,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: Colors.white),
-                            ),
-                            const SizedBox(width: 6),
-                            const Text('Uploading',
-                                style: TextStyle(
-                                    color: Colors.white, fontSize: 12)),
-                          ] else ...[
-                            const Icon(Icons.refresh,
-                                color: Colors.white, size: 14),
-                            const SizedBox(width: 4),
-                            const Text('Retake',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600)),
-                          ],
-                        ],
+                      child: ValueListenableBuilder<Set<String>>(
+                        valueListenable: _uploadingImages,
+                        builder: (context, uploading, _) {
+                          final uploadingNow = uploading.contains(uniqueId);
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (uploadingNow) ...[
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
+                                ),
+                                const SizedBox(width: 6),
+                                const Text('Uploading',
+                                    style: TextStyle(
+                                        color: Colors.white, fontSize: 12)),
+                              ] else ...[
+                                const Icon(Icons.refresh,
+                                    color: Colors.white, size: 14),
+                                const SizedBox(width: 4),
+                                const Text('Retake',
+                                    style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600)),
+                              ],
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
@@ -4319,7 +5661,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => _showFlagIssuesSheet(item),
+                        onTap: () => _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 6),
@@ -4353,39 +5695,42 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     const SizedBox(width: 8),
                     GestureDetector(
                       onTap: () {
-                        setState(() => _highlightFlagIssues = false);
-                        _showFlagIssuesSheet(item);
+                        _highlightFlagIssues.value = false;
+                        _showFlagIssuesSheet(item, autoAdvanceOnConfirm: true);
                       },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _highlightFlagIssues
-                              ? Colors.orange.withValues(alpha: 0.2)
-                              : Colors.black54,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: _highlightFlagIssues
-                                  ? Colors.orange
-                                  : Colors.white24),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.flag_outlined,
-                                size: 13,
-                                color: _highlightFlagIssues
+                      child: ValueListenableBuilder<bool>(
+                        valueListenable: _highlightFlagIssues,
+                        builder: (context, highlight, _) => Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: highlight
+                                ? Colors.orange.withValues(alpha: 0.2)
+                                : Colors.black54,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: highlight
                                     ? Colors.orange
-                                    : Colors.white70),
-                            const SizedBox(width: 4),
-                            Text('Flag Issue',
-                                style: TextStyle(
-                                    color: _highlightFlagIssues
-                                        ? Colors.orange
-                                        : Colors.white70,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500)),
-                          ],
+                                    : Colors.white24),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.flag_outlined,
+                                  size: 13,
+                                  color: highlight
+                                      ? Colors.orange
+                                      : Colors.white70),
+                              const SizedBox(width: 4),
+                              Text('Flag Issue',
+                                  style: TextStyle(
+                                      color: highlight
+                                          ? Colors.orange
+                                          : Colors.white70,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500)),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -4443,11 +5788,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               _triggerPhotoCapture = null;
                               _triggerEnlarge = null;
                               _triggerFlashToggle = null;
-                              _cameraFlashOn = false;
+                              _captureUi.flashOn.value = false;
                               _triggerVideoToggle = null;
-                              _isVideoRecording = false;
+                              _triggerVideoPauseResume = null;
+                              _captureUi.isVideoRecording.value = false;
+                              _captureUi.isVideoPaused.value = false;
                               _isRecordingAudio = false;
-                              _audioElapsed = Duration.zero;
+                              _audioElapsed.value = Duration.zero;
                             });
                           }
                         },
@@ -4491,8 +5838,33 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Left slot: gallery (PHOTO/VIDEO) or spacer (FILE/AUDIO)
-                      if (_currentCaptureMode == 'PHOTO' ||
+                      // Left slot: pause/resume while recording, otherwise
+                      // gallery (PHOTO/VIDEO) or spacer (FILE/AUDIO)
+                      if (_currentCaptureMode == 'VIDEO' && _captureUi.isVideoRecording.value)
+                        GestureDetector(
+                          onTap: _triggerVideoPauseResume,
+                          child: Container(
+                            width: 46,
+                            height: 46,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: _triggerVideoPauseResume != null
+                                    ? Colors.white54
+                                    : Colors.white24,
+                              ),
+                            ),
+                            child: Icon(
+                              _captureUi.isVideoPaused.value ? Icons.play_arrow : Icons.pause,
+                              color: _triggerVideoPauseResume != null
+                                  ? Colors.white
+                                  : Colors.white38,
+                              size: 24,
+                            ),
+                          ),
+                        )
+                      else if (_currentCaptureMode == 'PHOTO' ||
                           _currentCaptureMode == 'VIDEO')
                         GestureDetector(
                           onTap: () => _currentCaptureMode == 'VIDEO'
@@ -4554,7 +5926,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: _isVideoRecording
+                                color: _captureUi.isVideoRecording.value
                                     ? Colors.red
                                     : Colors.white,
                                 width: 3,
@@ -4565,13 +5937,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
                                 decoration: BoxDecoration(
-                                  color: _isVideoRecording
+                                  color: _captureUi.isVideoRecording.value
                                       ? Colors.red
                                       : (_triggerVideoToggle != null
                                           ? Colors.white
                                           : Colors.white38),
                                   borderRadius: BorderRadius.circular(
-                                      _isVideoRecording ? 4 : 40),
+                                      _captureUi.isVideoRecording.value ? 4 : 40),
                                 ),
                               ),
                             ),
@@ -4634,26 +6006,27 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                           onTap: _triggerFlashToggle != null
                               ? () {
                                   _triggerFlashToggle!();
-                                  setState(() => _cameraFlashOn = !_cameraFlashOn);
+                                  _captureUi.flashOn.value =
+                                      !_captureUi.flashOn.value;
                                 }
                               : null,
                           child: Container(
                             width: 46,
                             height: 46,
                             decoration: BoxDecoration(
-                              color: _cameraFlashOn
+                              color: _captureUi.flashOn.value
                                   ? const Color(0xFFFFC107)
                                   : Colors.white.withValues(alpha: 0.1),
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: _cameraFlashOn
+                                color: _captureUi.flashOn.value
                                     ? const Color(0xFFFFC107)
                                     : Colors.white24,
                               ),
                             ),
                             child: Icon(
-                              _cameraFlashOn ? Icons.flash_on : Icons.flash_off,
-                              color: _cameraFlashOn
+                              _captureUi.flashOn.value ? Icons.flash_on : Icons.flash_off,
+                              color: _captureUi.flashOn.value
                                   ? Colors.black87
                                   : (_triggerFlashToggle != null
                                       ? Colors.white70
@@ -4675,6 +6048,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           ),
         ),
       ],
+      ),
     );
   }
 
@@ -4718,7 +6092,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Connect to the internet and try again, or go back and start a new inspection. '
+                    'Connect to the internet, then go back and open the inspection again. '
                     'If you were resuming a saved inspection, your answers stay on this device once the form loads.',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -4726,21 +6100,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: () async {
-                      setState(() => _isLoadingTemplate = true);
-                      await _fetchInspectionTemplateIfMissing();
-                      if (!mounted) return;
-                      if (_inspectionTemplate != null) {
-                        await _loadDataFromStorage();
-                        await _saveDataLocally();
-                      }
-                      setState(() => _isLoadingTemplate = false);
-                    },
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Retry'),
-                  ),
-                  const SizedBox(height: 12),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Go back'),
@@ -4787,6 +6146,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
         if (shouldClose) {
           await _saveDataLocally();
+          await _commitPendingMediaToQueue();
+          if (mounted) {
+            ref.read(inspectionProvider.notifier).markDirty();
+            unawaited(ref
+                .read(inspectionProvider.notifier)
+                .refreshMediaQueue());
+          }
           if (!mounted) return;
           Navigator.of(context).pop();
         }
@@ -4798,6 +6164,55 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         endDrawer: _buildDrawer(),
         body: Column(
           children: [
+            // Reference-media caching progress — shown only while images are
+            // being downloaded/revalidated, hidden once complete.
+            ValueListenableBuilder<ReferenceCacheProgress?>(
+              valueListenable: ReferenceMediaCache.progress,
+              builder: (context, p, _) {
+                if (p == null || p.isComplete) {
+                  return const SizedBox.shrink();
+                }
+                return Container(
+                  width: double.infinity,
+                  color: const Color(0xFF1E1E1E),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF448AFF),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Caching reference media ${p.done}/${p.total}',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 11),
+                            ),
+                            const SizedBox(height: 4),
+                            LinearProgressIndicator(
+                              value: p.fraction,
+                              minHeight: 3,
+                              backgroundColor: Colors.white12,
+                              color: const Color(0xFF448AFF),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             // Thin progress bar
             LinearProgressIndicator(
               value: _totalFields > 0 ? _processedFields / _totalFields : 0.0,
@@ -4827,10 +6242,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     )
                   : _isReviewingVideo && _pendingCapturedVideoFile != null
                       ? InspectionVideoReview(
+                          key: ValueKey(_pendingCapturedVideoFile!.path),
                           capturedMediaPath: _pendingCapturedVideoFile!.path,
                           fieldTitle: currentItem != null
                               ? _getItemTitle(currentItem)
                               : '',
+                          referenceMedia: currentItem != null
+                              ? _getItemReferenceMedia(currentItem)
+                              : const [],
                           mediaLabel: 'Video',
                           onRetake: () {
                             setState(() {
@@ -4843,10 +6262,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                         )
                       : _isReviewingAudio && _pendingCapturedAudioPath != null
                           ? InspectionVideoReview(
+                              key: ValueKey(_pendingCapturedAudioPath!),
                               capturedMediaPath: _pendingCapturedAudioPath!,
                               fieldTitle: currentItem != null
                                   ? _getItemTitle(currentItem)
                                   : '',
+                              referenceMedia: currentItem != null
+                                  ? _getItemReferenceMedia(currentItem)
+                                  : const [],
                               mediaLabel: 'Audio',
                               onRetake: () {
                                 setState(() {
@@ -4859,6 +6282,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             )
                           : _isReviewingCapture && _pendingCapturedXFile != null
                               ? InspectionImageReview(
+                                  key: ValueKey(_pendingCapturedXFile!.path),
                                   capturedImagePath:
                                       _pendingCapturedXFile!.path,
                                   fieldTitle: currentItem != null
@@ -4896,6 +6320,26 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         ),
       ),
     );
+  }
+
+  bool _isFieldFilled(int sectionIndex, int fieldIndex) {
+    if (sectionIndex >= _sections.length) return false;
+    final items = _sections[sectionIndex]['items'] as List<dynamic>;
+    if (fieldIndex >= items.length) return false;
+
+    final item = items[fieldIndex];
+    final uniqueId = _getItemUniqueId(item);
+
+    if (itemImages[uniqueId]?.isNotEmpty == true) return true;
+    if (itemMultiImages[uniqueId]?.isNotEmpty == true) return true;
+    if (itemVideos[uniqueId]?.isNotEmpty == true) return true;
+    if (itemAudios[uniqueId]?.isNotEmpty == true) return true;
+    if (itemFiles[uniqueId]?.isNotEmpty == true) return true;
+    if (itemRemarks[uniqueId]?.isNotEmpty == true) return true;
+    final val = itemValues[uniqueId];
+    if (val != null && val.isNotEmpty && val != 'N/A') return true;
+
+    return false;
   }
 
   bool _isSectionComplete(int sectionIndex) {
@@ -4936,6 +6380,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       sections: _sections,
       currentSection: _currentSection,
       isSectionComplete: _isSectionComplete,
+      isFieldFilled: _isFieldFilled,
       getSectionIcon: _getSectionIcon,
       onSelectSection: (index) => _navigateToField(index, 0),
       onSelectField: (sectionIndex, fieldIndex) =>
@@ -4951,15 +6396,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     setState(() {
       _currentSection = sectionIndex;
       _currentItemIndex = clampedField;
-      _isScrollable = false;
-      _showButton = true;
-      _isVideoRecording = false;
+      _captureUi.isVideoRecording.value = false;
+      _captureUi.isVideoPaused.value = false;
       _isRecordingAudio = false;
       _triggerPhotoCapture = null;
       _triggerEnlarge = null;
       _triggerFlashToggle = null;
-      _cameraFlashOn = false;
+      _captureUi.flashOn.value = false;
       _triggerVideoToggle = null;
+      _triggerVideoPauseResume = null;
       if (targetItem != null) {
         _currentCaptureMode = _defaultCaptureModeForItem(targetItem);
       }
@@ -4967,15 +6412,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
     Future.delayed(const Duration(milliseconds: 100), () {
       if (!mounted) return;
-      setState(() {
-        if (_scrollController.hasClients) {
-          _isScrollable = _scrollController.position.maxScrollExtent > 0;
-        } else {
-          _isScrollable = false;
-        }
-        _showButton = !_isScrollable;
-      });
-
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
           0,
@@ -5005,11 +6441,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _saveDebouncer?.cancel();
     if (!_sessionCompleted) {
       _flushPendingAutoSave();
+      // Persist any still-local media so an interrupted upload auto-syncs later.
+      unawaited(_commitPendingMediaToQueue());
     }
     if (!_sessionCompleted) {
       // ref is not guaranteed to be valid during dispose() in Riverpod — guard it.
       try {
-        ref.read(inspectionSessionNotifierProvider.notifier).saveSnapshot(
+        ref.read(inspectionSessionProvider.notifier).saveSnapshot(
               InspectionSessionSnapshot(
                 itemImages: Map.from(itemImages),
                 itemVideos: Map.from(itemVideos),
@@ -5040,20 +6478,41 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _audioRecorder?.stop();
     }
     _audioRecorder?.dispose();
+    _audioElapsed.dispose();
+    _uploadingImages.dispose();
+    _highlightFlagIssues.dispose();
+    _highlightMissingFieldId.dispose();
+    _captureUi.dispose();
     super.dispose();
   }
 
   void _handleClose() async {
+    // Capture the Navigator before any await so we never reach for a defunct
+    // context or touch the Navigator while it is mid-transition.
+    final navigator = Navigator.of(context);
+
+    // Persisting + queueing is best-effort: Hive keeps the data in memory and
+    // it re-syncs on reconnect, so a failure here must not strand the user on
+    // the inspection screen. Previously a thrown error (e.g. "No element")
+    // skipped the pop and left the user tapping close repeatedly, which
+    // compounded into a corrupted Navigator.
     try {
       await _saveDataLocally();
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      Navigator.of(context).pop();
+      await _commitPendingMediaToQueue();
+      if (mounted) {
+        ref.read(inspectionProvider.notifier).markDirty();
+        // Surface the just-queued media in the Pending tab and start syncing.
+        unawaited(ref.read(inspectionProvider.notifier).refreshMediaQueue());
+      }
     } catch (e) {
-      print('Error handling close: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Error saving data')),
-      );
+      debugPrint('Error handling close: $e');
     }
+
+    if (!mounted) return;
+    // Single pop: the vehicle-details route is pushReplacement'd away before
+    // this screen, so the inspection sits exactly one level above its origin
+    // (same as the system-back handler). Popping twice removed the origin too
+    // and threw '!_debugLocked' / "No element" navigator assertions.
+    if (navigator.canPop()) navigator.pop();
   }
 }

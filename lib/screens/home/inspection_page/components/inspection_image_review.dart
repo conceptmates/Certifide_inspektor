@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 
+import '../../../../widgets/inspection_field_info/components/reference_media_section.dart';
+
 class InspectionImageReview extends StatefulWidget {
   final String capturedImagePath;
   final String fieldTitle;
@@ -23,6 +25,14 @@ class InspectionImageReview extends StatefulWidget {
 
 class _InspectionImageReviewState extends State<InspectionImageReview> {
   int _quarterTurns = 0;
+
+  @override
+  void didUpdateWidget(InspectionImageReview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.capturedImagePath != widget.capturedImagePath) {
+      _quarterTurns = 0;
+    }
+  }
 
   Widget _buildImage() {
     final image = widget.capturedImagePath.startsWith('http')
@@ -87,24 +97,43 @@ class _InspectionImageReviewState extends State<InspectionImageReview> {
           top: 16,
           left: 16,
           right: 16,
-          child: Column(
+          child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text(
-                'Review',
-                style: TextStyle(
-                  color: Colors.white60,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+            children: [
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Review',
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Does this look right?',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              SizedBox(height: 2),
-              Text(
-                'Does this look right?',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
+              GestureDetector(
+                onTap: widget.onRetake,
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white, size: 20),
                 ),
               ),
             ],
@@ -126,18 +155,20 @@ class _InspectionImageReviewState extends State<InspectionImageReview> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(6),
-                child: Image.network(
-                  refUrl,
+                // Cache-aware so the guide thumbnail shows from disk offline.
+                child: CachedReferenceImage(
+                  url: refUrl,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
-                      Container(color: Colors.grey[800]),
+                  // 80×60 dp container; 2× for retina.
+                  cacheWidth: 160,
+                  cacheHeight: 120,
                 ),
               ),
             ),
           ),
         // Rotate button + Retake / Use Photo buttons
         Positioned(
-          bottom: 16,
+          bottom: 16 + MediaQuery.of(context).padding.bottom,
           left: 16,
           right: 16,
           child: Column(

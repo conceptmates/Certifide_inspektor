@@ -1,16 +1,20 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive_ce_flutter/hive_ce_flutter.dart';
 import 'package:intl/intl.dart';
 
 import '../../../constants/hive_constants.dart';
 import '../../../data/inspection_storage_model.dart';
+import '../../../hive_registrar.g.dart';
 import '../../../models/inspection_stats_model.dart';
 import '../../../models/local_inspection.dart';
+import '../../../providers/connectivity_provider.dart';
 import '../../../providers/inspection_provider.dart';
 import '../../../providers/stats_provider.dart';
 import '../../../routes/routes.dart';
+import '../../../services/app_update_service.dart';
+import '../../../utils/network_error_helper.dart';
 import '../../attendance/attendance_screen.dart';
 import '../../work_assigned/work_assigned_screen.dart';
 import '../reports_page.dart';
@@ -38,6 +42,11 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
     super.initState();
     _selectedIndex = widget.initialIndex;
     _initHive();
+    // Check for a Play Store update once the home screen is up (Android-only;
+    // fire-and-forget, never blocks or disrupts the user).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      const AppUpdateService().checkForUpdate();
+    });
   }
 
   Future<void> _initHive() async {
@@ -46,7 +55,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
         await Hive.initFlutter();
 
         if (!Hive.isAdapterRegistered(0)) {
-          Hive.registerAdapter(InspectionStorageModelAdapter());
+          Hive.registerAdapters();
         }
 
         _inspectionBox = await Hive.openBox<InspectionStorageModel>(
@@ -127,57 +136,22 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
     try {
       if (!mounted) return;
 
+      // An inspection cannot be started offline, so fail fast with a clear
+      // message instead of letting the user fill in a form that can't begin.
+      // Reads the shared connectivity state — no extra reachability probe.
+      if (!ref.read(connectivityStatusProvider)) {
+        NetworkErrorHelper.showOfflineSnackBar(
+          context,
+          'Internet required to start the inspection.',
+        );
+        return;
+      }
+
       final hasExisting = await _hasExistingInspection();
       if (!mounted) return;
 
       if (hasExisting) {
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) {
-            return AlertDialog(
-              backgroundColor: CarSpyColors.surface,
-              surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: const Text(
-                'Continue saved inspection?',
-                style: TextStyle(
-                  color: CarSpyColors.onSurface,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              content: const Text(
-                'You have an unfinished inspection. Continue where you left off, or start a new scan.',
-                style: TextStyle(
-                  color: CarSpyColors.onSurfaceVariant,
-                  height: 1.35,
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                    _clearSavedInspectionAndStartNew();
-                  },
-                  child: const Text('Start new'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                    _navigateToInspection(false);
-                  },
-                  style: FilledButton.styleFrom(
-                    backgroundColor: CarSpyColors.primary,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Continue'),
-                ),
-              ],
-            );
-          },
-        );
+        _clearSavedInspectionAndStartNew();
       } else {
         _navigateToInspection(true);
       }
@@ -224,8 +198,18 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
 
   List<String> _getMonthLabels() {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
     ];
     final now = DateTime.now();
     return List.generate(6, (i) {
@@ -238,10 +222,12 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
     final now = DateTime.now();
     return List.generate(7, (i) {
       final day = now.subtract(Duration(days: 6 - i));
-      final count = inspections.where((insp) =>
-          insp.createdAt.year == day.year &&
-          insp.createdAt.month == day.month &&
-          insp.createdAt.day == day.day).length;
+      final count = inspections
+          .where((insp) =>
+              insp.createdAt.year == day.year &&
+              insp.createdAt.month == day.month &&
+              insp.createdAt.day == day.day)
+          .length;
       return FlSpot(i.toDouble(), count.toDouble());
     });
   }
@@ -250,9 +236,10 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
     final now = DateTime.now();
     return List.generate(6, (i) {
       final m = DateTime(now.year, now.month - 5 + i);
-      final count = inspections.where((insp) =>
-          insp.createdAt.year == m.year &&
-          insp.createdAt.month == m.month).length;
+      final count = inspections
+          .where((insp) =>
+              insp.createdAt.year == m.year && insp.createdAt.month == m.month)
+          .length;
       return FlSpot(i.toDouble(), count.toDouble());
     });
   }
@@ -268,7 +255,8 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
         const SizedBox(width: 5),
         Text(
           label,
-          style: TextStyle(fontSize: 11, color: CarSpyColors.onSurfaceVariant),
+          style: const TextStyle(
+              fontSize: 11, color: CarSpyColors.onSurfaceVariant),
         ),
       ],
     );
@@ -327,7 +315,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
           children: [
             Text(
               value,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: CarSpyColors.onSurface,
@@ -336,7 +324,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
             ),
             Text(
               label,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 12,
                 color: CarSpyColors.onSurfaceVariant,
               ),
@@ -382,8 +370,18 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
       } else {
         // monthly buckets: "2026-05" → show "May"
         const monthNames = [
-          'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-          'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+          'Jan',
+          'Feb',
+          'Mar',
+          'Apr',
+          'May',
+          'Jun',
+          'Jul',
+          'Aug',
+          'Sep',
+          'Oct',
+          'Nov',
+          'Dec',
         ];
         labels = apiBuckets.map((b) {
           final parts = b.bucket.split('-');
@@ -455,7 +453,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'Inspections',
                     style: TextStyle(
                       fontSize: 17,
@@ -472,7 +470,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                                 DateFormat('yyyy-MM-dd').parse(dailyStats.from))
                             : 'Last 6 months')
                         : (isDaily ? 'Last 7 days' : 'Last 6 months'),
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 12,
                       color: CarSpyColors.onSurfaceVariant,
                     ),
@@ -495,7 +493,8 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
             ],
           ),
           const SizedBox(height: 24),
-          SizedBox(
+          RepaintBoundary(
+              child: SizedBox(
             height: 180,
             child: useApiData && isDaily
                 ? ShaderMask(
@@ -512,153 +511,153 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                         width: apiBuckets.length * 28.0,
                         height: 180,
                         child: BarChart(
-                    BarChartData(
-                      maxY: chartMaxY,
-                      alignment: BarChartAlignment.spaceAround,
-                      barGroups: apiBuckets.asMap().entries.map((e) {
-                        final i = e.key;
-                        final b = e.value;
-                        final approvedY = b.approved.toDouble();
-                        final pendingY = approvedY + b.pending;
-                        final totalY = b.total.toDouble();
-                        return BarChartGroupData(
-                          x: i,
-                          barRods: [
-                            BarChartRodData(
-                              toY: totalY,
-                              color: Colors.transparent,
-                              width: 14,
-                              borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(4)),
-                              rodStackItems: [
-                                if (b.approved > 0)
-                                  BarChartRodStackItem(
-                                      0, approvedY, const Color(0xFF22C55E)),
-                                if (b.pending > 0)
-                                  BarChartRodStackItem(approvedY, pendingY,
-                                      const Color(0xFFF59E0B)),
-                                if (b.rejected > 0)
-                                  BarChartRodStackItem(pendingY, totalY,
-                                      const Color(0xFFEF4444)),
-                              ],
-                            ),
-                          ],
-                        );
-                      }).toList(),
-                      gridData: FlGridData(
-                        show: true,
-                        drawVerticalLine: false,
-                        horizontalInterval: chartMaxY / 4,
-                        getDrawingHorizontalLine: (_) => FlLine(
-                          color:
-                              CarSpyColors.outlineVariant.withValues(alpha: 0.5),
-                          strokeWidth: 1,
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      titlesData: FlTitlesData(
-                        topTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false)),
-                        rightTitles: const AxisTitles(
-                            sideTitles: SideTitles(showTitles: false)),
-                        leftTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 30,
-                            interval: chartMaxY / 4,
-                            getTitlesWidget: (value, meta) {
-                              if (value == meta.max) {
-                                return const SizedBox.shrink();
-                              }
-                              return Text(
-                                value.toInt().toString(),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: CarSpyColors.onSurfaceVariant,
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        bottomTitles: AxisTitles(
-                          sideTitles: SideTitles(
-                            showTitles: true,
-                            reservedSize: 22,
-                            getTitlesWidget: (value, _) {
-                              final idx = value.toInt();
-                              if (idx < 0 || idx >= labels.length) {
-                                return const SizedBox.shrink();
-                              }
-                              return Padding(
-                                padding: const EdgeInsets.only(top: 4),
-                                child: Text(
-                                  labels[idx],
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: CarSpyColors.onSurfaceVariant,
+                          BarChartData(
+                            maxY: chartMaxY,
+                            alignment: BarChartAlignment.spaceAround,
+                            barGroups: apiBuckets.asMap().entries.map((e) {
+                              final i = e.key;
+                              final b = e.value;
+                              final approvedY = b.approved.toDouble();
+                              final pendingY = approvedY + b.pending;
+                              final totalY = b.total.toDouble();
+                              return BarChartGroupData(
+                                x: i,
+                                barRods: [
+                                  BarChartRodData(
+                                    toY: totalY,
+                                    color: Colors.transparent,
+                                    width: 14,
+                                    borderRadius: const BorderRadius.vertical(
+                                        top: Radius.circular(4)),
+                                    rodStackItems: [
+                                      if (b.approved > 0)
+                                        BarChartRodStackItem(0, approvedY,
+                                            const Color(0xFF22C55E)),
+                                      if (b.pending > 0)
+                                        BarChartRodStackItem(approvedY,
+                                            pendingY, const Color(0xFFF59E0B)),
+                                      if (b.rejected > 0)
+                                        BarChartRodStackItem(pendingY, totalY,
+                                            const Color(0xFFEF4444)),
+                                    ],
                                   ),
-                                ),
+                                ],
                               );
-                            },
-                          ),
-                        ),
-                      ),
-                      barTouchData: BarTouchData(
-                        touchTooltipData: BarTouchTooltipData(
-                          getTooltipColor: (_) => const Color(0xFF1E293B),
-                          tooltipRoundedRadius: 8,
-                          fitInsideVertically: true,
-                          fitInsideHorizontally: true,
-                          tooltipPadding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                          getTooltipItem: (group, _, rod, __) {
-                            final b = apiBuckets[group.x];
-                            return BarTooltipItem(
-                              '${b.bucket.substring(5)}\n',
-                              const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 12,
+                            }).toList(),
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: false,
+                              horizontalInterval: chartMaxY / 4,
+                              getDrawingHorizontalLine: (_) => FlLine(
+                                color: CarSpyColors.outlineVariant
+                                    .withValues(alpha: 0.5),
+                                strokeWidth: 1,
                               ),
-                              children: [
-                                if (b.approved > 0)
-                                  TextSpan(
-                                    text: 'Approved: ${b.approved}\n',
-                                    style: const TextStyle(
+                            ),
+                            borderData: FlBorderData(show: false),
+                            titlesData: FlTitlesData(
+                              topTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false)),
+                              rightTitles: const AxisTitles(
+                                  sideTitles: SideTitles(showTitles: false)),
+                              leftTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 30,
+                                  interval: chartMaxY / 4,
+                                  getTitlesWidget: (value, meta) {
+                                    if (value == meta.max) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Text(
+                                      value.toInt().toString(),
+                                      style: const TextStyle(
                                         fontSize: 11,
-                                        color: Color(0xFF86EFAC),
-                                        fontWeight: FontWeight.normal),
-                                  ),
-                                if (b.pending > 0)
-                                  TextSpan(
-                                    text: 'Pending: ${b.pending}\n',
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFFFCD34D),
-                                        fontWeight: FontWeight.normal),
-                                  ),
-                                if (b.rejected > 0)
-                                  TextSpan(
-                                    text: 'Rejected: ${b.rejected}',
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Color(0xFFFCA5A5),
-                                        fontWeight: FontWeight.normal),
-                                  ),
-                                if (b.total == 0)
-                                  const TextSpan(
-                                    text: 'No inspections',
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.normal),
-                                  ),
-                              ],
-                            );
-                          },
+                                        color: CarSpyColors.onSurfaceVariant,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 22,
+                                  getTitlesWidget: (value, _) {
+                                    final idx = value.toInt();
+                                    if (idx < 0 || idx >= labels.length) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(
+                                        labels[idx],
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: CarSpyColors.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            barTouchData: BarTouchData(
+                              touchTooltipData: BarTouchTooltipData(
+                                getTooltipColor: (_) => const Color(0xFF1E293B),
+                                tooltipRoundedRadius: 8,
+                                fitInsideVertically: true,
+                                fitInsideHorizontally: true,
+                                tooltipPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 8),
+                                getTooltipItem: (group, _, rod, __) {
+                                  final b = apiBuckets[group.x];
+                                  return BarTooltipItem(
+                                    '${b.bucket.substring(5)}\n',
+                                    const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                    children: [
+                                      if (b.approved > 0)
+                                        TextSpan(
+                                          text: 'Approved: ${b.approved}\n',
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFF86EFAC),
+                                              fontWeight: FontWeight.normal),
+                                        ),
+                                      if (b.pending > 0)
+                                        TextSpan(
+                                          text: 'Pending: ${b.pending}\n',
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFFFCD34D),
+                                              fontWeight: FontWeight.normal),
+                                        ),
+                                      if (b.rejected > 0)
+                                        TextSpan(
+                                          text: 'Rejected: ${b.rejected}',
+                                          style: const TextStyle(
+                                              fontSize: 11,
+                                              color: Color(0xFFFCA5A5),
+                                              fontWeight: FontWeight.normal),
+                                        ),
+                                      if (b.total == 0)
+                                        const TextSpan(
+                                          text: 'No inspections',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.normal),
+                                        ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
                       ),
                     ),
                   )
@@ -669,8 +668,8 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                         drawVerticalLine: false,
                         horizontalInterval: chartMaxY / 4,
                         getDrawingHorizontalLine: (_) => FlLine(
-                          color:
-                              CarSpyColors.outlineVariant.withValues(alpha: 0.5),
+                          color: CarSpyColors.outlineVariant
+                              .withValues(alpha: 0.5),
                           strokeWidth: 1,
                         ),
                       ),
@@ -686,7 +685,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                               }
                               return Text(
                                 value.toInt().toString(),
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 11,
                                   color: CarSpyColors.onSurfaceVariant,
                                 ),
@@ -707,7 +706,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                                 padding: const EdgeInsets.only(top: 6),
                                 child: Text(
                                   labels[idx],
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 11,
                                     color: CarSpyColors.onSurfaceVariant,
                                   ),
@@ -758,7 +757,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                       ],
                     ),
                   ),
-          ),
+          )),
           if (useApiData && isDaily) ...[
             const SizedBox(height: 12),
             Row(
@@ -778,14 +777,16 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
                     Icon(
                       Icons.swipe_rounded,
                       size: 13,
-                      color: CarSpyColors.onSurfaceVariant.withValues(alpha: 0.6),
+                      color:
+                          CarSpyColors.onSurfaceVariant.withValues(alpha: 0.6),
                     ),
                     const SizedBox(width: 3),
                     Text(
                       'Swipe',
                       style: TextStyle(
                         fontSize: 11,
-                        color: CarSpyColors.onSurfaceVariant.withValues(alpha: 0.6),
+                        color: CarSpyColors.onSurfaceVariant
+                            .withValues(alpha: 0.6),
                       ),
                     ),
                   ],
@@ -832,9 +833,9 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: _buildInspectionChart(
-              ref.watch(inspectionNotifierProvider).inspections,
-              ref.watch(inspectionStatsProvider).valueOrNull,
-              ref.watch(monthlyInspectionStatsProvider).valueOrNull,
+              ref.watch(inspectionProvider.select((s) => s.inspections)),
+              ref.watch(inspectionStatsProvider).value,
+              ref.watch(monthlyInspectionStatsProvider).value,
             ),
           ),
           const SizedBox(height: 24),
@@ -845,6 +846,23 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
 
   @override
   Widget build(BuildContext context) {
+    // One connectivity source drives the whole screen: when it drops we surface
+    // the offline snackbar; when it is restored we refresh the dashboard data
+    // at once. This single listener replaces any per-screen polling.
+    ref.listen(connectivityStatusProvider, (previous, next) {
+      if (!next) {
+        NetworkErrorHelper.showOfflineSnackBar(
+          context,
+          NetworkErrorHelper.offlineMessage,
+          onRetry: () =>
+              ref.read(connectivityStatusProvider.notifier).refresh(),
+        );
+      } else if (previous == false) {
+        ref.invalidate(inspectionStatsProvider);
+        ref.invalidate(monthlyInspectionStatsProvider);
+      }
+    });
+
     return Scaffold(
       backgroundColor: Colors.white,
       extendBody: true,
@@ -864,7 +882,7 @@ class _CarSpyHomeState extends ConsumerState<CarSpyHome> {
       bottomNavigationBar: CarSpyBottomNavBar(
         selectedIndex: _selectedIndex,
         onTap: (index) => setState(() => _selectedIndex = index),
-        disabledIndices: const [2, 3],
+        disabledIndices: const [3],
       ),
     );
   }
