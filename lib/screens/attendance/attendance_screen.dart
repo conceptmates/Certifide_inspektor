@@ -9,25 +9,40 @@ import 'admin_attendance_screen.dart';
 import 'inspector_attendance_screen.dart';
 import 'leave_application_screen.dart';
 
+/// Master switch for the inspector attendance tracker (check-in/check-out).
+///
+/// While `false`, inspectors see only their leave history with an
+/// "Attendance — coming soon" banner. Flip to `true` to restore the full
+/// check-in/out page ([InspectorAttendanceScreen]) — nothing else needs to
+/// change.
+const bool kInspectorAttendanceEnabled = false;
+
 /// Entry point for the attendance tab. Admins get the management view wired to
 /// the admin leave/attendance API; inspectors get their own attendance page
-/// (check-in/out) with leaves tucked behind a button.
+/// (check-in/out) with leaves tucked behind a button — unless the tracker is
+/// disabled via [kInspectorAttendanceEnabled], in which case they see the
+/// leave history with a "coming soon" banner.
 class AttendanceScreen extends ConsumerWidget {
   const AttendanceScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isAdmin = ref.watch(userProvider.select((s) => s.isAdmin()));
-    return isAdmin
-        ? const AdminAttendanceScreen()
-        : const InspectorAttendanceScreen();
+    if (isAdmin) return const AdminAttendanceScreen();
+    return kInspectorAttendanceEnabled
+        ? const InspectorAttendanceScreen()
+        : const InspectorLeavesScreen(showComingSoon: true);
   }
 }
 
 /// The signed-in inspector's leave history. Reached from the Attendance page's
-/// "Leaves" button, so it shows a back arrow.
+/// "Leaves" button (so it shows a back arrow), or rendered as the tab root with
+/// [showComingSoon] while the attendance tracker is disabled.
 class InspectorLeavesScreen extends StatefulWidget {
-  const InspectorLeavesScreen({super.key});
+  const InspectorLeavesScreen({super.key, this.showComingSoon = false});
+
+  /// When true, an "Attendance — coming soon" banner sits above the list.
+  final bool showComingSoon;
 
   @override
   State<InspectorLeavesScreen> createState() => _InspectorLeavesScreenState();
@@ -299,6 +314,7 @@ class _InspectorLeavesScreenState extends State<InspectorLeavesScreen> {
       ),
       body: Column(
         children: [
+          if (widget.showComingSoon) _buildComingSoonBanner(),
           _buildFilterBar(),
           Expanded(
             child: RefreshIndicator(
@@ -320,6 +336,91 @@ class _InspectorLeavesScreenState extends State<InspectorLeavesScreen> {
               label: const Text('Apply Leave',
                   style: TextStyle(fontWeight: FontWeight.w700)),
             ),
+    );
+  }
+
+  /// Placeholder shown where the check-in/out tracker will live once enabled.
+  Widget _buildComingSoonBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: _primary.withValues(alpha: 0.18),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.fingerprint_rounded,
+                color: Colors.white, size: 24),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text(
+                      'Attendance',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _amber.withValues(alpha: 0.22),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'Coming soon',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: _amber,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Check-in / check-out tracking is on the way. For now, '
+                  'manage your leaves below.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: Colors.white.withValues(alpha: 0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 

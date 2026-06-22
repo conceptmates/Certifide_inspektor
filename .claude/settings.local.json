@@ -23,7 +23,25 @@
       "Read(//Users/ryn/.pub-cache/hosted/pub.dev/media_store_plus-0.1.3/lib/**)",
       "Read(//Users/ryn/.pub-cache/**)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(cat android/local.properties)",
+      "Bash(ls -la .fvm)",
+      "Bash(cat .fvmrc)",
+      "Bash(cat .fvm/fvm_config.json)",
+      "Bash(ls -la android/key.properties)",
+      "Bash(echo \"--- error count: $\\(flutter analyze 2>&1)",
+      "Bash(adb -s emulator-5554 shell wm size)",
+      "Bash(adb -s emulator-5554 shell wm density)",
+      "Bash(adb -s emulator-5554 shell input tap 316 1057)",
+      "Bash(adb -s emulator-5554 exec-out screencap -p)",
+      "Bash(adb -s emulator-5554 shell input tap 513 1045)",
+      "Bash(adb -s emulator-5554 shell input text \"TEST1234\")",
+      "Bash(adb -s emulator-5554 shell input keyevent 111)",
+      "Bash(adb -s emulator-5554 shell input keyevent 4)",
+      "Bash(adb -s emulator-5554 shell input tap 513 1238)",
+      "Bash(adb -s emulator-5554 shell input tap 300 1480)",
+      "Bash(adb -s emulator-5554 shell input tap 513 1431)",
+      "Bash(adb -s emulator-5554 shell input tap 300 866)"
     ]
   }
 }

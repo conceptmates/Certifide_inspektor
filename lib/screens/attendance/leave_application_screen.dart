@@ -34,6 +34,7 @@ class _LeaveApplicationScreenState extends State<LeaveApplicationScreen> {
 
   final _reasonController = TextEditingController();
 
+  // ignore: prefer_final_fields — reassigned by _setMode when range is re-enabled
   bool _isRange = false;
   DateTime? _fromDate;
   DateTime? _toDate;
@@ -104,6 +105,8 @@ class _LeaveApplicationScreenState extends State<LeaveApplicationScreen> {
     });
   }
 
+  // TEMP: date-range selection disabled — see build(). Uncomment to restore.
+  /*
   void _setMode(bool range) {
     if (range == _isRange) return;
     setState(() {
@@ -111,6 +114,7 @@ class _LeaveApplicationScreenState extends State<LeaveApplicationScreen> {
       if (!range) _toDate = null;
     });
   }
+  */
 
   Future<void> _submit() async {
     if (_fromDate == null) {
@@ -338,8 +342,11 @@ class _LeaveApplicationScreenState extends State<LeaveApplicationScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _buildModeToggle(),
-          const SizedBox(height: 16),
+          // TEMP: date-range (multi-date) selection disabled for now — only
+          // single-day leave is allowed. Re-enable by uncommenting these two
+          // lines plus the _setMode / _buildModeToggle / _modeTab methods below.
+          // _buildModeToggle(),
+          // const SizedBox(height: 16),
           _buildSectionHeader(_isRange ? 'Leave Dates' : 'Leave Date'),
           const SizedBox(height: 10),
           _buildDateCard(),
@@ -354,6 +361,8 @@ class _LeaveApplicationScreenState extends State<LeaveApplicationScreen> {
     );
   }
 
+  // TEMP: date-range selection disabled — see build(). Uncomment to restore.
+  /*
   Widget _buildModeToggle() {
     return Container(
       padding: const EdgeInsets.all(4),
@@ -399,6 +408,7 @@ class _LeaveApplicationScreenState extends State<LeaveApplicationScreen> {
       ),
     );
   }
+  */
 
   Widget _buildSectionHeader(String title) {
     return Text(
