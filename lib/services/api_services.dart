@@ -1612,9 +1612,13 @@ class ApiService {
           }
 
           // Warm the offline cache for reference images (see initializeInspection).
+          // Resume only fetches images NOT already on disk — already-cached
+          // guides are trusted as-is so re-entering a draft doesn't re-download
+          // the whole set (initialize already revalidated them).
           if (inspectionResponse != null) {
             unawaited(ReferenceMediaCache.prefetch(
-                inspectionResponse.referenceImageUrls));
+                inspectionResponse.referenceImageUrls,
+                revalidate: false));
           }
 
           return {
