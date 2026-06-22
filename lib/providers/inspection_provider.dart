@@ -622,6 +622,12 @@ class InspectionNotifier extends _$InspectionNotifier {
 
       var currentInspection = inspection;
 
+      // Tracks whether any media failed to upload this pass. If so we must NOT
+      // submit — the stored body still holds local file paths for those items
+      // and the server would reject them (or store an empty field). Mirrors the
+      // abort-on-failure guard the online submit path uses.
+      bool anyUploadFailed = false;
+
       // Upload pending images
       if (inspection.pendingImages.isNotEmpty) {
         state = state.copyWith(
@@ -643,6 +649,8 @@ class InspectionNotifier extends _$InspectionNotifier {
           final url = result['url'] as String?;
           if (result['success'] == true && url != null && url.isNotEmpty) {
             uploadedImages[entry.key] = url;
+          } else {
+            anyUploadFailed = true;
           }
         }
 
@@ -683,6 +691,8 @@ class InspectionNotifier extends _$InspectionNotifier {
           final url = result['url'] as String?;
           if (result['success'] == true && url != null && url.isNotEmpty) {
             videoReplacements[entry.key] = url;
+          } else {
+            anyUploadFailed = true;
           }
         }
       }
@@ -698,6 +708,8 @@ class InspectionNotifier extends _$InspectionNotifier {
           final url = result['url'] as String?;
           if (result['success'] == true && url != null && url.isNotEmpty) {
             audioReplacements[entry.key] = url;
+          } else {
+            anyUploadFailed = true;
           }
         }
       }
@@ -713,6 +725,8 @@ class InspectionNotifier extends _$InspectionNotifier {
           final url = result['url'] as String?;
           if (result['success'] == true && url != null && url.isNotEmpty) {
             fileReplacements[entry.key] = url;
+          } else {
+            anyUploadFailed = true;
           }
         }
       }
@@ -739,6 +753,7 @@ class InspectionNotifier extends _$InspectionNotifier {
             changed = true;
           } else {
             newList.add(p);
+            anyUploadFailed = true;
           }
         }
         if (changed) multiImageReplacements[entry.key] = newList;
@@ -761,6 +776,18 @@ class InspectionNotifier extends _$InspectionNotifier {
           uploadedFiles: fileReplacements,
           uploadedMultiImages: multiImageReplacements,
         );
+      }
+
+      // At least one upload failed: keep the successfully-uploaded URLs we just
+      // persisted, but do NOT submit. The body still references local paths for
+      // the failed items, so submitting now would POST paths the server can't
+      // resolve — the exact failure that left media "stored locally only".
+      // Leave the record pending so a later retry finishes the remaining media.
+      if (anyUploadFailed) {
+        state = state.copyWith(
+          submittingStates: {...state.submittingStates, inspection.id: false},
+        );
+        return false;
       }
 
       // Build final submission payload with all uploaded URLs applied.
