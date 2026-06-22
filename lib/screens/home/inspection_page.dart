@@ -393,15 +393,47 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       // inspection works even when CURRENT holds a different one (e.g. an
       // offline resume from the reports list). Fall back to CURRENT for data
       // saved before per-id keys existed.
-      final storedForResume = (widget.inspectionId != null
-              ? _inspectionBox?.get(
-                  HiveConstants.inspectionKey(widget.inspectionId!))
-              : null) ??
+      // Prefer the durable per-inspection slot; fall back to the shared CURRENT
+      // slot for data saved before per-id keys existed (or when the id stored at
+      // initialize differs from the id the resume passes).
+      final perIdStored = widget.inspectionId != null
+          ? _inspectionBox?.get(HiveConstants.inspectionKey(widget.inspectionId!))
+          : null;
+      final currentStored =
           _inspectionBox?.get(HiveConstants.CURRENT_INSPECTION_KEY);
+
+      // A resume must NOT hinge on the stored inspectionId equalling the resume
+      // id. The per-id slot is only written once the server id is known, so when
+      // a new inspection was started without one surfacing (inspectionId stored
+      // as null), no per-id slot exists and CURRENT holds the only copy. The old
+      // gate required CURRENT.inspectionId == widget.inspectionId, which a null
+      // id never satisfies — so it fell through to the fresh-start branch that
+      // DELETES the working copy, wiping every entered value, remark and image.
+      //
+      // Resume from CURRENT when it plausibly belongs to this inspection — its
+      // stored id is null (never stamped) or matches — and carries real data. A
+      // genuinely new inspection has CURRENT cleared before launch, so it still
+      // takes the fresh path; a different unfinished draft (CURRENT.inspectionId
+      // set to another id) is never loaded here.
+      bool hasSavedData(InspectionStorageModel? m) =>
+          m != null &&
+          !m.isCompleted &&
+          m.status != 'submitted' &&
+          (m.itemValues.isNotEmpty ||
+              m.itemImages.isNotEmpty ||
+              m.itemRemarks.isNotEmpty ||
+              m.itemVideos.isNotEmpty ||
+              m.itemAudios.isNotEmpty ||
+              m.itemFiles.isNotEmpty ||
+              (m.multiImages?.isNotEmpty ?? false) ||
+              m.textFieldValues.isNotEmpty);
+      final currentBelongsHere = currentStored != null &&
+          (currentStored.inspectionId == null ||
+              currentStored.inspectionId == widget.inspectionId);
       final resumesLocalCopy = widget.isNewInspection &&
           widget.inspectionId != null &&
-          storedForResume != null &&
-          storedForResume.inspectionId == widget.inspectionId;
+          (perIdStored != null ||
+              (currentBelongsHere && hasSavedData(currentStored)));
 
       if (widget.isNewInspection && !resumesLocalCopy) {
         // Fresh start — discard any leftover session from a previous run.
