@@ -547,6 +547,27 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         }
       }
 
+      // Resume only: push any still-local media for this inspection to the
+      // server now, instead of waiting for a connectivity flip or the Pending
+      // tab. _commitPendingMediaToQueue queues just the un-uploaded local files
+      // (already-uploaded http URLs are skipped); the provider then uploads them
+      // and replays each field's save-step so the server keeps the media even if
+      // the app is stopped again. The queue keeps the local files, so the open
+      // form still displays them. Online-gated, fire-and-forget.
+      final isFreshStart = widget.isNewInspection && !resumesLocalCopy;
+      if (!isFreshStart && _effectiveInspectionId != null) {
+        unawaited(Future(() async {
+          try {
+            if (!await ConnectivityChecker.canReachServer()) return;
+            await _commitPendingMediaToQueue();
+            if (!mounted) return;
+            await ref.read(inspectionProvider.notifier).refreshMediaQueue();
+          } catch (e) {
+            log('Resume media upload trigger failed: $e');
+          }
+        }));
+      }
+
       // Request camera + mic permissions while the loading screen is still
       // shown so the camera card renders with permissions already resolved.
       await _requestInspectionPermissions();
@@ -1395,6 +1416,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           _currentSection = storedData.currentSection;
           itemMultiImages = storedData.typedMultiImages;
           itemFlaggedIssues = storedData.typedItemFlaggedIssues;
+          // Restore any server-saved answers / already-uploaded media URLs the
+          // local copy is missing, so resuming never drops uploaded data.
+          _mergeServerInitialData();
         });
         _initializeControllers();
       } else {
@@ -1611,6 +1635,62 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           if (fil != null && fil.toString().isNotEmpty) {
             itemFiles[uniqueId] = fil.toString();
           }
+        }
+      }
+    }
+  }
+
+  /// Overlays the server's `initial_*` data (previously-saved answers and
+  /// already-uploaded media URLs returned by /resume) onto the loaded local
+  /// maps, filling ONLY the fields the local working copy is missing.
+  ///
+  /// On resume the local Hive copy is the primary source, but it can lag the
+  /// server: media uploaded via the offline queue (or a save-step replayed on
+  /// another device) lives on the server yet may be absent from the working
+  /// copy that was last written. Without this merge that already-uploaded data
+  /// silently disappears from the inspection on resume. Local edits are never
+  /// overwritten — only empty/untouched fields are filled.
+  void _mergeServerInitialData() {
+    bool isBlank(String? v) => v == null || v.isEmpty;
+    for (final section in _sections) {
+      for (final item in section['items'] as List<dynamic>) {
+        if (item is! Map) continue;
+        final uniqueId = _getItemUniqueId(item);
+
+        final iv = item['initialValue'];
+        if (iv != null && iv.toString().isNotEmpty) {
+          final cur = itemValues[uniqueId];
+          // 'N/A' is the untouched default for option fields — treat it as
+          // empty so a previously-saved answer is restored.
+          if (cur == null || cur.isEmpty || cur == 'N/A') {
+            itemValues[uniqueId] = iv.toString();
+          }
+        }
+        final ir = item['initialRemarks'];
+        if (ir != null && ir.toString().isNotEmpty && isBlank(itemRemarks[uniqueId])) {
+          itemRemarks[uniqueId] = ir.toString();
+        }
+        final img = item['initialImage'];
+        if (img != null && img.toString().isNotEmpty && isBlank(itemImages[uniqueId])) {
+          itemImages[uniqueId] = img.toString();
+        }
+        final multi = item['initialMultiImages'];
+        if (multi is List &&
+            multi.isNotEmpty &&
+            (itemMultiImages[uniqueId]?.isEmpty ?? true)) {
+          itemMultiImages[uniqueId] = multi.map((e) => e.toString()).toList();
+        }
+        final vid = item['initialVideo'];
+        if (vid != null && vid.toString().isNotEmpty && isBlank(itemVideos[uniqueId])) {
+          itemVideos[uniqueId] = vid.toString();
+        }
+        final aud = item['initialAudio'];
+        if (aud != null && aud.toString().isNotEmpty && isBlank(itemAudios[uniqueId])) {
+          itemAudios[uniqueId] = aud.toString();
+        }
+        final fil = item['initialFile'];
+        if (fil != null && fil.toString().isNotEmpty && isBlank(itemFiles[uniqueId])) {
+          itemFiles[uniqueId] = fil.toString();
         }
       }
     }
