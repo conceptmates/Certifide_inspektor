@@ -1652,20 +1652,22 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   /// overwritten — only empty/untouched fields are filled.
   void _mergeServerInitialData() {
     bool isBlank(String? v) => v == null || v.isEmpty;
+    // 'N/A' is the untouched default for option fields — treat it as empty so a
+    // previously-saved answer is restored.
+    void fillValue(String uniqueId, String? v) {
+      if (v == null || v.isEmpty) return;
+      final cur = itemValues[uniqueId];
+      if (cur == null || cur.isEmpty || cur == 'N/A') itemValues[uniqueId] = v;
+    }
+
+    final saved = _inspectionTemplate?.savedFields ?? const {};
     for (final section in _sections) {
       for (final item in section['items'] as List<dynamic>) {
         if (item is! Map) continue;
         final uniqueId = _getItemUniqueId(item);
 
-        final iv = item['initialValue'];
-        if (iv != null && iv.toString().isNotEmpty) {
-          final cur = itemValues[uniqueId];
-          // 'N/A' is the untouched default for option fields — treat it as
-          // empty so a previously-saved answer is restored.
-          if (cur == null || cur.isEmpty || cur == 'N/A') {
-            itemValues[uniqueId] = iv.toString();
-          }
-        }
+        // Source 1: per-field initial_* on the template structure.
+        fillValue(uniqueId, item['initialValue']?.toString());
         final ir = item['initialRemarks'];
         if (ir != null && ir.toString().isNotEmpty && isBlank(itemRemarks[uniqueId])) {
           itemRemarks[uniqueId] = ir.toString();
@@ -1691,6 +1693,40 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         final fil = item['initialFile'];
         if (fil != null && fil.toString().isNotEmpty && isBlank(itemFiles[uniqueId])) {
           itemFiles[uniqueId] = fil.toString();
+        }
+
+        // Source 2: the server's saved_sections payload, keyed by item id (the
+        // value we send in save-step) with a fieldId fallback. Same
+        // fill-only-when-empty rule, so it never overwrites the above or a
+        // local edit — it only recovers data the template's initial_* omitted.
+        final sv = saved[uniqueId] ?? saved[_getItemFieldId(item)];
+        if (sv == null) continue;
+        fillValue(uniqueId, sv['value'] as String?);
+        final sr = sv['remarks'] as String?;
+        if (sr != null && sr.isNotEmpty && isBlank(itemRemarks[uniqueId])) {
+          itemRemarks[uniqueId] = sr;
+        }
+        final sImg = sv['image'] as String?;
+        if (sImg != null && sImg.isNotEmpty && isBlank(itemImages[uniqueId])) {
+          itemImages[uniqueId] = sImg;
+        }
+        final sMulti = sv['multiImages'];
+        if (sMulti is List &&
+            sMulti.isNotEmpty &&
+            (itemMultiImages[uniqueId]?.isEmpty ?? true)) {
+          itemMultiImages[uniqueId] = sMulti.map((e) => e.toString()).toList();
+        }
+        final sVid = sv['video'] as String?;
+        if (sVid != null && sVid.isNotEmpty && isBlank(itemVideos[uniqueId])) {
+          itemVideos[uniqueId] = sVid;
+        }
+        final sAud = sv['audio'] as String?;
+        if (sAud != null && sAud.isNotEmpty && isBlank(itemAudios[uniqueId])) {
+          itemAudios[uniqueId] = sAud;
+        }
+        final sFil = sv['file'] as String?;
+        if (sFil != null && sFil.isNotEmpty && isBlank(itemFiles[uniqueId])) {
+          itemFiles[uniqueId] = sFil;
         }
       }
     }
