@@ -51,7 +51,6 @@ class ApiService {
   static const String initializeDynamicInspectionEndPoint =
       '/dynamic-inspections/initialize';
   static const String getModelsEndpoint = '/admin/vehicles/models';
-  static const String submitDynamicInspectionEndPoint = '/dynamic-inspections';
   static const String newCarsEndPoint = '/cars/new';
   static const String userCarsEndPoint = '/cars/old';
   static const String carFiltersEndpoint = '/cars/filters';
@@ -1079,42 +1078,11 @@ class ApiService {
     };
   }
 
-  /// Legacy all-at-once create: POST /dynamic-inspections. Used only when there
-  /// is no server inspection id yet (the draft was never initialized). When an
-  /// id exists, prefer [submitInspectionById] so the existing draft is finalised
-  /// instead of a duplicate inspection being created.
-  static Future<Map<String, dynamic>> submitInspection(
-      Map<String, dynamic> body) async {
-    try {
-      log('Submitting dynamic inspection to: $baseUrl$submitDynamicInspectionEndPoint');
-      if (kDebugMode) log('Submission body: $body');
-
-      final response = await http.post(
-        Uri.parse('$baseUrl$submitDynamicInspectionEndPoint'),
-        headers: await _getHeaders(requiresAuth: true),
-        body: json.encode(body),
-      ).timeout(_requestTimeout);
-
-      log('Submit inspection response status: ${response.statusCode}');
-      if (kDebugMode) log('Submit inspection response body: ${response.body}');
-
-      return _parseSubmitResponse(response);
-    } on UnauthorizedException {
-      rethrow;
-    } catch (e) {
-      log('Error submitting inspection: $e');
-      return {
-        'success': false,
-        'message': 'Network error: ${e.toString()}',
-      };
-    }
-  }
-
   /// Finalises an existing draft: POST /dynamic-inspections/{id}/submit.
-  /// Sets processing_status = "completed". The data may already be on the server
-  /// (saved per-field via save-step); [body] is sent anyway so any field not yet
-  /// save-stepped (e.g. edited offline) is persisted in the same call. Idempotent
-  /// on an already-completed (un-approved) inspection.
+  /// Sets processing_status = "completed". The live flow save-steps every section
+  /// first and then calls this with an empty body ({}); the offline-drain path
+  /// passes the full stored body so anything not yet save-stepped is persisted in
+  /// the same call. Idempotent on an already-completed (un-approved) inspection.
   static Future<Map<String, dynamic>> submitInspectionById(
     int inspectionId,
     Map<String, dynamic> body,
@@ -1177,32 +1145,6 @@ class ApiService {
       return {'success': false, 'message': _handleError(response)};
     } catch (e) {
       log('Error saving inspection step: $e');
-      return {'success': false, 'message': 'Network error: ${e.toString()}'};
-    }
-  }
-
-  static Future<Map<String, dynamic>> updateDynamicInspection(
-    int inspectionId,
-    Map<String, dynamic> data,
-  ) async {
-    try {
-      final response = await http.put(
-        Uri.parse('$baseUrl$submitDynamicInspectionEndPoint/$inspectionId'),
-        headers: await _getHeaders(requiresAuth: true),
-        body: json.encode(data),
-      ).timeout(_requestTimeout);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = json.decode(response.body);
-        return {
-          'success': true,
-          'data': responseData['data'],
-          'message': responseData['message'] ?? 'Updated successfully',
-        };
-      }
-      return {'success': false, 'message': _handleError(response)};
-    } catch (e) {
-      log('Error updating dynamic inspection: $e');
       return {'success': false, 'message': 'Network error: ${e.toString()}'};
     }
   }

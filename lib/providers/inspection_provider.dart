@@ -882,14 +882,28 @@ class InspectionNotifier extends _$InspectionNotifier {
 
       // Finalise the existing server draft by id when the stored body carries
       // one (it was initialized online before going offline), so reconnecting
-      // never creates a duplicate. Only create when there is no server id.
+      // never creates a duplicate. When there is no server id (the inspection was
+      // created entirely offline and never initialized), initialize a draft now
+      // to mint one, then finalise that — the legacy all-at-once create endpoint
+      // is no longer used.
       final rawServerId = inspectionData['inspection_id'];
-      final int? serverId = rawServerId is int
+      int? serverId = rawServerId is int
           ? rawServerId
           : int.tryParse(rawServerId?.toString() ?? '');
-      final result = serverId != null
-          ? await ApiService.submitInspectionById(serverId, inspectionData)
-          : await ApiService.submitInspection(inspectionData);
+      if (serverId == null) {
+        serverId = await _initializeDraftForOfflineBody(inspectionData);
+        if (serverId == null) {
+          // Could not mint a server id (missing brand/model or network) — keep
+          // the record for a later retry instead of dropping it.
+          state = state.copyWith(
+            submittingStates: {...state.submittingStates, inspection.id: false},
+          );
+          return false;
+        }
+        inspectionData['inspection_id'] = serverId;
+      }
+      final result =
+          await ApiService.submitInspectionById(serverId, inspectionData);
 
       if (result['success'] == true) {
         await LocalStorageService.markInspectionAsSubmitted(inspection.id);
@@ -924,6 +938,45 @@ class InspectionNotifier extends _$InspectionNotifier {
       );
       return false;
     }
+  }
+
+  /// Mints a server draft for an offline-created inspection that never had an
+  /// `inspection_id`, using the brand/model (and any vehicle details) carried in
+  /// its stored submission body. Returns the new id, or null when the body lacks
+  /// brand/model or initialize fails — the caller keeps the record for retry.
+  Future<int?> _initializeDraftForOfflineBody(
+      Map<String, dynamic> inspectionData) async {
+    int? asInt(dynamic v) =>
+        v is int ? v : int.tryParse(v?.toString() ?? '');
+    final brandId = asInt(inspectionData['vehicle_brand_id']);
+    final modelId = asInt(inspectionData['vehicle_model_id']);
+    if (brandId == null || modelId == null) {
+      log('Offline drain: missing brand/model id — cannot initialize draft');
+      return null;
+    }
+    String? str(dynamic v) {
+      final s = v?.toString();
+      return (s == null || s.isEmpty) ? null : s;
+    }
+
+    try {
+      final result = await ApiService.initializeInspection(
+        vehicleBrandId: brandId,
+        vehicleModelId: modelId,
+        year: str(inspectionData['year']),
+        variant: str(inspectionData['variant']),
+        colour: str(inspectionData['color']),
+        transmission: str(inspectionData['transmission']),
+        regNo: str(inspectionData['registration_number']),
+      );
+      if (result['success'] == true) {
+        return asInt(result['inspection_id']);
+      }
+      log('Offline drain: initialize failed — ${result['message']}');
+    } catch (e) {
+      log('Offline drain: initialize exception — $e');
+    }
+    return null;
   }
 
   Future<void> deleteInspection(String id) async {
