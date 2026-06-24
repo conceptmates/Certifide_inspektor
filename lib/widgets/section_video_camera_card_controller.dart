@@ -271,8 +271,15 @@ class VideoCardController extends _$VideoCardController
 
     final controller = CameraController(
       camera,
-      ResolutionPreset.max,
+      // 1080p capture. Encoder compresses in real time to the bitrate below,
+      // so the file is born small — no post-capture compression step needed.
+      ResolutionPreset.veryHigh,
       enableAudio: true,
+      fps: 30,
+      // ~5 Mbps: high quality at 1080p30, ~38 MB/min. Default recorder runs
+      // 12-20 Mbps. Tune up for sharper / down for smaller uploads.
+      videoBitrate: 5000000,
+      audioBitrate: 128000,
     );
     _controller = controller;
 
